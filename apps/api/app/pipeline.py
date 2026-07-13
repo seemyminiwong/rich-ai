@@ -7,7 +7,7 @@ from pathlib import Path
 from io import BytesIO
 from urllib.parse import urljoin
 import httpx
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment, NavigableString
 from openai import OpenAI
 from PIL import Image, ImageOps
 from app.config import settings
@@ -494,6 +494,7 @@ TARGET LANGUAGE CODE: {language}. {language_rule}
 Never copy source-page sentences in another language. Translate and rewrite every visible sentence into the target language while preserving model names, trademarks, numbers and units.
 Variant: {variant}. Layout: {layout}. Use inline CSS only.
 SEO heading rule: never use <h1>. The product page already contains its primary H1. Use <h2> for the Hero product title and major section headings, and <h3> for card titles.
+Embedding rule: the rich content is displayed on a light ARTLINE product page. Keep the root canvas transparent or white and make the majority of content surfaces light. Dark styling may be used inside selected high-contrast sections such as Hero or the final section, but never as a full-page background.
 The style prompt below is the primary design specification. Follow it precisely unless it conflicts with factual accuracy or HTML validity.
 STYLE PROMPT:
 {style.prompt}
@@ -541,7 +542,7 @@ def _deterministic_html(product, style, language, variant, hero, feature):
     while len(facts) < 6:
         facts.append(localized_benefits[len(facts)] if len(facts) < len(localized_benefits) else description[:180] or name)
     cards = ''.join(
-        f'<div style="padding:26px;border-radius:26px;background:{"#101010" if i<3 else "#F5F7FA"};border:1px solid #19BCC955;color:{"#f5f7fa" if i<3 else "#101010"}"><div style="font-size:25px;font-weight:900;color:#19BCC9;margin-bottom:10px">{html_lib.escape(fact[:55])}</div><p style="margin:0;line-height:1.55;color:{"#d0d7de" if i<3 else "#555"}">{html_lib.escape(fact)}</p></div>'
+        f'<div style="padding:26px;border-radius:12px;background:#F7F8FA;border:1px solid #D0D7DE;color:#101010"><div style="font-size:25px;font-weight:900;color:{"#19BCC9" if i<3 else "#01743A"};margin-bottom:10px">{html_lib.escape(fact[:55])}</div><p style="margin:0;line-height:1.55;color:#555">{html_lib.escape(fact)}</p></div>'
         for i, fact in enumerate(facts)
     )
     hero_css = f"linear-gradient(90deg,rgba(5,5,5,.96),rgba(18,8,0,.18)),url('{hero}') center/cover no-repeat" if hero else 'linear-gradient(135deg,#101010,#1A2128)'
@@ -585,6 +586,53 @@ HTML:
         return output, input_tokens, output_tokens
     except Exception:
         return fallback, 0, 0
+
+
+def _translation_template(markup: str):
+    """Replace visible text nodes with stable tokens while preserving the DOM/CSS."""
+    soup = BeautifulSoup(markup or '', 'html.parser')
+    segments = {}
+    for node in list(soup.find_all(string=True)):
+        if not isinstance(node, NavigableString) or isinstance(node, Comment) or node.parent.name in ('script', 'style'):
+            continue
+        value = str(node)
+        if not value.strip():
+            continue
+        leading = value[:len(value) - len(value.lstrip())]
+        trailing = value[len(value.rstrip()):]
+        key = str(len(segments))
+        segments[key] = value.strip()
+        node.replace_with(f'{leading}__ARTLINE_TEXT_{key}__{trailing}')
+    return str(soup), segments
+
+
+def translate_html(source_html: str, language: str, model: str):
+    """Translate copy only; layout, styles, media URLs and element order stay fixed."""
+    if not client:
+        return None, 0, 0
+    template, segments = _translation_template(source_html)
+    if not segments:
+        return source_html, 0, 0
+    prompt = f"""Translate the supplied ecommerce copy segments into the target language.
+TARGET LANGUAGE CODE: {language}. {LANGUAGE_RULES.get(language, LANGUAGE_RULES['ru'])}
+Return one JSON object only. Preserve every input key and return exactly one translated string for it.
+Keep product names, brands, model IDs, technology names, numbers and units unchanged.
+Do not add facts, HTML, markdown, explanations or extra keys.
+SEGMENTS:
+{json.dumps(segments, ensure_ascii=False)}"""
+    response = client.responses.create(model=model, input=prompt, max_output_tokens=12000, store=False)
+    translated = _extract_json(response.output_text)
+    result = template
+    for key, original in segments.items():
+        value = translated.get(key)
+        if not isinstance(value, str) or not value.strip():
+            value = original
+        result = result.replace(f'__ARTLINE_TEXT_{key}__', html_lib.escape(value, quote=False))
+    result = _html_only(result)
+    if not _language_matches(result, language):
+        raise RuntimeError(f'Translated content did not pass language validation for {language}')
+    input_tokens, output_tokens = _usage_counts(response, prompt, response.output_text)
+    return result, input_tokens, output_tokens
 
 
 def critic_html(artifacts, critic_type: str, product: dict):

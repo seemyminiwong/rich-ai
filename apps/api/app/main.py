@@ -41,7 +41,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title='ARTLINE Rich Studio API', version='11.3', lifespan=lifespan)
+app = FastAPI(title='ARTLINE Rich Studio API', version='11.4', lifespan=lifespan)
 app.mount('/media', StaticFiles(directory=settings.media_dir), name='media')
 
 class Login(BaseModel): email: str; password: str
@@ -156,7 +156,7 @@ def project_dict(p, full=False):
     return r
 
 @app.get('/health')
-def health(): return {'status':'ok','version':'11.3'}
+def health(): return {'status':'ok','version':'11.4'}
 @app.post('/api/auth/login')
 def login(payload: Login, db: Session=Depends(get_db)):
     user=db.scalar(select(User).where(User.email==payload.email))

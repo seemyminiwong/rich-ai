@@ -1,3 +1,4 @@
+import html
 import json
 import time
 from types import SimpleNamespace
@@ -16,6 +17,7 @@ from app.pipeline import (
     materialize_product_reference,
     parse_page,
     style_image_prompt,
+    translate_html,
     critic_html,
 )
 
@@ -90,7 +92,7 @@ def process_project(self, project_id):
             project.product_json = json.dumps(product, ensure_ascii=False)
             detected_name = str(product.get('name') or title or '').strip()
             if detected_name:
-                project.name = detected_name[:200]
+                project.name = html.unescape(detected_name)[:200]
             category = str(product.get('category') or product.get('product_type') or '').strip()
             project.product_category = category[:120]
             project.input_tokens += input_tokens
@@ -144,28 +146,48 @@ def process_project(self, project_id):
             style_feature = style_image_prompt(style.prompt, 'FEATURE_IMAGE') or style.feature_prompt.strip()
             negative = getattr(style, 'negative_prompt', '').strip()
             facts = json.dumps(product, ensure_ascii=False)[:5000]
+            requested_variants = [value for value in project.variants.split(',') if value]
+            hero_by_variant = {}
 
             if project.custom_hero_url:
-                hero = project.custom_hero_url
-                db.add(Asset(project_id=project.id,kind='image',label='hero-custom',url=hero,prompt='',model='custom',metadata_json=json.dumps({'source':'custom'},ensure_ascii=False)))
+                hero_by_variant = {variant: project.custom_hero_url for variant in requested_variants}
+                db.add(Asset(project_id=project.id,kind='image',label='hero-custom',url=project.custom_hero_url,prompt='',model='custom',metadata_json=json.dumps({'source':'custom','variants':requested_variants},ensure_ascii=False)))
                 log(db, project, 'images', 'Використовується власне Hero-зображення', 25)
             elif style_hero:
-                log(db, project, 'images', f'Створення Hero-зображення · {project.image_model}', 25)
-                hero, hero_generated, hero_error = generate_image(
-                    f"{style_hero}\nNegative requirements: {negative}\nProduct: {product_name}. Verified product facts: {facts}",
-                    project.id,'hero',project.image_model,project.image_quality,fallback,
-                    reference_url=original_reference_url,reference_path=reference_path,size='1536x1024')
-                if reference_path:
-                    project.image_request_count += 1
-                if hero_generated:
-                    project.image_count += 1
-                    db.add(Asset(project_id=project.id,kind='image',label='hero-generated',url=hero,prompt=style_hero,model=project.image_model,width=1536,height=1024,cost=image_rate(project.image_model,project.image_quality),metadata_json=json.dumps({'source':'generated','reference_url':original_reference_url,'reference_asset_url':fallback},ensure_ascii=False)))
-                elif hero_error:
-                    log(db, project, 'images', f'Hero не згенеровано; використовується реальне фото товару. Причина: {hero_error}', 30, 'warning')
+                hero_specs = {
+                    'desktop': ('1536x1024', 1536, 1024, 'wide desktop composition; product on the right; protected text-safe space on the left'),
+                    'mobile': ('1024x1536', 1024, 1536, 'portrait mobile composition; complete product in the upper area; protected text-safe space below it'),
+                }
+                for offset, variant in enumerate(requested_variants):
+                    size, width, height, composition = hero_specs.get(variant, hero_specs['desktop'])
+                    log(db, project, 'images', f'Створення Hero {variant} · {project.image_model}', 24 + offset * 5)
+                    hero_prompt = (
+                        f"{style_hero}\nCanvas requirement: {composition}. "
+                        f"Render specifically at {size}; do not crop important product parts.\n"
+                        f"Negative requirements: {negative}\nProduct: {product_name}. Verified product facts: {facts}"
+                    )
+                    hero, hero_generated, hero_error = generate_image(
+                        hero_prompt, project.id, f'hero-{variant}', project.image_model,
+                        project.image_quality, fallback, reference_url=original_reference_url,
+                        reference_path=reference_path, size=size,
+                    )
+                    hero_by_variant[variant] = hero
+                    if reference_path:
+                        project.image_request_count += 1
+                    if hero_generated:
+                        project.image_count += 1
+                        db.add(Asset(
+                            project_id=project.id, kind='image', label=f'hero-{variant}-generated',
+                            url=hero, prompt=hero_prompt, model=project.image_model, width=width,
+                            height=height, cost=image_rate(project.image_model,project.image_quality),
+                            metadata_json=json.dumps({'source':'generated','variant':variant,'reference_url':original_reference_url,'reference_asset_url':fallback},ensure_ascii=False),
+                        ))
+                    elif hero_error:
+                        log(db, project, 'images', f'Hero {variant} не згенеровано; використовується реальне фото товару. Причина: {hero_error}', 30 + offset * 5, 'warning')
             else:
-                hero = fallback
-                if hero:
-                    db.add(Asset(project_id=project.id,kind='image',label='hero-source',url=hero,prompt='',model='source',metadata_json=json.dumps({'source':'product-page'},ensure_ascii=False)))
+                hero_by_variant = {variant: fallback for variant in requested_variants}
+                if fallback:
+                    db.add(Asset(project_id=project.id,kind='image',label='hero-source',url=fallback,prompt='',model='source',metadata_json=json.dumps({'source':'product-page','variants':requested_variants},ensure_ascii=False)))
                 log(db, project, 'images', 'Hero-генерацію вимкнено — використовується фото товару', 25)
             recalculate_cost(project); db.commit()
 
@@ -193,38 +215,59 @@ def process_project(self, project_id):
                 log(db, project, 'images', 'Feature-генерацію вимкнено — використовується фото товару', 35)
             recalculate_cost(project); db.commit()
 
-            combinations = [
-                (language, variant)
-                for language in project.languages.split(',') if language
-                for variant in project.variants.split(',') if variant
-            ]
-            if not combinations:
+            languages = [value for value in project.languages.split(',') if value]
+            variants = [value for value in project.variants.split(',') if value]
+            if not languages or not variants:
                 raise RuntimeError('Select at least one language and one layout variant')
 
-            for index, (language, variant) in enumerate(combinations):
-                progress = 40 + int(52 * index / max(1, len(combinations)))
-                log(db, project, 'content', f'Створення {language.upper()} / {variant} · {project.text_model}', progress)
-                rich_html, added_input, added_output = generate_html(
-                    product, style, language, variant, hero, feature, project.text_model
-                )
-                project.input_tokens += added_input
-                project.output_tokens += added_output
-                if added_input or added_output:
-                    project.text_request_count += 1
-                recalculate_cost(project)
-                latest_version = db.scalar(select(func.max(Artifact.version)).where(
-                    Artifact.project_id == project.id,
-                    Artifact.language == language,
-                    Artifact.variant == variant,
-                )) or 0
-                db.add(Artifact(
-                    project_id=project.id,
-                    language=language,
-                    variant=variant,
-                    html=rich_html,
-                    version=latest_version + 1,
-                ))
-                db.commit()
+            total_outputs = len(languages) * len(variants)
+            completed_outputs = 0
+            for variant in variants:
+                # Generate one master layout per viewport. Every other language is a
+                # text-node-only translation of this master, so DOM, inline CSS,
+                # image URLs and section order cannot drift between RU/UA/PL.
+                master_language = 'ru' if 'ru' in languages else languages[0]
+                ordered_languages = [master_language] + [value for value in languages if value != master_language]
+                hero = hero_by_variant.get(variant) or fallback
+                master_html = None
+                for language in ordered_languages:
+                    progress = 40 + int(52 * completed_outputs / max(1, total_outputs))
+                    if master_html is None:
+                        log(db, project, 'content', f'Створення майстер-макета {master_language.upper()} / {variant} · {project.text_model}', progress)
+                        rich_html, added_input, added_output = generate_html(
+                            product, style, master_language, variant, hero, feature, project.text_model
+                        )
+                        master_html = rich_html
+                    else:
+                        log(db, project, 'content', f'Переклад макета {language.upper()} / {variant} без зміни дизайну', progress)
+                        translated = translate_html(master_html, language, project.text_model)
+                        if translated[0] is None:
+                            # Offline/no-key fallback still uses the deterministic
+                            # template, whose structure is identical for all languages.
+                            rich_html, added_input, added_output = generate_html(
+                                product, style, language, variant, hero, feature, project.text_model
+                            )
+                        else:
+                            rich_html, added_input, added_output = translated
+                    project.input_tokens += added_input
+                    project.output_tokens += added_output
+                    if added_input or added_output:
+                        project.text_request_count += 1
+                    recalculate_cost(project)
+                    latest_version = db.scalar(select(func.max(Artifact.version)).where(
+                        Artifact.project_id == project.id,
+                        Artifact.language == language,
+                        Artifact.variant == variant,
+                    )) or 0
+                    db.add(Artifact(
+                        project_id=project.id,
+                        language=language,
+                        variant=variant,
+                        html=rich_html,
+                        version=latest_version + 1,
+                    ))
+                    db.commit()
+                    completed_outputs += 1
 
             recalculate_cost(project)
             artifact_rows = db.scalars(select(Artifact).where(Artifact.project_id == project.id)).all()

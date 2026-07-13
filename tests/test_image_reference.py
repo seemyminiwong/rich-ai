@@ -1,11 +1,12 @@
 from io import BytesIO
 from unittest.mock import patch
 
+from bs4 import BeautifulSoup
 from PIL import Image
 
 from types import SimpleNamespace
 
-from app.pipeline import _deterministic_html, _gallery_identity, _html_only, inspect_product_references, parse_page
+from app.pipeline import _deterministic_html, _gallery_identity, _html_only, _translation_template, inspect_product_references, parse_page, translate_html
 
 
 def image_bytes(size=(600, 600), color=(245, 245, 245)):
@@ -103,3 +104,39 @@ def test_rich_content_never_contains_document_level_h1():
     assert '<h1' not in normalized.lower()
     assert '<h1' not in fallback.lower()
     assert '<h2>Product</h2>' in normalized
+
+
+def test_translation_template_changes_copy_without_changing_layout_or_assets():
+    source = '''<section style="max-width:1240px"><!-- 1. HERO --><div style="display:grid"><h2>Product title</h2><p>Product benefit</p><img src="/media/p/hero-desktop.webp" alt="Product"></div></section>'''
+    template, segments = _translation_template(source)
+
+    assert segments == {'0': 'Product title', '1': 'Product benefit'}
+    assert '__ARTLINE_TEXT_0__' in template
+    assert '__ARTLINE_TEXT_1__' in template
+    assert 'style="display:grid"' in template
+    assert 'src="/media/p/hero-desktop.webp"' in template
+    assert '<!-- 1. HERO -->' in template
+
+
+def test_language_translation_preserves_dom_styles_and_image_urls():
+    source = '''<section style="max-width:1240px"><!-- 1. HERO --><div style="display:grid"><h2>Мощное решение</h2><p>Удобная работа каждый день</p><img src="/media/p/hero-desktop.webp" alt="Product"></div></section>'''
+
+    class FakeResponses:
+        def create(self, **_kwargs):
+            return SimpleNamespace(
+                output_text='{"0":"Потужне рішення","1":"Зручна робота щодня"}',
+                usage=SimpleNamespace(input_tokens=20, output_tokens=10),
+            )
+
+    fake_client = SimpleNamespace(responses=FakeResponses())
+    with patch('app.pipeline.client', fake_client):
+        translated, input_tokens, output_tokens = translate_html(source, 'ua', 'test-model')
+
+    source_tags = [(tag.name, dict(tag.attrs)) for tag in BeautifulSoup(source, 'html.parser').find_all(True)]
+    translated_tags = [(tag.name, dict(tag.attrs)) for tag in BeautifulSoup(translated, 'html.parser').find_all(True)]
+    assert translated_tags == source_tags
+    assert 'Потужне рішення' in translated
+    assert 'Зручна робота щодня' in translated
+    assert '<!-- 1. HERO -->' in translated
+    assert input_tokens == 20
+    assert output_tokens == 10

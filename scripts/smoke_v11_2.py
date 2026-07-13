@@ -29,6 +29,10 @@ checks = {
     'save click guard': 'pendingSave' in web,
     'Ukrainian UI': 'Проєкти' in web and 'Налаштування' in web and 'Користувачі' in web,
     'preview scroll CSS': 'scrollbar-gutter:stable' in css,
+    'shared language layout': 'translate_html(master_html, language' in tasks and 'text-node-only translation' in tasks,
+    'separate hero sizes': "'desktop': ('1536x1024'" in tasks and "'mobile': ('1024x1536'" in tasks,
+    'project list view': "projectView:localStorage.getItem('projectView')" in web and 'list-view' in css,
+    'light preview canvas': 'preview-stage' in web and '.preview-stage' in css and '.code{background:#fff' in css,
 }
 failed = [name for name, ok in checks.items() if not ok]
 for name, ok in checks.items():
