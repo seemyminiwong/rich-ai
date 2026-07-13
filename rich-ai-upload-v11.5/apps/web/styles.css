@@ -31,19 +31,3 @@
 .code{background:#fff;color:#1A2128;border:1px solid var(--border);box-shadow:inset 0 1px 2px rgba(16,16,16,.04)}
 @media(max-width:1100px){.project-toolbar{grid-template-columns:1fr 180px}.project-toolbar .view-switch{justify-self:start}.list-view .project{grid-template-columns:130px minmax(220px,1fr) minmax(180px,.8fr);grid-template-areas:"top title stage" "top url bar" "top meta meta"}.list-view .project-meta{display:flex;margin-top:5px}}
 @media(max-width:760px){.project-toolbar{grid-template-columns:1fr}.list-view .project{display:block}.list-view .project-top,.list-view .project-meta{display:flex}.list-view .project h3{margin:16px 0 6px}.list-view .project p{margin-bottom:16px}.list-view .stage-row{margin-bottom:8px}.preview-stage{height:68vh;padding:10px}.preview-hint{display:none}}
-
-/* v11.5: project interaction, source navigation and style autosave */
-.project{cursor:pointer;user-select:none;-webkit-user-select:none}
-.project:focus-visible{outline:3px solid rgba(25,188,201,.25);outline-offset:2px;border-color:var(--cyan)}
-.project-style{margin-top:12px;color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.project-style b{color:var(--text)}
-.source-link{display:inline-flex;max-width:min(780px,70vw);color:var(--muted);font-size:13px;line-height:1.4;text-decoration:none;overflow-wrap:anywhere}
-.source-link:hover{color:var(--cyan);text-decoration:underline}
-.project-metrics{grid-template-columns:repeat(6,minmax(0,1fr))}
-.project-metrics b{overflow-wrap:anywhere}
-.dialog-note{margin:0;padding:12px 14px;border-radius:12px;background:var(--surface-soft);border:1px solid var(--border);color:var(--muted);font-size:13px;line-height:1.55}
-.style-savebar{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:42px;padding-top:4px}
-.style-savebar span{color:var(--muted);font-size:12px;font-weight:700}
-.style-savebar span.bad{color:var(--danger)}
-@media(max-width:1100px){.project-metrics{grid-template-columns:repeat(3,1fr)}}
-@media(max-width:760px){.project-metrics{grid-template-columns:1fr}.source-link{max-width:100%}.style-savebar{align-items:stretch;flex-direction:column}}

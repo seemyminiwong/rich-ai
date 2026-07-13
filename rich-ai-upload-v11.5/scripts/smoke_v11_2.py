@@ -6,7 +6,6 @@ tasks = (root / 'apps/api/app/tasks.py').read_text(encoding='utf-8')
 main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
 web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
 css = (root / 'apps/web/styles.css').read_text(encoding='utf-8')
-db = (root / 'apps/api/app/db.py').read_text(encoding='utf-8')
 
 checks = {
     'reference image edit': 'client.images.edit' in pipeline,
@@ -34,14 +33,6 @@ checks = {
     'separate hero sizes': "'desktop': ('1536x1024'" in tasks and "'mobile': ('1024x1536'" in tasks,
     'project list view': "projectView:localStorage.getItem('projectView')" in web and 'list-view' in css,
     'light preview canvas': 'preview-stage' in web and '.preview-stage' in css and '.code{background:#fff' in css,
-    'managed ARTLINE base style': "BASE_STYLE_NAME = 'ARTLINE Base'" in main and 'DEFAULT_STYLE_PROMPT' in main,
-    'project exposes style name': "'style_name':style_name" in main and 'p.style_name' in web,
-    'rerun style selector': 'function rerunProjectDialog' in web and 'class RerunIn' in main and "p.style_id=style.id" in main,
-    'project source link': 'class="source-link"' in web and 'target="_blank"' in web,
-    'project archive endpoint': "@app.get('/api/projects/{project_id}/archive')" in main and 'zipfile.ZipFile' in main and 'function downloadArchive' in web,
-    'style autosave': 'scheduleStyleAutosave' in web and 'flushStyleAutosave' in web and 'styleSaveStatus' in web,
-    'review enum migration': "('projects', 'status')" in db and 'ALTER TYPE' in db and 'changes_requested' in db,
-    'project cards act as controls': 'user-select:none' in css and 'role="button"' in web,
 }
 failed = [name for name, ok in checks.items() if not ok]
 for name, ok in checks.items():

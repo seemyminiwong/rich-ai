@@ -1,15 +1,10 @@
 import hashlib
-import html as html_lib
-import io
 import json
-import re
 import secrets
-import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, HttpUrl
 from sqlalchemy import func, select
@@ -22,193 +17,9 @@ from app.tasks import process_project
 
 Path(settings.media_dir).mkdir(parents=True, exist_ok=True)
 
-DEFAULT_STYLE_PROMPT = r'''Create production-ready premium ecommerce rich content that looks native to artline.ua.
-
-PRIORITIES, IN THIS ORDER
-1. Factual accuracy.
-2. Clear product understanding.
-3. Readability and conversion-oriented hierarchy.
-4. Consistent ARTLINE visual language.
-5. Restrained visual polish.
-
-Consistency and usability are more important than decorative creativity. The result must feel designed by one experienced ecommerce designer, not assembled from unrelated AI-generated blocks.
-
-FACTS AND LANGUAGE
-- Use only facts found in the current Product JSON and current project assets.
-- Never invent specifications, compatibility, accessories, certifications, performance, warranty, package contents, software, safety claims or service conditions.
-- Omit any fact that is not confirmed.
-- Write every visible sentence only in the selected project language.
-- Preserve official model names, trademarks, numbers, units and technology names.
-- Explain practical customer value without turning unconfirmed assumptions into facts.
-
-HTML CONTRACT
-- Return HTML only: one complete root <section>...</section>.
-- Use inline CSS only.
-- Allowed elements: section, div, h2, h3, p, ul, li, img, strong, span.
-- Never use h1. The host product page already contains its primary H1.
-- Do not use script, style, JavaScript, forms, buttons, prices, purchase links, tabs, accordions, video, SVG, base64 images, markdown or code fences.
-- Use absolute image URLs supplied by the current project. Never invent an image URL.
-- Add an HTML comment before each of the six major sections.
-- Every element must use box-sizing:border-box where layout dimensions are set.
-
-ROOT
-Desktop:
-<section style="max-width:1240px;margin:0 auto;padding:0 14px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
-
-Mobile:
-<section style="max-width:480px;margin:0 auto;padding:0 10px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
-
-The root canvas must remain transparent. Never give the entire rich content a dark background.
-
-ARTLINE COLOR ROLES
-Use colors by role, not as decoration.
-
-Primary text on light surfaces: #101010.
-Secondary text on light surfaces: #555555 or #69737D.
-Primary text on dark surfaces: #FFFFFF or #F7F8FA.
-Secondary text on dark surfaces: #D0D7DE or #AFB8C1.
-Primary accent: #19BCC9.
-Optional secondary accent: #51C48A or #01743A, only when it clarifies grouping.
-Light surfaces: #FFFFFF and #F7F8FA.
-Light border: #D0D7DE.
-Dark surfaces: #101010, #1A2128 and #252525.
-
-STRICT COLOR RULES
-- At least 70% of the content area must use white, transparent or light surfaces.
-- Use no more than two accent colors on one page.
-- Use #19BCC9 mainly for compact badges, small eyebrow labels, key specification values and subtle borders.
-- Do not use accent color for long headings, subtitles, paragraphs or entire cards.
-- Main headings on light backgrounds must be #101010.
-- Main headings on dark backgrounds must be #FFFFFF or #F7F8FA.
-- Body text must never be turquoise, green, blue, purple or orange.
-- Never place low-contrast dark text over a dark image or bright text over a light image.
-- Do not sample new colors from the product photo.
-- Do not use rainbow palettes, alternating card colors, colored strips or decorative gradients.
-- The only default dark gradient is linear-gradient(135deg,#1A2128 0%,#252525 58%,#35393F 100%).
-- The only default light gradient is linear-gradient(145deg,#FFFFFF 0%,#F7F8FA 100%).
-
-TYPOGRAPHY
-- Use strong hierarchy and comfortable line lengths.
-- Never set font-weight above 900.
-- Hero h2 desktop: 48-56px, line-height 1.02-1.08, weight 800-900.
-- Hero h2 mobile: 32-36px, line-height 1.05-1.12, weight 800-900.
-- Section h2 desktop: 34-40px, line-height 1.08-1.16, weight 800-900.
-- Section h2 mobile: 27-31px, line-height 1.12-1.2, weight 800-900.
-- Card h3: 18-20px, line-height 1.25-1.35, weight 700-800.
-- Body desktop: 16-17px, line-height 1.55-1.7.
-- Body mobile: 14-16px, line-height 1.55-1.65.
-- Limit normal paragraphs to approximately 70 characters per line.
-- Avoid excessive uppercase. Uppercase is allowed only for short badges.
-- Avoid extreme negative letter spacing and oversized marketing slogans.
-
-GEOMETRY AND SPACING
-- Main section radius: 12px.
-- Card and image radius: 12px.
-- Badge and tag radius: 8px.
-- Never use pill radius 999px or radii larger than 12px.
-- Desktop section gap: 22px.
-- Desktop card gap: 16px.
-- Desktop card padding: 22-24px.
-- Desktop large-section padding: 42-48px.
-- Mobile section gap: 14px.
-- Mobile card gap: 12px.
-- Mobile card padding: 18-20px.
-- Mobile large-section padding: 22-24px 16px.
-- Use shadows sparingly. Prefer borders and spacing. Never apply heavy shadows to every card.
-
-PAGE STRUCTURE
-Create exactly six major sections in this order and no others:
-<!-- 1. HERO -->
-<!-- 2. KEY BENEFITS -->
-<!-- 3. CORE FEATURE -->
-<!-- 4. USE SCENARIOS -->
-<!-- 5. ARTLINE CONFIDENCE -->
-<!-- 6. FINAL SUMMARY -->
-
-Do not add a trust strip, promotional banner, introductory block, specification table, FAQ, reviews, gallery, statistics, comparison, brand history or purchase block.
-
-1. HERO
-- Use the generated Hero asset from the current project as the only Hero background.
-- The image already contains the product composition. Do not add a second product image.
-- Put text only inside the image's safe area.
-- Use one continuous overlay gradient, never a separate translucent rectangle behind the copy.
-- Desktop: wide composition, text-safe area on the left, product on the right, min-height 520-580px, padding 54-64px 44-48px.
-- Mobile: use the dedicated mobile Hero asset, product in the upper area and text below it, padding approximately 250-290px 18px 24px.
-- Include one small badge, one h2 product title, one concise benefit-led subtitle and one short paragraph.
-- Keep all Hero text white except the compact badge, which may use #19BCC9.
-- Never use green or turquoise for a multi-line Hero subtitle.
-- Do not repeat the six benefit cards in the Hero.
-
-2. KEY BENEFITS
-- Use exactly six light cards on the transparent root canvas.
-- Desktop: three columns. Mobile: one column.
-- Cards: background #FFFFFF or #F7F8FA, border 1px solid #D0D7DE, radius 12px.
-- Each card communicates one confirmed product fact and one practical benefit.
-- Use a concrete specification as a compact accent-colored value.
-- Use #101010 for the card heading and #555555 for its description.
-- Do not use icons, emoji, illustrations, dark cards, colored card backgrounds, accent strips or abstract labels.
-- Do not place a dark wrapper around this grid.
-
-3. CORE FEATURE
-- Highlight one strongest confirmed differentiator.
-- Use the generated Feature asset from the current project exactly once.
-- Prefer a light section: background #F7F8FA, border 1px solid #D0D7DE.
-- Desktop: balanced two-column layout with text and image, neither side visually dominant.
-- Mobile: text first, image second, one column.
-- Put the image in a simple white image area without a thick frame, heavy shadow or decorative glow.
-- Use #101010 for h2, #555555 for body copy and #19BCC9 only for a short eyebrow label.
-- A dark Core Feature section is allowed only when the supplied Feature image is genuinely dark and contrast remains accessible.
-
-4. USE SCENARIOS
-- Use one light section with one h2, one short introduction and exactly four scenario items.
-- Desktop: two columns. Mobile: one column.
-- Scenarios describe real usage situations and customer outcomes; they do not repeat the specification cards.
-- Use restrained white cards or separated list rows. Do not create four visually unrelated designs.
-
-5. ARTLINE CONFIDENCE
-- Reduce purchase anxiety using only confirmed information.
-- Never invent warranty, installation, operating-system, official-supply or technical-support claims.
-- If project data does not confirm an ARTLINE service statement, use neutral confidence themes based on the product itself, such as clear configuration, convenient integration, maintainable setup or predictable daily use.
-- Use one compact dark introduction panel and up to four light supporting items in one coherent grid.
-- The dark panel uses white heading and #D0D7DE body text. Light items use #101010 headings and #555555 body text.
-- Avoid repeating the ARTLINE name in every item.
-
-6. FINAL SUMMARY
-- Use one restrained dark section with centered content.
-- Include one compact badge, one h2, one short factual summary and exactly three small tags.
-- Tags may use a subtle rgba(25,188,201,.10) background with a restrained turquoise border, but their text remains #F7F8FA.
-- Do not include buttons, links, prices, instructions to buy or repeated technical paragraphs.
-
-DESKTOP AND MOBILE CONSISTENCY
-- Desktop and mobile must express the same facts, same section order, same visual hierarchy and same ARTLINE color roles.
-- Mobile is a deliberate one-column reconstruction, not a scaled desktop canvas.
-- Do not use media queries.
-- Do not allow horizontal scrolling.
-- Keep paragraphs shorter on mobile without changing their meaning.
-
-FINAL SELF-CHECK
-- exactly six major sections in the required order;
-- zero h1 elements;
-- root is transparent and page is mostly light;
-- no more than two accents;
-- accent colors are not used for paragraphs or long headings;
-- all light-surface text has dark readable colors;
-- all dark-surface text has white or light readable colors;
-- Hero has no translucent copy panel and uses the correct project Hero asset;
-- Core Feature uses the correct project Feature asset;
-- exactly six benefit cards, four scenarios and three final tags;
-- all statements are supported by Product JSON;
-- no extra sections, invented URLs or unsupported claims;
-- inline CSS only and all tags closed.
-
-Return production-ready HTML only.'''
-
-DEFAULT_HERO_PROMPT = '''Edit the supplied real product photograph into a premium ARTLINE ecommerce Hero. The reference product is immutable: preserve its exact geometry, proportions, perspective, materials, colors, branding, labels, ports, controls and every visible detail. Change only the environment, lighting and shadows. Create a clean realistic commercial scene with the product on the right and generous uncluttered text-safe negative space on the left. Keep the product fully visible, sharp and correctly grounded. Use restrained ARTLINE dark neutrals with at most a subtle #19BCC9 environmental accent. No text, panels, badges, people, extra products, invented accessories, redesigned hardware, glow, smoke, particles or watermarks.'''
-
-DEFAULT_FEATURE_PROMPT = '''Edit the supplied real product photograph into a clean premium ARTLINE feature image. Preserve the exact product and all visible physical details without recreation or redesign. Use a bright neutral studio environment based on #FFFFFF, #F7F8FA and #EAEEF2, realistic contact shadows and controlled highlights. Keep the complete product centered and clearly readable, occupying about 60-75 percent of the frame. The environment may subtly support one confirmed product benefit but must not add unconfirmed accessories or functionality. No text, labels, captions, people, extra products, dark cinematic background, glow, smoke, particles or watermarks.'''
-
-DEFAULT_NEGATIVE_PROMPT = '''Do not create a new or similar product. Do not redraw, redesign, restyle, recolor, simplify, distort, duplicate or replace the supplied product. Do not alter geometry, proportions, perspective, materials, ports, controls, vents, labels, branding, existing logos or visible hardware. No invented accessories, cables, installations, specifications, text, captions, badges, UI, watermarks, people, hands, clutter, neon cyberpunk styling, smoke, sparks, particles, lens flares, excessive glow, fantasy scenery or completely black backgrounds. Preserve existing physical branding exactly. If accurate reference preservation is not possible, keep the original product and make only minimal background and lighting changes.'''
-BASE_STYLE_NAME = 'ARTLINE Base'
+DEFAULT_STYLE_PROMPT = 'Create premium ecommerce rich content in the ARTLINE design code. Use only verified product facts. Return one valid HTML section with inline CSS. Interface palette: #101010, #1A2128, #252525, #2F3137, #35393F, #434343, #555555, #69737D, #6E7781, #808080, #999999, #9E9EA4, #AFB8C1, #BBBBBB, #D0D7DE, #F5F7FA, #F7F8FA. Accent palette: #19BCC9, #37AEE2, #51C48A, #6890E4, #6D64BB, #735FF2, #8FAE4F, #C7BEFF, #CD7D74, #E8485E, #EB5757, #F7987C, #FFC77E. Keep a cohesive ARTLINE visual language: clear hierarchy, restrained shadows, consistent radii, readable typography and responsive desktop/mobile variants.'
+DEFAULT_HERO_PROMPT = 'Photorealistic premium wide ecommerce hero. Preserve the exact product, place it in a realistic usage environment on the right, keep clean dark negative space on the left, no text or invented accessories.'
+DEFAULT_FEATURE_PROMPT = 'Clean photorealistic product visualization on a light neutral background. Preserve exact geometry and branding, no text or invented accessories.'
 
 
 def seed():
@@ -216,13 +27,8 @@ def seed():
         user = db.scalar(select(User).where(User.email == settings.admin_email))
         if not user:
             db.add(User(email=settings.admin_email, name='Адміністратор', password_hash=hash_password(settings.admin_password), role=Role.admin))
-        base_style = db.scalar(select(Style).where(Style.name == BASE_STYLE_NAME))
-        if not base_style:
-            for item in db.scalars(select(Style)).all():
-                item.is_default = False
-            base_style=Style(name=BASE_STYLE_NAME, description='Системний базовий стиль ARTLINE із сучасною світлою композицією та суворими правилами контрасту', prompt=DEFAULT_STYLE_PROMPT, hero_prompt=DEFAULT_HERO_PROMPT, feature_prompt=DEFAULT_FEATURE_PROMPT, negative_prompt=DEFAULT_NEGATIVE_PROMPT, score_json=json.dumps({'consistency':96,'readability':97,'brand_fit':97}), is_default=True)
-            db.add(base_style);db.flush()
-            db.add(StyleVersion(style_id=base_style.id,version=1,prompt=base_style.prompt,hero_prompt=base_style.hero_prompt,feature_prompt=base_style.feature_prompt))
+        if not db.scalar(select(Style).limit(1)):
+            db.add(Style(name='ARTLINE Unified', description='Базовий стиль у фірмовій палітрі ARTLINE', prompt=DEFAULT_STYLE_PROMPT, hero_prompt=DEFAULT_HERO_PROMPT, feature_prompt=DEFAULT_FEATURE_PROMPT, negative_prompt='No text, watermarks, fake labels, invented accessories or distorted product geometry.', score_json=json.dumps({'consistency':92,'readability':94,'brand_fit':96}), is_default=True))
         if not db.scalar(select(WorkflowTemplate).limit(1)):
             db.add(WorkflowTemplate(name='ARTLINE Full Pipeline', steps_json=json.dumps(['research','images','content','image_critic','html_critic','fact_critic','review'], ensure_ascii=False), is_default=True))
         db.commit()
@@ -235,7 +41,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title='ARTLINE Rich Studio API', version='11.5', lifespan=lifespan)
+app = FastAPI(title='ARTLINE Rich Studio API', version='11.4', lifespan=lifespan)
 app.mount('/media', StaticFiles(directory=settings.media_dir), name='media')
 
 class Login(BaseModel): email: str; password: str
@@ -320,8 +126,6 @@ class BenchmarkIn(BaseModel):
     competitor_url: HttpUrl
 class QueueIn(BaseModel):
     action: str
-class RerunIn(BaseModel):
-    style_id: str | None = None
 class CriticIn(BaseModel):
     auto_fix: bool = False
 
@@ -340,8 +144,8 @@ def user_dict(x):
     return {'id':x.id,'email':x.email,'name':x.name,'role':x.role.value,'active':x.active,'created_at':x.created_at,'last_login_at':x.last_login_at}
 def style_dict(x): return {'id':x.id,'name':x.name,'description':x.description,'prompt':x.prompt,'hero_prompt':x.hero_prompt,'feature_prompt':x.feature_prompt,'negative_prompt':x.negative_prompt,'score':json.loads(x.score_json or '{}'),'preview_html':x.preview_html,'is_default':x.is_default}
 def artifact_dict(x): return {'id':x.id,'language':x.language,'variant':x.variant,'html':x.html,'version':x.version,'created_at':x.created_at}
-def project_dict(p, full=False, style_name=''):
-    r={'id':p.id,'name':p.name,'source_url':p.source_url,'style_id':p.style_id,'style_name':style_name,'owner_id':p.owner_id,'status':p.status.value,'stage':p.stage,'progress':p.progress,
+def project_dict(p, full=False):
+    r={'id':p.id,'name':p.name,'source_url':p.source_url,'style_id':p.style_id,'owner_id':p.owner_id,'status':p.status.value,'stage':p.stage,'progress':p.progress,
        'languages':[x for x in p.languages.split(',') if x],'variants':[x for x in p.variants.split(',') if x],'text_model':p.text_model,'image_model':p.image_model,'image_quality':p.image_quality,
        'custom_hero_url':p.custom_hero_url,'custom_feature_url':p.custom_feature_url,'product_category':p.product_category,'error':p.error,'duration_seconds':p.duration_seconds,'input_tokens':p.input_tokens,'output_tokens':p.output_tokens,
        'image_count':p.image_count,'text_request_count':p.text_request_count,'image_request_count':p.image_request_count,'text_cost':p.text_cost,'image_cost':p.image_cost,'estimated_cost':p.estimated_cost,
@@ -352,7 +156,7 @@ def project_dict(p, full=False, style_name=''):
     return r
 
 @app.get('/health')
-def health(): return {'status':'ok','version':'11.5'}
+def health(): return {'status':'ok','version':'11.4'}
 @app.post('/api/auth/login')
 def login(payload: Login, db: Session=Depends(get_db)):
     user=db.scalar(select(User).where(User.email==payload.email))
@@ -455,9 +259,7 @@ def analyze_style(payload:StyleAnalyzeIn,user=Depends(require_roles(Role.admin,R
     return {'score':{'consistency':consistency,'readability':readability,'brand_fit':brand_fit},'issues':issues,'ready':min(consistency,readability,brand_fit)>=70}
 
 @app.get('/api/projects')
-def projects(db:Session=Depends(get_db),user=Depends(current)):
-    styles_by_id={x.id:x.name for x in db.scalars(select(Style)).all()}
-    return [project_dict(x,style_name=styles_by_id.get(x.style_id,'')) for x in db.scalars(select(Project).order_by(Project.created_at.desc())).all()]
+def projects(db:Session=Depends(get_db),user=Depends(current)): return [project_dict(x) for x in db.scalars(select(Project).order_by(Project.created_at.desc())).all()]
 @app.post('/api/projects')
 def create_project(payload:ProjectIn,db:Session=Depends(get_db),user=Depends(require_roles(Role.admin,Role.editor))):
     style=db.get(Style,payload.style_id) if payload.style_id else db.scalar(select(Style).where(Style.is_default==True))
@@ -466,130 +268,23 @@ def create_project(payload:ProjectIn,db:Session=Depends(get_db),user=Depends(req
     if not langs or not vars: raise HTTPException(400,'Оберіть щонайменше одну мову та формат')
     p=Project(name=payload.name.strip() or 'Определение товара…',source_url=str(payload.source_url),style_id=style.id,owner_id=user.id,languages=','.join(dict.fromkeys(langs)),variants=','.join(dict.fromkeys(vars)),
       text_model=payload.text_model or settings.openai_text_model,image_model=payload.image_model or settings.openai_image_model,image_quality=payload.image_quality if payload.image_quality in {'low','medium','high'} else 'medium',custom_hero_url=payload.custom_hero_url.strip(),custom_feature_url=payload.custom_feature_url.strip(),status=Status.queued,stage='queued')
-    db.add(p); db.flush(); audit(db,user,'project.create','project',p.id); db.commit(); db.refresh(p); process_project.delay(p.id); return project_dict(p,style_name=style.name)
+    db.add(p); db.flush(); audit(db,user,'project.create','project',p.id); db.commit(); db.refresh(p); process_project.delay(p.id); return project_dict(p)
 @app.get('/api/projects/{project_id}')
 def project(project_id:str,db:Session=Depends(get_db),user=Depends(current)):
     p=db.get(Project,project_id)
     if not p: raise HTTPException(404,'Проєкт не знайдено')
-    style=db.get(Style,p.style_id)
-    r=project_dict(p,True,style.name if style else '')
+    r=project_dict(p,True)
     r['reviews']=[{'id':x.id,'reviewer_id':x.reviewer_id,'decision':x.decision,'comment':x.comment,'checklist':json.loads(x.checklist_json or '{}'),'created_at':x.created_at} for x in db.scalars(select(Review).where(Review.project_id==p.id).order_by(Review.created_at.desc())).all()]
     r['assets']=[{'id':x.id,'kind':x.kind,'label':x.label,'url':x.url,'prompt':x.prompt,'model':x.model,'width':x.width,'height':x.height,'cost':x.cost,'metadata':json.loads(x.metadata_json or '{}'),'created_at':x.created_at} for x in db.scalars(select(Asset).where(Asset.project_id==p.id).order_by(Asset.created_at.desc())).all()]
     r['critics']=[{'id':x.id,'type':x.critic_type,'score':x.score,'summary':x.summary,'issues':json.loads(x.issues_json or '[]'),'suggestions':json.loads(x.suggestions_json or '[]'),'auto_fixed':x.auto_fixed,'created_at':x.created_at} for x in db.scalars(select(CriticReport).where(CriticReport.project_id==p.id).order_by(CriticReport.created_at.desc())).all()]
     return r
-
-def _archive_name(value:str, fallback='file') -> str:
-    cleaned=re.sub(r'[^A-Za-z0-9._-]+','-',value or '').strip('-._')
-    return cleaned[:90] or fallback
-
-@app.get('/api/projects/{project_id}/archive')
-def project_archive(project_id:str,db:Session=Depends(get_db),user=Depends(current)):
-    """Download the latest rich HTML variants and every available project image."""
-    import httpx
-    p=db.get(Project,project_id)
-    if not p: raise HTTPException(404,'Проєкт не знайдено')
-    style=db.get(Style,p.style_id)
-    artifacts=db.scalars(select(Artifact).where(Artifact.project_id==p.id).order_by(Artifact.version)).all()
-    if not artifacts: raise HTTPException(409,'У проєкті ще немає готового HTML')
-    latest={}
-    for artifact in artifacts:
-        latest[(artifact.language,artifact.variant)]=artifact
-    assets=db.scalars(select(Asset).where(Asset.project_id==p.id).order_by(Asset.created_at)).all()
-    stream=io.BytesIO()
-    image_paths={}
-    skipped=[]
-    media_root=Path(settings.media_dir).resolve()
-    with zipfile.ZipFile(stream,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as archive:
-        with httpx.Client(timeout=20,follow_redirects=True) as http:
-            for asset in assets:
-                if not asset.url or asset.url in image_paths:
-                    continue
-                try:
-                    data=b''
-                    suffix=Path(asset.url.split('?',1)[0]).suffix.lower()
-                    if suffix not in {'.png','.jpg','.jpeg','.webp','.avif'}:
-                        suffix='.webp'
-                    if asset.url.startswith('/media/'):
-                        candidate=(media_root / asset.url.removeprefix('/media/')).resolve()
-                        if media_root not in candidate.parents and candidate != media_root:
-                            raise ValueError('unsafe media path')
-                        data=candidate.read_bytes()
-                    elif asset.url.startswith(('http://','https://')):
-                        response=http.get(asset.url)
-                        response.raise_for_status()
-                        data=response.content
-                        content_type=response.headers.get('content-type','').lower()
-                        if 'png' in content_type: suffix='.png'
-                        elif 'jpeg' in content_type: suffix='.jpg'
-                        elif 'webp' in content_type: suffix='.webp'
-                    if not data:
-                        raise ValueError('empty image')
-                    if data.startswith(b'\x89PNG\r\n\x1a\n'):
-                        suffix='.png'
-                    elif data.startswith(b'\xff\xd8\xff'):
-                        suffix='.jpg'
-                    elif data[:4]==b'RIFF' and data[8:12]==b'WEBP':
-                        suffix='.webp'
-                    filename=f"{_archive_name(asset.label,'image')}-{asset.id[:8]}{suffix}"
-                    target=f'images/{filename}'
-                    archive.writestr(target,data)
-                    image_paths[asset.url]=target
-                except Exception as exc:
-                    skipped.append({'url':asset.url,'label':asset.label,'reason':str(exc)})
-
-        exported=[]
-        for (language,variant),artifact in sorted(latest.items()):
-            markup=artifact.html
-            for source,target in image_paths.items():
-                markup=markup.replace(source,f'../{target}')
-            document=f'''<!doctype html>
-<html lang="{language}">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_lib.escape(p.name)}</title></head>
-<body style="margin:0;background:#FFFFFF">{markup}</body>
-</html>'''
-            filename=f'rich-{language}-{variant}.html'
-            archive.writestr(f'html/{filename}',document)
-            archive.writestr(f'fragments/{filename}',markup)
-            exported.append({'language':language,'variant':variant,'version':artifact.version,'file':f'html/{filename}'})
-
-        manifest={
-            'project_id':p.id,'name':p.name,'source_url':p.source_url,
-            'style':{'id':p.style_id,'name':style.name if style else ''},
-            'text_model':p.text_model,'image_model':p.image_model,
-            'exported_artifacts':exported,
-            'images':image_paths,'skipped_images':skipped,
-            'generated_at':datetime.utcnow().isoformat()+'Z',
-        }
-        archive.writestr('manifest.json',json.dumps(manifest,ensure_ascii=False,indent=2))
-        if style:
-            archive.writestr('style.json',json.dumps({'id':style.id,'name':style.name,'description':style.description,'prompt':style.prompt,'hero_prompt':style.hero_prompt,'feature_prompt':style.feature_prompt,'negative_prompt':style.negative_prompt},ensure_ascii=False,indent=2))
-        archive.writestr('README.txt',f'''ARTLINE Rich Studio export
-
-Project: {p.name}
-Source: {p.source_url}
-Style: {style.name if style else 'Unknown'}
-
-html/ contains standalone latest HTML files.
-fragments/ contains section fragments for insertion into the ARTLINE editor.
-images/ contains project images and generated assets.
-manifest.json contains generation metadata.
-''')
-    stream.seek(0)
-    audit(db,user,'project.archive','project',p.id,{'artifacts':len(latest),'images':len(image_paths)});db.commit()
-    filename=f'artline-rich-{_archive_name(p.name,p.id[:8])}.zip'
-    return StreamingResponse(stream,media_type='application/zip',headers={'Content-Disposition':f'attachment; filename="{filename}"'})
-
 @app.post('/api/projects/{project_id}/run')
-def rerun(project_id:str,payload:RerunIn | None=None,db:Session=Depends(get_db),user=Depends(require_roles(Role.admin,Role.editor))):
+def rerun(project_id:str,db:Session=Depends(get_db),user=Depends(require_roles(Role.admin,Role.editor))):
     p=db.get(Project,project_id)
     if not p: raise HTTPException(404,'Проєкт не знайдено')
     if p.status==Status.processing: raise HTTPException(409,'Проєкт уже виконується')
-    if payload and payload.style_id:
-        style=db.get(Style,payload.style_id)
-        if not style: raise HTTPException(400,'Обраний стиль не знайдено')
-        p.style_id=style.id
     p.status=Status.queued;p.stage='queued';p.progress=0;p.error='';p.input_tokens=0;p.output_tokens=0;p.image_count=0;p.text_request_count=0;p.image_request_count=0;p.text_cost=0;p.image_cost=0;p.estimated_cost=0
-    audit(db,user,'project.rerun','project',p.id,{'style_id':p.style_id});db.commit();process_project.delay(p.id);return {'queued':True,'style_id':p.style_id}
+    audit(db,user,'project.rerun','project',p.id);db.commit();process_project.delay(p.id);return {'queued':True}
 @app.post('/api/projects/{project_id}/review')
 def review(project_id:str,payload:ReviewIn,db:Session=Depends(get_db),user=Depends(require_roles(Role.admin,Role.editor,Role.reviewer))):
     p=db.get(Project,project_id)
@@ -663,40 +358,22 @@ def all_assets(db:Session=Depends(get_db),user=Depends(current)):
     return [{'id':x.id,'project_id':x.project_id,'kind':x.kind,'label':x.label,'url':x.url,'prompt':x.prompt,'model':x.model,'width':x.width,'height':x.height,'cost':x.cost,'metadata':json.loads(x.metadata_json or '{}'),'created_at':x.created_at} for x in rows]
 
 def _style_ai_payload(name, brief, reference_url=''):
-    prompt=f'''Create a focused addendum for the fixed ARTLINE ecommerce design system. Style name: {name}.
+    palette='ARTLINE palette: #101010 #1A2128 #252525 #2F3137 #35393F #434343 #555555 #69737D #6E7781 #808080 #999999 #9E9EA4 #AFB8C1 #BBBBBB #D0D7DE #F5F7FA #F7F8FA; accents #19BCC9 #37AEE2 #51C48A #6890E4 #6D64BB #735FF2 #8FAE4F #C7BEFF #CD7D74 #E8485E #EB5757 #F7987C #FFC77E.'
+    prompt=f'''Create a complete ecommerce rich-content design style named {name}. {palette}
 Brief: {brief}
 Reference URL: {reference_url}
-
-The fixed ARTLINE foundation already controls HTML validity, six-section structure, responsive behavior, factual accuracy, 12px geometry and typography. Do not replace or contradict it. The returned style_prompt must contain only useful category-specific art direction: content emphasis, section rhythm, image mood and product-category storytelling.
-
-Mandatory color roles:
-- #101010 headings and #555555 body text on light surfaces;
-- #FFFFFF headings and #D0D7DE body text on dark surfaces;
-- #19BCC9 only for compact badges, eyebrow labels, small specification values and subtle borders;
-- never use accent colors for paragraphs or long headings;
-- at least 70 percent light or transparent surfaces;
-- no more than two accent colors;
-- no alternating card colors, decorative strips, excessive gradients or repeated heavy shadows.
-
-Return strict JSON with keys description, style_prompt, hero_prompt, feature_prompt, negative_prompt, score (object with consistency, readability, brand_fit integers 0-100), preview_html. The preview_html must be a compact light demo section using inline CSS only, 12px radius, accessible text contrast and no h1.'''
+Return strict JSON with keys description, style_prompt, hero_prompt, feature_prompt, negative_prompt, score (object with consistency, readability, brand_fit integers 0-100), preview_html. The preview_html must be a compact safe demo section using inline CSS only.'''
     return prompt
 
 @app.post('/api/styles/generate')
 def generate_style(payload:StyleGenerateIn,user=Depends(require_roles(Role.admin,Role.editor))):
     model=payload.model or settings.openai_text_model
-    fallback={'description':'Згенерований ARTLINE-стиль','style_prompt':DEFAULT_STYLE_PROMPT+'\n'+payload.brief,'hero_prompt':DEFAULT_HERO_PROMPT,'feature_prompt':DEFAULT_FEATURE_PROMPT,'negative_prompt':DEFAULT_NEGATIVE_PROMPT,'score':{'consistency':96,'readability':97,'brand_fit':97},'preview_html':'<section style="padding:32px;border-radius:12px;background:#F7F8FA;border:1px solid #D0D7DE;color:#101010;font-family:Arial;box-sizing:border-box"><div style="font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#19BCC9">ARTLINE STYLE</div><h2 style="font-size:36px;line-height:1.1;margin:12px 0;color:#101010">Premium product presentation</h2><p style="max-width:620px;margin:0;color:#555555;line-height:1.6">Unified ARTLINE visual system preview.</p></section>','model':model}
+    fallback={'description':'Згенерований ARTLINE-стиль','style_prompt':DEFAULT_STYLE_PROMPT+'\n'+payload.brief,'hero_prompt':DEFAULT_HERO_PROMPT,'feature_prompt':DEFAULT_FEATURE_PROMPT,'negative_prompt':'No text, watermark, distortion or invented accessories.','score':{'consistency':90,'readability':92,'brand_fit':95},'preview_html':'<section style="padding:32px;border-radius:24px;background:#101010;color:#F5F7FA;font-family:Arial"><small style="color:#19BCC9">ARTLINE STYLE</small><h2 style="font-size:36px;margin:12px 0">Premium product presentation</h2><p style="color:#AFB8C1">Unified ARTLINE visual system preview.</p></section>','model':model}
     if not settings.openai_api_key: return fallback
     try:
         from openai import OpenAI
         r=OpenAI(api_key=settings.openai_api_key).responses.create(model=model,input=_style_ai_payload(payload.name,payload.brief,payload.reference_url),max_output_tokens=6000,store=False)
-        raw=r.output_text.strip(); raw=raw[raw.find('{'):raw.rfind('}')+1]; data=json.loads(raw)
-        addendum=str(data.get('style_prompt') or '').strip()
-        data['style_prompt']=DEFAULT_STYLE_PROMPT + (f'\n\nSTYLE-SPECIFIC ADDENDUM:\n{addendum}' if addendum else '')
-        data['hero_prompt']=str(data.get('hero_prompt') or DEFAULT_HERO_PROMPT)
-        data['feature_prompt']=str(data.get('feature_prompt') or DEFAULT_FEATURE_PROMPT)
-        data['negative_prompt']=str(data.get('negative_prompt') or DEFAULT_NEGATIVE_PROMPT)
-        data['model']=model
-        return data
+        raw=r.output_text.strip(); raw=raw[raw.find('{'):raw.rfind('}')+1]; data=json.loads(raw); data['model']=model; return data
     except Exception as exc:
         fallback['warning']=str(exc); return fallback
 

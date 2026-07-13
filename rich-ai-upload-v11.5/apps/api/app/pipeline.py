@@ -495,7 +495,6 @@ Never copy source-page sentences in another language. Translate and rewrite ever
 Variant: {variant}. Layout: {layout}. Use inline CSS only.
 SEO heading rule: never use <h1>. The product page already contains its primary H1. Use <h2> for the Hero product title and major section headings, and <h3> for card titles.
 Embedding rule: the rich content is displayed on a light ARTLINE product page. Keep the root canvas transparent or white and make the majority of content surfaces light. Dark styling may be used inside selected high-contrast sections such as Hero or the final section, but never as a full-page background.
-Mandatory visual guardrails: use #101010 for headings and #555555 or #69737D for paragraphs on light surfaces; use #FFFFFF or #F7F8FA for headings and #D0D7DE or #AFB8C1 for paragraphs on dark surfaces. Use #19BCC9 only for compact badges, eyebrow labels, small specification values and subtle borders. Never use turquoise, green, blue, purple or orange for paragraphs or multi-line headings. At least 70 percent of the content area must remain light or transparent. Use 12px radii for sections and cards and 8px for badges. Do not use decorative colored strips, alternating card colors, checkerboard layouts, excessive gradients or repeated heavy shadows.
 The style prompt below is the primary design specification. Follow it precisely unless it conflicts with factual accuracy or HTML validity.
 STYLE PROMPT:
 {style.prompt}
@@ -506,7 +505,7 @@ Product JSON: {json.dumps(product, ensure_ascii=False)}"""
 
 def _deterministic_html(product, style, language, variant, hero, feature):
     labels = LANG_LABELS.get(language, LANG_LABELS['ru'])
-    width = '480px' if variant == 'mobile' else '1240px'
+    width = '720px' if variant == 'mobile' else '1240px'
     columns = '1fr' if variant == 'mobile' else 'repeat(3,1fr)'
     feature_columns = '1fr' if variant == 'mobile' else '1.15fr .85fr'
     name = html_lib.escape(product.get('name') or 'Product')
@@ -546,26 +545,21 @@ def _deterministic_html(product, style, language, variant, hero, feature):
         f'<div style="padding:26px;border-radius:12px;background:#F7F8FA;border:1px solid #D0D7DE;color:#101010"><div style="font-size:25px;font-weight:900;color:{"#19BCC9" if i<3 else "#01743A"};margin-bottom:10px">{html_lib.escape(fact[:55])}</div><p style="margin:0;line-height:1.55;color:#555">{html_lib.escape(fact)}</p></div>'
         for i, fact in enumerate(facts)
     )
-    hero_css = f"linear-gradient(90deg,rgba(26,33,40,.96) 0%,rgba(26,33,40,.82) 42%,rgba(37,37,37,.16) 100%),url('{hero}') center/cover no-repeat" if hero else 'linear-gradient(135deg,#1A2128 0%,#252525 58%,#35393F 100%)'
-    image_html = f'<img src="{html_lib.escape(feature)}" alt="{name}" style="width:100%;max-height:360px;object-fit:contain;display:block">' if feature else f'<div style="font-size:42px;font-weight:900;color:#101010">{brand}</div>'
+    hero_css = f"linear-gradient(90deg,rgba(5,5,5,.96),rgba(18,8,0,.18)),url('{hero}') center/cover no-repeat" if hero else 'linear-gradient(135deg,#101010,#1A2128)'
+    image_html = f'<img src="{html_lib.escape(feature)}" alt="{name}" style="width:100%;max-height:360px;object-fit:contain">' if feature else f'<div style="font-size:54px;font-weight:950;color:#19BCC9">{brand}</div>'
     hero_height = '420px' if variant == 'mobile' else '560px'
     hero_padding = '42px 24px' if variant == 'mobile' else '72px 46px'
     hero_title_size = '38px' if variant == 'mobile' else '58px'
     h2_size = '32px' if variant == 'mobile' else '42px'
     trust_columns = '1fr' if variant == 'mobile' else '.9fr 1.1fr'
-    return f'''<section style="max-width:{width};margin:0 auto;padding:0 14px;font-family:Roboto,Inter,Arial,sans-serif;box-sizing:border-box;color:#101010">
-<!-- 1. HERO -->
-<div style="min-height:{hero_height};padding:{hero_padding};border-radius:12px;background:{hero_css};display:flex;align-items:center;margin-bottom:22px;box-sizing:border-box"><div style="max-width:620px"><div style="display:inline-block;padding:7px 12px;border-radius:8px;background:#19BCC9;color:#101010;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase">{brand}</div><h2 style="font-size:{hero_title_size};line-height:1.06;font-weight:900;margin:16px 0;color:#FFFFFF">{name}</h2><p style="max-width:620px;margin:0;font-size:17px;line-height:1.65;color:#D0D7DE">{description}</p></div></div>
-<!-- 2. KEY BENEFITS -->
-<div style="display:grid;grid-template-columns:{columns};gap:16px;margin-bottom:22px;box-sizing:border-box">{cards}</div>
-<!-- 3. CORE FEATURE -->
-<div style="display:grid;grid-template-columns:{feature_columns};gap:30px;align-items:center;padding:42px;border-radius:12px;background:#F7F8FA;border:1px solid #D0D7DE;color:#101010;margin-bottom:22px;box-sizing:border-box"><div><div style="color:#19BCC9;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase">{labels['technology']}</div><h2 style="font-size:{h2_size};line-height:1.12;font-weight:900;margin:12px 0;color:#101010">{name}</h2><p style="margin:0;line-height:1.7;color:#555555">{description}</p></div><div style="background:#FFFFFF;border-radius:12px;border:1px solid #D0D7DE;padding:22px;text-align:center;box-sizing:border-box">{image_html}</div></div>
-<!-- 4. USE SCENARIOS -->
-<div style="padding:42px;border-radius:12px;background:#F7F8FA;border:1px solid #D0D7DE;color:#101010;margin-bottom:22px;box-sizing:border-box"><div style="color:#19BCC9;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase">{labels['design']}</div><h2 style="font-size:{h2_size};line-height:1.12;font-weight:900;margin:12px 0;color:#101010">{fallback_copy['use']}</h2><p style="max-width:760px;margin:0;line-height:1.7;color:#555555">{description}</p></div>
-<!-- 5. ARTLINE CONFIDENCE -->
-<div style="display:grid;grid-template-columns:{trust_columns};gap:16px;margin-bottom:22px;box-sizing:border-box"><div style="padding:36px;border-radius:12px;background:linear-gradient(135deg,#1A2128 0%,#252525 58%,#35393F 100%);border:1px solid rgba(25,188,201,.28);box-sizing:border-box"><div style="color:#19BCC9;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase">ARTLINE</div><h2 style="font-size:{h2_size};line-height:1.12;font-weight:900;margin:12px 0;color:#FFFFFF">{labels['service']}</h2><p style="margin:0;color:#D0D7DE;line-height:1.65">{fallback_copy['experience']}</p></div><div style="padding:36px;border-radius:12px;background:#F7F8FA;border:1px solid #D0D7DE;color:#101010;box-sizing:border-box"><h3 style="font-size:20px;line-height:1.3;font-weight:800;margin:0 0 12px;color:#101010">{name}</h3><p style="margin:0;color:#555555;line-height:1.65">{description}</p></div></div>
-<!-- 6. FINAL SUMMARY -->
-<div style="padding:52px 28px;border-radius:12px;text-align:center;background:linear-gradient(135deg,#1A2128 0%,#252525 58%,#35393F 100%);border:1px solid rgba(25,188,201,.28);box-sizing:border-box"><div style="color:#19BCC9;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase">{brand}</div><h2 style="font-size:{h2_size};line-height:1.12;font-weight:900;margin:12px 0;color:#FFFFFF">{labels['cta']}</h2><p style="max-width:700px;margin:0 auto;color:#D0D7DE;line-height:1.65">{description}</p></div>
+    return f'''<section style="max-width:{width};margin:0 auto;padding:0 14px;font-family:Roboto,Inter,Arial,sans-serif;box-sizing:border-box;color:#f5f7fa">
+<div style="padding:14px 18px;border-radius:12px;background:linear-gradient(135deg,#2CAEB4,#6890E4);margin-bottom:18px"><strong>{brand}</strong> - {labels['trust']}</div>
+<div style="min-height:{hero_height};padding:{hero_padding};border-radius:34px;background:{hero_css};display:flex;align-items:center;margin-bottom:22px"><div style="max-width:660px"><div style="color:#19BCC9;font-weight:900;text-transform:uppercase">{brand}</div><h2 style="font-size:{hero_title_size};line-height:1;margin:14px 0">{name}</h2><p style="font-size:17px;line-height:1.65;color:#e6e6e6">{description}</p></div></div>
+<div style="display:grid;grid-template-columns:{columns};gap:16px;margin-bottom:22px">{cards}</div>
+<div style="display:grid;grid-template-columns:{feature_columns};gap:30px;align-items:center;padding:42px;border-radius:34px;background:linear-gradient(135deg,#101010,#1A2128);margin-bottom:22px"><div><div style="color:#19BCC9;font-weight:900;text-transform:uppercase">{labels['technology']}</div><h2 style="font-size:{h2_size}">{name}</h2><p style="line-height:1.7;color:#d0d7de">{description}</p></div><div style="background:#f5f7fa;border-radius:28px;padding:22px;text-align:center">{image_html}</div></div>
+<div style="padding:42px;border-radius:34px;background:#f5f7fa;color:#101010;margin-bottom:22px"><div style="color:#19BCC9;font-weight:900;text-transform:uppercase">{labels['design']}</div><h2>{labels['benefits']}</h2><p style="line-height:1.7;color:#555">{description}</p></div>
+<div style="display:grid;grid-template-columns:{trust_columns};gap:16px;margin-bottom:22px"><div style="padding:36px;border-radius:34px;background:#101010;border:1px solid #19BCC955"><h2>{labels['service']}</h2><p style="color:#d0d7de;line-height:1.65">{brand}</p></div><div style="padding:36px;border-radius:34px;background:#f5f7fa;color:#101010"><h3>{name}</h3><p style="color:#555;line-height:1.65">{description}</p></div></div>
+<div style="padding:52px 28px;border-radius:34px;text-align:center;background:linear-gradient(135deg,#101010,#1A2128);border:1px solid #19BCC955"><div style="color:#19BCC9;font-weight:900">{brand}</div><h2>{labels['cta']}</h2><p style="max-width:700px;margin:auto;color:#d0d7de;line-height:1.65">{description}</p></div>
 </section>'''
 
 
