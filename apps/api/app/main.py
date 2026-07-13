@@ -1,6 +1,7 @@
 import hashlib
 import json
 import secrets
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException
@@ -9,15 +10,12 @@ from pydantic import BaseModel, Field, HttpUrl
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from app.config import settings
-from app.db import Base, SessionLocal, engine, get_db
+from app.db import Base, SessionLocal, engine, ensure_schema, get_db
 from app.models import Artifact, Asset, AuditLog, BenchmarkRun, BrandProfile, CriticReport, Event, Invite, KnowledgeDocument, Project, PublishTarget, Review, Role, Status, Style, StyleVersion, User, WorkflowTemplate
 from app.security import current, hash_password, token, verify
 from app.tasks import process_project
 
-Base.metadata.create_all(engine)
 Path(settings.media_dir).mkdir(parents=True, exist_ok=True)
-app = FastAPI(title='ARTLINE Rich Studio API', version='11.2')
-app.mount('/media', StaticFiles(directory=settings.media_dir), name='media')
 
 DEFAULT_STYLE_PROMPT = 'Create premium ecommerce rich content in the ARTLINE design code. Use only verified product facts. Return one valid HTML section with inline CSS. Interface palette: #101010, #1A2128, #252525, #2F3137, #35393F, #434343, #555555, #69737D, #6E7781, #808080, #999999, #9E9EA4, #AFB8C1, #BBBBBB, #D0D7DE, #F5F7FA, #F7F8FA. Accent palette: #19BCC9, #37AEE2, #51C48A, #6890E4, #6D64BB, #735FF2, #8FAE4F, #C7BEFF, #CD7D74, #E8485E, #EB5757, #F7987C, #FFC77E. Keep a cohesive ARTLINE visual language: clear hierarchy, restrained shadows, consistent radii, readable typography and responsive desktop/mobile variants.'
 DEFAULT_HERO_PROMPT = 'Photorealistic premium wide ecommerce hero. Preserve the exact product, place it in a realistic usage environment on the right, keep clean dark negative space on the left, no text or invented accessories.'
@@ -34,7 +32,17 @@ def seed():
         if not db.scalar(select(WorkflowTemplate).limit(1)):
             db.add(WorkflowTemplate(name='ARTLINE Full Pipeline', steps_json=json.dumps(['research','images','content','image_critic','html_critic','fact_critic','review'], ensure_ascii=False), is_default=True))
         db.commit()
-seed()
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    ensure_schema()
+    Base.metadata.create_all(engine)
+    seed()
+    yield
+
+
+app = FastAPI(title='ARTLINE Rich Studio API', version='11.3', lifespan=lifespan)
+app.mount('/media', StaticFiles(directory=settings.media_dir), name='media')
 
 class Login(BaseModel): email: str; password: str
 class RegisterIn(BaseModel): token: str; name: str = Field(min_length=2, max_length=120); password: str = Field(min_length=8, max_length=200)
@@ -48,7 +56,8 @@ class UserCreate(BaseModel):
     role: Role = Role.viewer
 class ProjectIn(BaseModel):
     name: str = ''; source_url: HttpUrl; style_id: str | None = None
-    languages: list[str] = ['ru']; variants: list[str] = ['desktop','mobile']
+    languages: list[str] = Field(default_factory=lambda: ['ru'])
+    variants: list[str] = Field(default_factory=lambda: ['desktop', 'mobile'])
     text_model: str | None = None; image_model: str | None = None; image_quality: str = 'medium'
     custom_hero_url: str = ''; custom_feature_url: str = ''
 class StyleIn(BaseModel):
@@ -58,7 +67,7 @@ class StyleIn(BaseModel):
     hero_prompt: str = ''
     feature_prompt: str = ''
     negative_prompt: str = ''
-    score: dict = {}
+    score: dict = Field(default_factory=dict)
     preview_html: str = ''
     is_default: bool = False
 class StyleGenerateIn(BaseModel):
@@ -78,13 +87,13 @@ class HtmlIn(BaseModel): html: str
 class ReviewIn(BaseModel):
     decision: str
     comment: str = ''
-    checklist: dict[str, bool] = {}
+    checklist: dict[str, bool] = Field(default_factory=dict)
 
 class BrandIn(BaseModel):
     name: str
     description: str = ''
     design_dna: str = ''
-    rules: dict = {}
+    rules: dict = Field(default_factory=dict)
 class KnowledgeIn(BaseModel):
     brand_id: str | None = None
     title: str
@@ -93,11 +102,11 @@ class KnowledgeIn(BaseModel):
     tags: str = ''
 class PlaygroundIn(BaseModel):
     prompt: str
-    product_json: dict = {}
+    product_json: dict = Field(default_factory=dict)
     model: str | None = None
 class CompareIn(BaseModel):
     prompt: str
-    product_json: dict = {}
+    product_json: dict = Field(default_factory=dict)
     models: list[str]
 class WorkflowIn(BaseModel):
     name: str
@@ -107,7 +116,7 @@ class TargetIn(BaseModel):
     name: str
     target_type: str = 'webhook'
     endpoint: str = ''
-    config: dict = {}
+    config: dict = Field(default_factory=dict)
     active: bool = True
 class PublishIn(BaseModel):
     target_id: str
@@ -147,7 +156,7 @@ def project_dict(p, full=False):
     return r
 
 @app.get('/health')
-def health(): return {'status':'ok','version':'11.2'}
+def health(): return {'status':'ok','version':'11.3'}
 @app.post('/api/auth/login')
 def login(payload: Login, db: Session=Depends(get_db)):
     user=db.scalar(select(User).where(User.email==payload.email))
@@ -217,7 +226,7 @@ def create_style(payload:StyleIn,db:Session=Depends(get_db),user=Depends(require
     data=payload.model_dump(); score=data.pop('score',{}); preview=data.pop('preview_html',''); s=Style(**data,score_json=json.dumps(score,ensure_ascii=False),preview_html=preview); db.add(s); db.flush(); db.add(StyleVersion(style_id=s.id,version=1,prompt=s.prompt,hero_prompt=s.hero_prompt,feature_prompt=s.feature_prompt,created_by=user.id)); audit(db,user,'style.create','style',s.id); db.commit(); db.refresh(s); return style_dict(s)
 @app.put('/api/styles/{style_id}')
 def update_style(style_id:str,payload:StyleIn,db:Session=Depends(get_db),user=Depends(require_roles(Role.admin,Role.editor))):
-    s=db.get(Style,style_id)
+    s=db.scalar(select(Style).where(Style.id==style_id).with_for_update())
     if not s: raise HTTPException(404,'Стиль не знайдено')
     if payload.is_default:
         for item in db.scalars(select(Style)).all(): item.is_default=False
@@ -316,6 +325,9 @@ def save_artifact(artifact_id:str,payload:HtmlIn,db:Session=Depends(get_db),user
     if not payload.html.strip():
         raise HTTPException(400,'HTML не може бути порожнім')
     try:
+        # Serialize version allocation for one project. The UI blocks double clicks,
+        # while this lock also protects simultaneous saves from different users.
+        db.scalar(select(Project.id).where(Project.id==source.project_id).with_for_update())
         latest_version=db.scalar(select(func.max(Artifact.version)).where(Artifact.project_id==source.project_id,Artifact.language==source.language,Artifact.variant==source.variant)) or 0
         new=Artifact(project_id=source.project_id,language=source.language,variant=source.variant,html=payload.html,version=latest_version+1,created_by=user.id)
         db.add(new);db.flush();audit(db,user,'artifact.version','artifact',new.id);db.commit();db.refresh(new);return artifact_dict(new)

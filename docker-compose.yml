@@ -64,7 +64,7 @@ services:
     volumes:
       - media_data:/app/media
     depends_on:
-      postgres:
+      api:
         condition: service_healthy
       redis:
         condition: service_healthy

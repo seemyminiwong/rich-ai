@@ -11,9 +11,9 @@ if grep -qE '^(POSTGRES_PASSWORD=change-this-db-password|JWT_SECRET=replace-with
   exit 1
 fi
 sudo docker compose config >/dev/null
-sudo docker compose down --remove-orphans
-sudo docker compose build --no-cache
-sudo docker compose up -d
+# Build before replacing running containers, so a build error does not cause avoidable downtime.
+sudo docker compose build
+sudo docker compose up -d --remove-orphans
 printf 'Waiting for API health'
 i=0
 while [ "$i" -lt 60 ]; do

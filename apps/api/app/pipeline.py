@@ -9,7 +9,7 @@ from urllib.parse import urljoin
 import httpx
 from bs4 import BeautifulSoup
 from openai import OpenAI
-from PIL import Image
+from PIL import Image, ImageOps
 from app.config import settings
 
 client = OpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
@@ -65,7 +65,15 @@ def _safe_json(value: str):
     try:
         return json.loads(value)
     except Exception:
-        return None
+        # Some commerce templates append an extra closing brace after otherwise valid
+        # JSON-LD. Decode the first complete object instead of discarding all product
+        # metadata and falling back to a generic page scan.
+        try:
+            stripped = (value or '').lstrip()
+            parsed, _ = json.JSONDecoder().raw_decode(stripped)
+            return parsed
+        except Exception:
+            return None
 
 
 def _nodes(value):
@@ -86,25 +94,124 @@ def _valid_product_image_url(value: str) -> bool:
     return True
 
 
-def choose_product_reference(images: list[str]) -> str:
-    """Pick a real, sufficiently large product photo. JSON-LD/OG candidates arrive first."""
-    candidates = [x for x in images if _valid_product_image_url(x)]
+def _srcset_urls(value: str) -> list[str]:
+    rows = []
+    for item in (value or '').split(','):
+        parts = item.strip().split()
+        if not parts:
+            continue
+        width = 0
+        if len(parts) > 1 and parts[-1].lower().endswith('w'):
+            try:
+                width = int(parts[-1][:-1])
+            except ValueError:
+                width = 0
+        rows.append((width, parts[0]))
+    return [url for _, url in sorted(rows, reverse=True)]
+
+
+def _gallery_identity(value: str) -> str:
+    """Return a stable gallery-image identity across 220/600/1400 URL variants."""
+    clean = (value or '').split('?', 1)[0].lower()
+    match = re.search(r'/gallery/([^/]+)/(?:(?:\d+|original)_)?gallery_(.+)$', clean)
+    if match:
+        return f'{match.group(1)}:{match.group(2)}'
+    filename = clean.rsplit('/', 1)[-1]
+    return re.sub(r'^(?:\d+|original)_', '', filename)
+
+
+def _image_values(node, page_url: str) -> list[str]:
+    values = []
+    parent = node.parent if getattr(node, 'parent', None) else None
+    if parent and getattr(parent, 'name', '') == 'a' and parent.get('href'):
+        values.append(parent.get('href'))
+    for name in ('srcset', 'data-srcset'):
+        values.extend(_srcset_urls(node.get(name, '')))
+    for name in ('src', 'data-src', 'data-original', 'data-lazy-src', 'data-zoom-image'):
+        if node.get(name):
+            values.append(node.get(name))
+    return [urljoin(page_url, x) for x in values if isinstance(x, str) and not x.startswith('data:')]
+
+
+def _schema_image_urls(value) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [url for item in value for url in _schema_image_urls(item)]
+    if isinstance(value, dict):
+        for key in ('contentUrl', 'url', '@id'):
+            if isinstance(value.get(key), str):
+                return [value[key]]
+    return []
+
+
+def inspect_product_references(images: list[str], preferred_url: str = '') -> list[dict]:
+    """Validate and rank real product-image candidates using pixels and gallery provenance.
+
+    File size is deliberately not a quality signal: optimized WebP product photos can be
+    smaller than 20 KB. The previous implementation rejected ARTLINE's real main photo
+    for exactly that reason and selected a later infographic instead.
+    """
+    candidates = [x for x in dict.fromkeys(images) if _valid_product_image_url(x)]
     if not candidates:
-        return ''
-    for url in candidates[:12]:
-        try:
-            with httpx.Client(timeout=30, follow_redirects=True, headers={"User-Agent":"Mozilla/5.0"}) as http:
+        return []
+    preferred_identity = _gallery_identity(preferred_url or candidates[0])
+    inspected = []
+    headers = {'User-Agent': 'Mozilla/5.0', 'Accept': 'image/avif,image/webp,image/*,*/*;q=0.8'}
+    preferred_candidates = [url for url in candidates if _gallery_identity(url) == preferred_identity]
+    fallback_candidates = [url for url in candidates if _gallery_identity(url) != preferred_identity]
+
+    def inspect_pool(http, pool):
+        rows = []
+        for index, url in enumerate(pool):
+            try:
                 response = http.get(url)
                 response.raise_for_status()
-                if len(response.content) < 20_000 or len(response.content) > 45 * 1024 * 1024:
+                if not 256 < len(response.content) <= 45 * 1024 * 1024:
                     continue
                 image = Image.open(BytesIO(response.content))
                 width, height = image.size
-                if width >= 600 and height >= 500:
-                    return url
-        except Exception:
-            continue
-    return candidates[0]
+                if width < 320 or height < 320:
+                    continue
+                ratio = width / max(height, 1)
+                if ratio < 0.28 or ratio > 3.6:
+                    continue
+                identity = _gallery_identity(url)
+                same_product_photo = bool(preferred_identity and identity == preferred_identity)
+                score = (100_000 if same_product_photo else 0) + min(width * height, 8_000_000) / 1000 - index * 25
+                lower = url.lower()
+                if '/1400_' in lower or '/original_' in lower:
+                    score += 600
+                elif '/600_' in lower:
+                    score += 300
+                elif '/220_' in lower:
+                    score -= 300
+                rows.append({
+                    'url': url,
+                    'width': width,
+                    'height': height,
+                    'bytes': len(response.content),
+                    'format': image.format or '',
+                    'identity': identity,
+                    'matches_primary': same_product_photo,
+                    'score': score,
+                })
+            except Exception:
+                continue
+        return rows
+
+    with httpx.Client(timeout=30, follow_redirects=True, headers=headers) as http:
+        inspected.extend(inspect_pool(http, preferred_candidates[:8]))
+        # Do not scan unrelated page images once a validated variant of the official
+        # primary product photo is available. This keeps normal ARTLINE pages fast.
+        if not inspected:
+            inspected.extend(inspect_pool(http, fallback_candidates[:16]))
+    return sorted(inspected, key=lambda row: row['score'], reverse=True)
+
+
+def choose_product_reference(images: list[str], preferred_url: str = '') -> str:
+    ranked = inspect_product_references(images, preferred_url)
+    return ranked[0]['url'] if ranked else ''
 
 
 def parse_page(page_html: str, url: str):
@@ -126,19 +233,35 @@ def parse_page(page_html: str, url: str):
             break
 
     images = []
+    primary_image = ''
     if product:
-        raw_images = product.get("image", [])
-        images.extend(raw_images if isinstance(raw_images, list) else [raw_images] if raw_images else [])
+        product_images = _schema_image_urls(product.get("image", []))
+        images.extend(product_images)
+        primary_image = next((x for x in product_images if isinstance(x, str)), '')
     for attrs in ({"property": "og:image"}, {"name": "twitter:image"}):
         meta = soup.find("meta", attrs=attrs)
         if meta and meta.get("content"):
             images.append(meta["content"])
-    for image in soup.select("main img[src], article img[src], .product img[src], img[src]")[:40]:
-        source = image.get("src")
-        if source:
-            images.append(source)
+    # Explicit product-gallery sources come before generic page images. Include lazy
+    # attributes, srcset and zoom/modal links so the same primary photo can be used at
+    # the highest available resolution.
+    gallery_selector = (
+        '.product-slider__view img, .product-slider__nav img, '
+        '[class*="product-gallery"] img, [class*="product-slider"] img, '
+        '[class*="gallery"] img'
+    )
+    for image in soup.select(gallery_selector)[:80]:
+        images.extend(_image_values(image, url))
+    for image in soup.select("main img, article img, .product img")[:80]:
+        images.extend(_image_values(image, url))
     images = [urljoin(url, value) for value in images if isinstance(value, str) and not value.startswith("data:")]
     images = [value for value in dict.fromkeys(images) if _valid_product_image_url(value)]
+
+    # Keep all URL variants of the JSON-LD primary image at the front. This preserves
+    # product identity while allowing the selector to prefer a larger 1400px copy.
+    primary_identity = _gallery_identity(primary_image)
+    if primary_identity:
+        images.sort(key=lambda value: _gallery_identity(value) != primary_identity)
 
     for bad in soup(["script", "style", "svg", "noscript", "nav", "footer", "header"]):
         bad.decompose()
@@ -221,7 +344,7 @@ def _reference_image(url: str):
             response.raise_for_status()
             if len(response.content) > 45 * 1024 * 1024:
                 return None
-            source = Image.open(BytesIO(response.content)).convert("RGBA")
+            source = ImageOps.exif_transpose(Image.open(BytesIO(response.content))).convert("RGBA")
             # OpenAI image editing is most reliable with a normalized PNG reference.
             source.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
             handle = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
@@ -230,6 +353,27 @@ def _reference_image(url: str):
             return Path(handle.name)
     except Exception:
         return None
+
+
+def materialize_product_reference(url: str, project_id: str):
+    """Persist the exact selected source photo and return its public URL/path/metadata."""
+    temporary = _reference_image(url)
+    if not temporary:
+        return '', None, {}
+    try:
+        folder = Path(settings.media_dir) / project_id
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / 'product-reference.png'
+        image = Image.open(temporary)
+        image.save(path, format='PNG', optimize=True)
+        width, height = image.size
+        return (
+            f'/media/{project_id}/product-reference.png',
+            path,
+            {'source_url': url, 'width': width, 'height': height, 'format': 'PNG', 'is_reference': True},
+        )
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def style_image_prompt(style_prompt: str, section: str) -> str:
@@ -262,18 +406,33 @@ def extract_product(jsonld, title: str, clean_text: str, url: str, model: str):
         return _fallback_extract(title, clean_text), 0, 0
 
 
-def generate_image(prompt: str, project_id: str, label: str, model: str, quality: str, fallback: str = '', reference_url: str = '', size: str = '1536x1024'):
+def generate_image(
+    prompt: str,
+    project_id: str,
+    label: str,
+    model: str,
+    quality: str,
+    fallback: str = '',
+    reference_url: str = '',
+    reference_path: Path | None = None,
+    size: str = '1536x1024',
+):
     if not client:
-        return fallback, False
+        return fallback, False, 'OpenAI API key is not configured'
     reference = reference_url or fallback
-    reference_path = _reference_image(reference)
+    temporary_reference = None
+    if reference_path:
+        reference_path = Path(reference_path)
+    else:
+        temporary_reference = _reference_image(reference)
+        reference_path = temporary_reference
     try:
         # Critical rule: generated product visuals must be transformations of a real product photo.
         # If no usable reference exists, keep the source photo instead of inventing a new product.
         if not reference_path:
-            return fallback, False
+            return fallback, False, 'No verified product reference image is available'
         with reference_path.open('rb') as image_file:
-            response = client.images.edit(
+            edit_options = dict(
                 model=model,
                 image=image_file,
                 prompt=(
@@ -285,6 +444,12 @@ def generate_image(prompt: str, project_id: str, label: str, model: str, quality
                 quality=quality,
                 output_format='webp',
             )
+            # High input fidelity asks supported GPT Image models to preserve small
+            # product details, labels and geometry. GPT Image 2 always uses it and
+            # rejects an explicit parameter, so omit it there.
+            if model != 'gpt-image-2':
+                edit_options['extra_body'] = {'input_fidelity': 'high'}
+            response = client.images.edit(**edit_options)
         item = response.data[0]
         folder = Path(settings.media_dir) / project_id
         folder.mkdir(parents=True, exist_ok=True)
@@ -297,14 +462,14 @@ def generate_image(prompt: str, project_id: str, label: str, model: str, quality
                 image_response.raise_for_status()
                 path.write_bytes(image_response.content)
         else:
-            return fallback, False
-        return f'/media/{project_id}/{label}.webp', True
-    except Exception:
-        return fallback, False
+            return fallback, False, 'OpenAI returned no image data'
+        return f'/media/{project_id}/{label}.webp', True, ''
+    except Exception as exc:
+        return fallback, False, str(exc)
     finally:
-        if reference_path:
+        if temporary_reference:
             try:
-                reference_path.unlink(missing_ok=True)
+                temporary_reference.unlink(missing_ok=True)
             except Exception:
                 pass
 

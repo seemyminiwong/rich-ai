@@ -1,21 +1,34 @@
-# ARTLINE Rich Studio v11.2
+# ARTLINE Rich Studio v11.3
 
-Внутрішня платформа для генерації, перевірки, версіонування та зберігання rich-контенту.
+Внутрішня платформа для створення, перевірки, версіонування та зберігання rich-контенту.
+
+## Що виправлено у v11.3
+
+- Реальне фото товару визначається з `Product.image`, галереї товару, `srcset` і zoom/modal-посилань.
+- Варіанти 220/600/1400/original одного кадру об’єднуються за ідентичністю; перевагу має головне фото, а не наступна інфографіка.
+- Прибрано помилкове обмеження 20 КБ: оптимізовані WebP-фото більше не відкидаються через малий розмір файлу.
+- Некоректний JSON-LD з зайвою закривною дужкою відновлюється, тому назва й головне фото фактичної сторінки ARTLINE розпізнаються правильно.
+- Перевірений референс зберігається локально як `product-reference.png` і саме він передається в OpenAI Images Edit.
+- Для підтримуваних GPT Image моделей запитується висока точність збереження вхідного зображення.
+- Якщо референсу немає або редагування завершується помилкою, система залишає реальне фото й не генерує вигаданий товар.
+- Медіатека окремо фільтрує AI-зображення, вихідні фото та власні завантаження; у картці видно вихідний референс.
+- Preview має власну стабільну прокрутку і не скидається live-оновленням кожні 1,8 секунди.
+- Виправлено «Відкрити окремо» та сортування за полями `created_at` / `finished_at`.
+- Повторна генерація зберігає попередні HTML-версії, а не видаляє історію.
+- Ініціалізація PostgreSQL захищена advisory lock; worker чекає готовності API, тому повторний запуск не створює гонку схеми.
+- Серверне збереження HTML-версій додатково захищене блокуванням від одночасних записів.
 
 ## Основні можливості
 
-- WebUI построен на дизайн-токенах из фирменной палитры ARTLINE.
-- Центрированная рабочая область шириной до 1380 px.
-- Автоматическое название проекта после анализа товарной страницы.
-- Динамический список доступных OpenAI-моделей через Models API с fallback на `.env`.
-- Отдельная глобальная медиатека всех исходных, собственных и AI-изображений.
-- Hero/Feature prompts находятся только в стилях и являются необязательными.
-- Можно указать собственные Hero/Feature URL при создании проекта.
-- AI Style Generator, AI Improve Style, Style Score и preview стиля.
-- Прямое создание пользователя администратором и регистрация по приглашениям.
-- Live progress проекта, RU/UA/PL, Desktop/Mobile, HTML versions, review и usage.
+- Україномовний WebUI у дизайн-системі ARTLINE з офіційним логотипом.
+- Автоматична назва проєкту після аналізу сторінки товару.
+- Динамічний список OpenAI-моделей з можливістю ввести model ID вручну.
+- Hero/Feature промпти зберігаються лише у стилях і не є обов’язковими.
+- AI Style Generator, покращення стилю, оцінка якості та історія версій.
+- Live progress, RU/UA/PL, Desktop/Mobile, HTML-версії, review та облік використання.
+- Пряме створення користувачів і реєстрація за запрошенням.
 
-## Быстрый запуск
+## Швидкий запуск на TrueNAS
 
 ```bash
 cp .env.example .env
@@ -26,9 +39,17 @@ chmod +x deploy-truenas.sh
 
 WebUI: `http://SERVER_IP:3000`
 
-API docs: `http://SERVER_IP:8000/docs`
+API: `http://SERVER_IP:8000/docs`
 
-## Обязательные переменные
+Перевірка: `curl http://127.0.0.1:8000/health`
+
+Очікувана відповідь:
+
+```json
+{"status":"ok","version":"11.3"}
+```
+
+## Обов’язкові змінні
 
 ```env
 POSTGRES_DB=richstudio
@@ -42,45 +63,13 @@ ADMIN_PASSWORD=replace-me
 OPENAI_API_KEY=
 ```
 
-## Изображения
+Формат таблиць не змінювався, тому оновлення сумісне зі схемою `richstudio_v11_2` і зберігає наявні проєкти, стилі та користувачів. Для повністю чистої інсталяції можна вказати іншу нову схему вручну.
 
-Логіка пріоритету:
+## Перевірки
 
-1. Власний URL зображення проєкту.
-2. Редагування реального фото товару через OpenAI Images Edit за prompt вибраного стилю.
-3. Оригінальне фото зі сторінки товару.
+```bash
+./scripts/validate.sh
+PYTHONPATH=apps/api pytest -q tests
+```
 
-Якщо реальне фото товару не вдалося завантажити або Images Edit завершився помилкою, система не створює вигаданий товар, а залишає оригінальне фото.
-
-## Модели
-
-`GET /api/models` пытается загрузить доступные модели текущего OpenAI API-аккаунта и объединяет их со списками из `.env`.
-
-## База данных
-
-v11 использует отдельную PostgreSQL-схему `richstudio_v11_2`, поэтому тестовые таблицы предыдущих сборок не конфликтуют с новой версией.
-
-## Критичні виправлення v11.2
-
-- The ARTLINE palette JSON is copied into `config/artline-palette.json` and mapped to WebUI design tokens.
-- Media Library now has filtering and an asset inspector with prompt, model, resolution, cost and download.
-- OpenAI models are loaded dynamically and can also be entered manually by model ID.
-- Reasoning models are shown separately in Settings.
-- Style Generator accepts product category, mood and reference URL.
-- Style quality analysis, recommendations and version history are available in the style editor.
-- Administrators can create users, reset passwords, disable accounts and delete accounts.
-- Project names continue to be resolved automatically from parsed product data.
-
-The implementation is a functional development build. External OpenAI calls and TrueNAS networking must still be verified in the deployment environment.
-
-
-### Додатково виправлено
-
-- Hero та Feature створюються лише через редагування реального фото товару.
-- Попередній перегляд коректно прокручується до останнього блоку.
-- Кнопка «Відкрити окремо» формує повний HTML-документ у новій вкладці.
-- У WebUI використовується офіційний логотип ARTLINE.
-- Інтерфейс локалізовано українською.
-- Картка «Докладніше» працює і в глобальній медіатеці, і всередині проєкту.
-- Review повертає зрозумілі помилки замість загального Internal server error.
-- Збереження HTML та стилів має захист від повторного натискання й коректну нумерацію версій.
+Регресійні тести перевіряють вибір головного фото навіть тоді, коли правильний WebP-файл менший за 20 КБ, вибір high-resolution варіанта того самого кадру та відновлення некоректного JSON-LD.
