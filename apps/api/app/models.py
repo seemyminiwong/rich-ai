@@ -85,7 +85,7 @@ class Project(Base):
     progress: Mapped[int] = mapped_column(Integer, default=0)
     languages: Mapped[str] = mapped_column(String, default='ru,ua')
     variants: Mapped[str] = mapped_column(String, default='desktop,mobile')
-    text_model: Mapped[str] = mapped_column(String, default='gpt-4.1-mini')
+    text_model: Mapped[str] = mapped_column(String, default='gpt-5-mini')
     image_model: Mapped[str] = mapped_column(String, default='gpt-image-1')
     image_quality: Mapped[str] = mapped_column(String, default='medium')
     custom_hero_url: Mapped[str] = mapped_column(Text, default='')

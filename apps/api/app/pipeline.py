@@ -605,6 +605,11 @@ def _html_only(text: str) -> str:
     return sanitize_html(value[start:end + len('</section>')])
 
 
+def _section_count(markup: str) -> int:
+    """Rough completeness signal: a full page has an h2 in the Hero plus most sections."""
+    return len(re.findall(r'<h2\b', markup or '', re.I))
+
+
 def _prompt(product, style, language, variant, hero, feature):
     layout = 'single-column mobile layout with no horizontal overflow' if variant == 'mobile' else 'desktop layout up to 1240px'
     target_language_rule = language_rule(language)
@@ -713,6 +718,21 @@ HTML:
             output_tokens += co
         if not _language_matches(output, language):
             raise RuntimeError(f'Generated content did not pass language validation for {language}')
+        # Completeness guard: the model sometimes stops after the Hero (or hits the
+        # output-token cap), producing a page with only one section. Retry once with an
+        # explicit reminder, then fail over to the complete deterministic template.
+        if _section_count(output) < 3:
+            logger.warning('Incomplete page for %s/%s (%d h2), retrying', language, variant, _section_count(output))
+            retry_prompt = base_prompt + "\n\nIMPORTANT: Return the COMPLETE page as one <section> with ALL SIX sections in order (Hero, Key Benefits, Core Feature, Use Scenarios, Buyer Confidence, Final Summary). Do not stop after the Hero and do not omit any section."
+            retried = _with_retry(lambda: client.responses.create(model=model, input=retry_prompt, max_output_tokens=16000, store=False))
+            retried_out = _html_only(retried.output_text)
+            ri, ro = _usage_counts(retried, retry_prompt, retried.output_text)
+            input_tokens += ri
+            output_tokens += ro
+            if _section_count(retried_out) >= 3 and _language_matches(retried_out, language):
+                output = retried_out
+        if _section_count(output) < 3:
+            raise RuntimeError('AI returned an incomplete page (only the Hero section)')
         return output, input_tokens, output_tokens, ''
     except Exception as exc:
         logger.warning('generate_html fell back to deterministic template for %s/%s: %s', language, variant, exc)

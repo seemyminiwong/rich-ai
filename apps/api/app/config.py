@@ -31,9 +31,9 @@ class Settings(BaseSettings):
     admin_email: str = 'admin@example.com'
     admin_password: str = 'change-this-admin-password'
     openai_api_key: str = ''
-    openai_text_model: str = 'gpt-4.1-mini'
+    openai_text_model: str = 'gpt-5-mini'
     openai_image_model: str = 'gpt-image-1'
-    openai_text_models: str = 'gpt-4.1-mini,gpt-4.1,gpt-4o-mini,gpt-4o,gpt-5-mini,gpt-5'
+    openai_text_models: str = 'gpt-5-mini,gpt-5,gpt-4.1-mini,gpt-4.1,gpt-4o-mini,gpt-4o'
     openai_image_models: str = 'gpt-image-2,gpt-image-1,gpt-image-1-mini'
     text_pricing_json: str = json.dumps(DEFAULT_TEXT_PRICING)
     image_pricing_json: str = json.dumps(DEFAULT_IMAGE_PRICING)

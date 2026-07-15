@@ -80,3 +80,9 @@
 .project-sku b{color:var(--text);font-variant-numeric:tabular-nums}
 .list-view .project-sku{display:none}
 @media(max-width:760px){.sku-strip{flex-direction:column;align-items:stretch;gap:10px}.sku-strip .btn{width:100%}}
+
+/* v12: field hint tooltips */
+.hint{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--muted);color:#fff;font-size:11px;font-weight:800;font-style:normal;line-height:1;text-transform:none;letter-spacing:0;cursor:help;vertical-align:middle;margin-left:5px;position:relative;outline:none}
+.hint::after{content:attr(data-tip);position:absolute;left:50%;top:150%;transform:translateX(-50%);width:280px;max-width:72vw;background:#101010;color:#F5F7FA;padding:10px 12px;border-radius:10px;font-size:12px;font-weight:500;line-height:1.5;box-shadow:0 14px 34px rgba(0,0,0,.32);opacity:0;visibility:hidden;transition:opacity .15s;z-index:120;pointer-events:none;white-space:normal;text-align:left}
+.hint:hover::after,.hint:focus::after{opacity:1;visibility:visible}
+.hint:focus-visible{box-shadow:0 0 0 3px rgba(25,188,201,.35)}
