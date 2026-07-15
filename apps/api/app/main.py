@@ -31,6 +31,11 @@ from app.prompts import (
     DEFAULT_HERO_PROMPT,
     DEFAULT_NEGATIVE_PROMPT,
     DEFAULT_STYLE_PROMPT,
+    ENGINEERING_FEATURE_PROMPT,
+    ENGINEERING_HERO_PROMPT,
+    ENGINEERING_NEGATIVE_PROMPT,
+    ENGINEERING_STYLE_NAME,
+    ENGINEERING_STYLE_PROMPT,
 )
 
 APP_VERSION = __version__
@@ -38,32 +43,62 @@ APP_VERSION = __version__
 Path(settings.media_dir).mkdir(parents=True, exist_ok=True)
 
 
-def seed():
-    with SessionLocal() as db:
-        user = db.scalar(select(User).where(User.email == settings.admin_email))
-        if not user:
-            db.add(User(email=settings.admin_email, name='Адміністратор', password_hash=hash_password(settings.admin_password), role=Role.admin))
-        base_style = db.scalar(select(Style).where(Style.name == BASE_STYLE_NAME))
-        managed_values = {
+MANAGED_STYLES = [
+    {
+        'name': BASE_STYLE_NAME,
+        'default': False,
+        'values': {
             'description': f'Керований базовий стиль ARTLINE v{BASE_STYLE_VERSION}: цілісний дизайн, корисний SEO/GEO-текст і правдиві product-first зображення',
             'prompt': DEFAULT_STYLE_PROMPT,
             'hero_prompt': DEFAULT_HERO_PROMPT,
             'feature_prompt': DEFAULT_FEATURE_PROMPT,
             'negative_prompt': DEFAULT_NEGATIVE_PROMPT,
             'score_json': json.dumps({'consistency': 98, 'readability': 98, 'brand_fit': 98}),
-        }
-        if not base_style:
-            for item in db.scalars(select(Style)).all():
-                item.is_default = False
-            base_style = Style(name=BASE_STYLE_NAME, is_default=True, **managed_values)
-            db.add(base_style)
-            db.flush()
-            db.add(StyleVersion(style_id=base_style.id, version=1, prompt=base_style.prompt, hero_prompt=base_style.hero_prompt, feature_prompt=base_style.feature_prompt))
-        elif any(getattr(base_style, key) != value for key, value in managed_values.items()):
-            for key, value in managed_values.items():
-                setattr(base_style, key, value)
-            current_version = db.scalar(select(func.max(StyleVersion.version)).where(StyleVersion.style_id == base_style.id)) or 0
-            db.add(StyleVersion(style_id=base_style.id, version=current_version + 1, prompt=base_style.prompt, hero_prompt=base_style.hero_prompt, feature_prompt=base_style.feature_prompt))
+        },
+    },
+    {
+        'name': ENGINEERING_STYLE_NAME,
+        'default': True,
+        'values': {
+            'description': f'Керований інженерний стиль ARTLINE v{BASE_STYLE_VERSION} для технічних категорій: цифри з одиницями, підтверджені конструктивні рішення та реальні межі застосування',
+            'prompt': ENGINEERING_STYLE_PROMPT,
+            'hero_prompt': ENGINEERING_HERO_PROMPT,
+            'feature_prompt': ENGINEERING_FEATURE_PROMPT,
+            'negative_prompt': ENGINEERING_NEGATIVE_PROMPT,
+            'score_json': json.dumps({'consistency': 98, 'readability': 98, 'brand_fit': 98}),
+        },
+    },
+]
+
+
+def seed():
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.email == settings.admin_email))
+        if not user:
+            db.add(User(email=settings.admin_email, name='Адміністратор', password_hash=hash_password(settings.admin_password), role=Role.admin))
+        for spec in MANAGED_STYLES:
+            values = spec['values']
+            style = db.scalar(select(Style).where(Style.name == spec['name']))
+            if not style:
+                # A managed style is only made default when it is first created, so a
+                # later manual choice of default is never overwritten on restart.
+                if spec['default']:
+                    for item in db.scalars(select(Style)).all():
+                        item.is_default = False
+                style = Style(name=spec['name'], is_default=bool(spec['default']), **values)
+                db.add(style)
+                db.flush()
+                db.add(StyleVersion(style_id=style.id, version=1, prompt=style.prompt, hero_prompt=style.hero_prompt, feature_prompt=style.feature_prompt))
+            elif any(getattr(style, key) != value for key, value in values.items()):
+                for key, value in values.items():
+                    setattr(style, key, value)
+                current_version = db.scalar(select(func.max(StyleVersion.version)).where(StyleVersion.style_id == style.id)) or 0
+                db.add(StyleVersion(style_id=style.id, version=current_version + 1, prompt=style.prompt, hero_prompt=style.hero_prompt, feature_prompt=style.feature_prompt))
+        # Never leave the installation without a default style.
+        if not db.scalar(select(Style).where(Style.is_default == True)):
+            fallback = db.scalar(select(Style).where(Style.name == ENGINEERING_STYLE_NAME)) or db.scalar(select(Style))
+            if fallback:
+                fallback.is_default = True
         db.commit()
 
 
@@ -322,7 +357,7 @@ def update_style(style_id: str, payload: StyleIn, db: Session = Depends(get_db),
 def delete_style(style_id: str, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin, Role.editor))):
     s = db.get(Style, style_id)
     if not s: raise HTTPException(404, 'Стиль не знайдено')
-    if s.name == BASE_STYLE_NAME: raise HTTPException(400, 'Базовий стиль ARTLINE Base видалити не можна')
+    if s.name in {spec['name'] for spec in MANAGED_STYLES}: raise HTTPException(400, f'Керований стиль «{s.name}» видалити не можна')
     if s.is_default: raise HTTPException(400, 'Спершу призначте інший стиль за замовчуванням, потім видаляйте цей')
     name = s.name
     default = db.scalar(select(Style).where(Style.is_default == True)) or db.scalar(select(Style).where(Style.name == BASE_STYLE_NAME))
@@ -387,7 +422,9 @@ def project(project_id: str, db: Session = Depends(get_db), user=Depends(current
     if not p: raise HTTPException(404, 'Проєкт не знайдено')
     style = db.get(Style, p.style_id)
     r = project_dict(p, True, style.name if style else '')
-    r['reviews'] = [{'id': x.id, 'reviewer_id': x.reviewer_id, 'decision': x.decision, 'comment': x.comment, 'checklist': json.loads(x.checklist_json or '{}'), 'created_at': x.created_at} for x in db.scalars(select(Review).where(Review.project_id == p.id).order_by(Review.created_at.desc())).all()]
+    review_rows = db.scalars(select(Review).where(Review.project_id == p.id).order_by(Review.created_at.desc())).all()
+    reviewers = {u.id: (u.name or u.email) for u in db.scalars(select(User).where(User.id.in_([x.reviewer_id for x in review_rows]))).all()} if review_rows else {}
+    r['reviews'] = [{'id': x.id, 'reviewer_id': x.reviewer_id, 'reviewer': reviewers.get(x.reviewer_id, ''), 'decision': x.decision, 'comment': x.comment, 'checklist': json.loads(x.checklist_json or '{}'), 'created_at': x.created_at} for x in review_rows]
     r['assets'] = [{'id': x.id, 'kind': x.kind, 'label': x.label, 'url': x.url, 'prompt': x.prompt, 'model': x.model, 'width': x.width, 'height': x.height, 'cost': x.cost, 'metadata': json.loads(x.metadata_json or '{}'), 'created_at': x.created_at} for x in db.scalars(select(Asset).where(Asset.project_id == p.id).order_by(Asset.created_at.desc())).all()]
     r['critics'] = [{'id': x.id, 'type': x.critic_type, 'score': x.score, 'summary': x.summary, 'issues': json.loads(x.issues_json or '[]'), 'suggestions': json.loads(x.suggestions_json or '[]'), 'auto_fixed': x.auto_fixed, 'created_at': x.created_at} for x in db.scalars(select(CriticReport).where(CriticReport.project_id == p.id).order_by(CriticReport.created_at.desc())).all()]
     return r
