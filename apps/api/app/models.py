@@ -103,6 +103,7 @@ class Project(Base):
     text_cost: Mapped[float] = mapped_column(Float, default=0)
     image_cost: Mapped[float] = mapped_column(Float, default=0)
     estimated_cost: Mapped[float] = mapped_column(Float, default=0)
+    cost_breakdown_json: Mapped[str] = mapped_column(Text, default='{}')
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

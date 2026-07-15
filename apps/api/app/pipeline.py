@@ -364,11 +364,17 @@ def _normalize_jsonld(product: dict):
     brand = product.get("brand", "")
     if isinstance(brand, dict):
         brand = brand.get("name", "")
+    category = product.get("category", "")
+    if isinstance(category, dict):
+        category = category.get("name", "")
+    if isinstance(category, list):
+        category = ", ".join(str(c.get("name") if isinstance(c, dict) else c) for c in category if c)
     description = BeautifulSoup(str(product.get("description", "")), "html.parser").get_text(" ", strip=True)
     return {
         "name": str(product.get("name", "")).strip(),
         "brand": str(brand or ""),
         "sku": str(product.get("sku") or product.get("mpn") or ""),
+        "category": str(category or "").strip(),
         "description": description,
         "features": [],
         "specs": specs,
@@ -392,7 +398,7 @@ def _fallback_extract(title: str, clean_text: str):
     name = title.split("|")[0].strip() or "Product"
     sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", clean_text) if len(s.strip()) > 40]
     description = " ".join(sentences[:4])[:1500] or clean_text[:1500]
-    return {"name": name, "brand": "", "sku": "", "description": description, "features": [], "specs": []}
+    return {"name": name, "brand": "", "sku": "", "category": "", "description": description, "features": [], "specs": []}
 
 
 def _estimate_tokens(value: str) -> int:
@@ -480,8 +486,11 @@ def extract_product(jsonld, title: str, clean_text: str, url: str, model: str):
         return _fallback_extract(title, clean_text), 0, 0
     prompt = (
         'Extract factual ecommerce product data from the supplied page text. '
-        'Return one JSON object only with keys: name, brand, sku, description, '
+        'Return one JSON object only with keys: name, brand, sku, category, description, '
         'features (array of strings), specs (array of objects with name and value). '
+        'category is a short human-readable product category in the page language '
+        '(for example "Ігрові комп\'ютери", "3D-принтери", "Джерела безперебійного живлення"); '
+        'derive it from breadcrumbs, the product type or the page text, and leave it empty only if truly unknown. '
         'Never invent facts.\nURL: ' + url + '\nTITLE: ' + title + '\nPAGE: ' + clean_text
     )
     try:

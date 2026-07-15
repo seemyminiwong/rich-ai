@@ -54,6 +54,19 @@ def recalculate_cost(project):
     project.estimated_cost = project.text_cost + project.image_cost
 
 
+def cost_breakdown(project, extract_in, extract_out, content_in, content_out):
+    """Per-stage cost so the UI can show where the money goes."""
+    in_rate, out_rate = text_rate(project.text_model)
+    extract_cost = extract_in / 1_000_000 * in_rate + extract_out / 1_000_000 * out_rate
+    content_cost = content_in / 1_000_000 * in_rate + content_out / 1_000_000 * out_rate
+    return {
+        'extract': {'input_tokens': extract_in, 'output_tokens': extract_out, 'cost': round(extract_cost, 6)},
+        'content': {'input_tokens': content_in, 'output_tokens': content_out, 'cost': round(content_cost, 6)},
+        'images': {'count': project.image_count, 'requests': project.image_request_count, 'cost': round(project.image_cost, 6)},
+        'total': round(extract_cost + content_cost + project.image_cost, 6),
+    }
+
+
 def _aborted(db, project) -> bool:
     """Re-read the row so a Pause/Cancel issued from the API stops the worker cleanly."""
     db.refresh(project)
@@ -81,6 +94,8 @@ def process_project(self, project_id):
             project.text_cost = 0
             project.image_cost = 0
             project.estimated_cost = 0
+            project.cost_breakdown_json = '{}'
+            extract_in = extract_out = content_in = content_out = 0
             db.execute(delete(Asset).where(Asset.project_id == project.id))
             db.execute(delete(CriticReport).where(CriticReport.project_id == project.id))
             db.commit()
@@ -109,7 +124,9 @@ def process_project(self, project_id):
             project.output_tokens += output_tokens
             if input_tokens or output_tokens:
                 project.text_request_count += 1
+            extract_in, extract_out = input_tokens, output_tokens
             recalculate_cost(project)
+            project.cost_breakdown_json = json.dumps(cost_breakdown(project, extract_in, extract_out, content_in, content_out), ensure_ascii=False)
             db.commit()
 
             style_row = db.get(Style, project.style_id)
@@ -223,7 +240,9 @@ def process_project(self, project_id):
                 if feature:
                     db.add(Asset(project_id=project.id,kind='image',label='feature-source',url=feature,prompt='',model='source',metadata_json=json.dumps({'source':'product-page'},ensure_ascii=False)))
                 log(db, project, 'images', 'Feature-генерацію вимкнено — використовується фото товару', 35)
-            recalculate_cost(project); db.commit()
+            recalculate_cost(project)
+            project.cost_breakdown_json = json.dumps(cost_breakdown(project, extract_in, extract_out, content_in, content_out), ensure_ascii=False)
+            db.commit()
 
             if _aborted(db, project):
                 db.add(Event(project_id=project.id, stage=project.stage, level='warning', message='Виконання зупинено користувачем перед створенням контенту')); db.commit()
@@ -274,7 +293,10 @@ def process_project(self, project_id):
                     project.output_tokens += added_output
                     if added_input or added_output:
                         project.text_request_count += 1
+                    content_in += added_input
+                    content_out += added_output
                     recalculate_cost(project)
+                    project.cost_breakdown_json = json.dumps(cost_breakdown(project, extract_in, extract_out, content_in, content_out), ensure_ascii=False)
                     latest_version = db.scalar(select(func.max(Artifact.version)).where(
                         Artifact.project_id == project.id,
                         Artifact.language == language,
@@ -291,6 +313,7 @@ def process_project(self, project_id):
                     completed_outputs += 1
 
             recalculate_cost(project)
+            project.cost_breakdown_json = json.dumps(cost_breakdown(project, extract_in, extract_out, content_in, content_out), ensure_ascii=False)
             artifact_rows = db.scalars(select(Artifact).where(Artifact.project_id == project.id)).all()
             latest_by_variant = {}
             for artifact in sorted(artifact_rows, key=lambda row: row.version):
@@ -316,6 +339,10 @@ def process_project(self, project_id):
             db.commit()
         except Exception as exc:
             recalculate_cost(project)
+            try:
+                project.cost_breakdown_json = json.dumps(cost_breakdown(project, extract_in, extract_out, content_in, content_out), ensure_ascii=False)
+            except Exception:
+                pass
             project.status = Status.error
             project.stage = 'error'
             project.error = str(exc)

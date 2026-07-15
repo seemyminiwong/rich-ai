@@ -60,3 +60,19 @@
 
 /* v11.8: quality critics, queue controls and safe previews */
 .critic-block{margin-top:16px}.critic-block>b{display:block;margin-bottom:8px;font-size:13px}.critic-clean{margin:14px 0 0;color:var(--muted)}
+
+/* v11.10: cost breakdown, sku block, quality disclaimer */
+.critic-note{margin:0 0 16px;padding:12px 14px;border-radius:12px;background:var(--surface-soft);border:1px solid var(--border);color:var(--muted);font-size:12.5px;line-height:1.55}
+.critic-note b{color:var(--text)}
+.cost-panel{margin-top:16px}
+.cost-table{width:100%;border-collapse:collapse;margin-top:8px}
+.cost-table th,.cost-table td{text-align:left;padding:11px 12px;border-bottom:1px solid #E8ECEF;font-size:13px}
+.cost-table th{color:var(--muted);font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.cost-table td:last-child,.cost-table th:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.cost-table td:nth-child(2){color:var(--muted)}
+.cost-total td{font-weight:900;border-top:2px solid var(--border);border-bottom:0}
+.muted-note{margin:8px 0 0;color:var(--muted);font-size:13px}
+.sku-block{background:#EAF9FB!important;border-color:#B8E8ED!important}
+.sku-block h3{font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.project-sku{margin:0 0 10px!important;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.project-sku b{color:var(--text);font-variant-numeric:tabular-nums}

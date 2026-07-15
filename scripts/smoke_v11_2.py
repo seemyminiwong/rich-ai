@@ -70,8 +70,21 @@ checks = {
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
     'base style version bumped': 'BASE_STYLE_VERSION = "11.9"' in prompts,
 
+    # --- v11.10: project UX + cost + category ---
+    'text model is a select': "<select name=\"text_model\">" in web,
+    'languages quick set': "QUICK_LANGS=['ua','ru','pl']" in web and "languagePicker(['ua','ru'])" in web,
+    'live render only on change': 'function liveSignature' in web and 'if(sig===liveSig)return' in web,
+    'cost breakdown backend': 'def cost_breakdown' in tasks and 'cost_breakdown_json' in models,
+    'cost breakdown migration': 'ADD COLUMN IF NOT EXISTS' in db,
+    'cost breakdown api': "'cost_breakdown': breakdown" in main,
+    'cost breakdown ui': 'function costPanel' in web,
+    'live project timer': 'function startProjectTimer' in web and 'id="liveTimer"' in web,
+    'quality disclaimer': 'critic-note' in web and 'не замінюють ручну перевірку' in web,
+    'sku surfaced': "'sku': str(product.get('sku')" in main and 'sku-block' in web,
+    'category extracted': 'category is a short human-readable product category' in pipeline and '"category"' in pipeline,
+
     # --- version bump ---
-    'version 11.9': "APP_VERSION = '11.9'" in main and 'v=11.9' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
+    'version 11.10': "APP_VERSION = '11.10'" in main and 'v=11.10' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
     'critic css': 'v11.8' in css,
 }
 failed = [name for name, ok in checks.items() if not ok]
