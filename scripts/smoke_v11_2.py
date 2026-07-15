@@ -68,7 +68,8 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "11.9"' in prompts,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.1"' in prompts,
+    'base prompt bans meta text': 'NEVER DESCRIBE THE PAGE OR THE IMAGES' in prompts and 'could not be pasted onto a different product' in prompts,
 
     # --- v11.10: project UX + cost + category ---
     'text model is a select': "<select name=\"text_model\">" in web,
