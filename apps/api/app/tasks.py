@@ -9,6 +9,7 @@ from app.config import DEFAULT_IMAGE_PRICING, DEFAULT_TEXT_PRICING, settings
 from app.db import SessionLocal
 from app.models import Artifact, Asset, CriticReport, Event, Project, Status, Style
 from app.pipeline import (
+    core_feature_text,
     extract_product,
     fetch_html,
     generate_html,
@@ -220,33 +221,23 @@ def process_project(self, project_id):
                 log(db, project, 'images', 'Hero-генерацію вимкнено — використовується фото товару', 25)
             recalculate_cost(project); db.commit()
 
+            # The Feature image is generated AFTER the text, from the finished Core
+            # Feature section, so the shot always matches what the page actually says.
+            # Its URL is deterministic, so the copy can reference it in advance.
+            planned_feature_url = f'/media/{project.id}/feature.webp'
+            feature_mode = 'photo'
+            feature_photo_fallback = ''
             if project.custom_feature_url:
                 feature = project.custom_feature_url
+                feature_mode = 'custom'
                 db.add(Asset(project_id=project.id,kind='image',label='feature-custom',url=feature,prompt='',model='custom',metadata_json=json.dumps({'source':'custom'},ensure_ascii=False)))
                 log(db, project, 'images', 'Використовується власне додаткове зображення', 35)
-            elif style_feature:
-                # Pick the one feature the shot must communicate instead of dumping the
-                # whole fact sheet on the image model and letting it choose at random.
-                key_feature = select_key_feature(product)
-                log(db, project, 'images', f'Створення Feature · головна функція: {key_feature[:90] or "не визначено, використовується назва"}', 35)
-                feature_prompt = (
-                    f"{style_feature}\n"
-                    f"SINGLE FEATURE TO COMMUNICATE: {key_feature or product_name}\n"
-                    "Build the composition around exactly this feature and ignore every other characteristic. "
-                    "Do not illustrate any capability that is not this one.\n"
-                    f"Negative requirements: {negative}\nProduct: {product_name}."
-                )
-                feature, feature_generated, feature_error = generate_image(
-                    feature_prompt,
-                    project.id,'feature',project.image_model,project.image_quality,fallback,
-                    reference_url=original_reference_url,reference_path=reference_path,size='1024x1024')
-                if reference_path:
-                    project.image_request_count += 1
-                if feature_generated:
-                    project.image_count += 1
-                    db.add(Asset(project_id=project.id,kind='image',label='feature-generated',url=feature,prompt=feature_prompt,model=project.image_model,width=1024,height=1024,cost=image_rate(project.image_model,project.image_quality),metadata_json=json.dumps({'source':'generated','key_feature':key_feature,'reference_url':original_reference_url,'reference_asset_url':fallback},ensure_ascii=False)))
-                elif feature_error:
-                    log(db, project, 'images', f'Feature не згенеровано; використовується реальне фото товару. Причина: {feature_error}', 38, 'warning')
+            elif style_feature and reference_path:
+                feature = planned_feature_url
+                feature_mode = 'generate'
+                feature_choice = select_feature_photo(ranked_references, selected_reference)
+                feature_photo_fallback = feature_choice.get('url') if feature_choice else fallback
+                log(db, project, 'images', 'Feature буде створено після тексту — за описом секції Core Feature', 35)
             else:
                 # Show a real gallery frame instead of generating one: an edited Feature
                 # image kept drifting into a different product. Prefer a frame that is
@@ -283,6 +274,7 @@ def process_project(self, project_id):
 
             total_outputs = len(languages) * len(variants)
             completed_outputs = 0
+            feature_done = False
             for variant in variants:
                 # Generate one master layout per viewport. Every other language is a
                 # text-node-only translation of this master, so DOM, inline CSS,
@@ -304,6 +296,41 @@ def process_project(self, project_id):
                         if fallback_reason and settings.openai_api_key:
                             log(db, project, 'content', f'{master_language.upper()} / {variant}: {fallback_reason}', progress, 'warning')
                         master_html = rich_html
+                        if feature_mode == 'generate' and not feature_done:
+                            # The page now exists: build the Feature shot from the text of
+                            # its Core Feature section, so image and copy always agree.
+                            feature_done = True
+                            core_text = core_feature_text(master_html) or select_key_feature(product) or product_name
+                            log(db, project, 'images', f'Створення Feature за описом секції: {core_text[:90]}', progress)
+                            feature_prompt = (
+                                f"{style_feature}\n"
+                                f"FEATURE DESCRIPTION FROM THE PAGE (illustrate exactly this and nothing else):\n{core_text}\n"
+                                f"Negative requirements: {negative}\nProduct: {product_name}."
+                            )
+                            generated_url, feature_generated, feature_error = generate_image(
+                                feature_prompt, project.id, 'feature', project.image_model, project.image_quality,
+                                feature_photo_fallback or fallback,
+                                reference_url=original_reference_url, reference_path=reference_path, size='1024x1024')
+                            if reference_path:
+                                project.image_request_count += 1
+                            if feature_generated:
+                                project.image_count += 1
+                                feature = generated_url
+                                db.add(Asset(project_id=project.id, kind='image', label='feature-generated', url=generated_url,
+                                             prompt=feature_prompt, model=project.image_model, width=1024, height=1024,
+                                             cost=image_rate(project.image_model, project.image_quality),
+                                             metadata_json=json.dumps({'source': 'generated', 'core_feature_text': core_text, 'reference_url': original_reference_url, 'reference_asset_url': fallback}, ensure_ascii=False)))
+                            else:
+                                # Generation failed: fall back to a real photo and repoint the
+                                # copy, which was written against the planned URL.
+                                real_feature = feature_photo_fallback or fallback or ''
+                                log(db, project, 'images', f'Feature не згенеровано; використовується реальне фото товару. Причина: {feature_error}', progress, 'warning')
+                                if real_feature:
+                                    db.add(Asset(project_id=project.id, kind='image', label='feature-source', url=real_feature, prompt='', model='source',
+                                                 metadata_json=json.dumps({'source': 'product-page', 'reason': 'feature generation failed'}, ensure_ascii=False)))
+                                feature = real_feature
+                                master_html = master_html.replace(planned_feature_url, real_feature) if real_feature else master_html
+                            recalculate_cost(project)
                     else:
                         log(db, project, 'content', f'Переклад макета {language.upper()} / {variant} без зміни дизайну', progress)
                         translated = translate_html(master_html, language, project.text_model)

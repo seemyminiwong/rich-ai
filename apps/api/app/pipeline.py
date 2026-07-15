@@ -790,6 +790,44 @@ def select_key_feature(product: dict) -> str:
     return ''
 
 
+def core_feature_text(markup: str) -> str:
+    """Return the visible text of the Core Feature section of a generated page.
+
+    The Feature image is generated from this text, so the shot always illustrates
+    the feature this exact product page actually talks about.
+    """
+    try:
+        soup = BeautifulSoup(markup or '', 'html.parser')
+    except Exception:
+        return ''
+    for node in soup.find_all(string=lambda value: isinstance(value, Comment)):
+        if not str(node).strip().lower().startswith('3.'):
+            continue
+        block = node.find_next_sibling()
+        if block is None:
+            continue
+        text = re.sub(r'\s+', ' ', block.get_text(' ', strip=True)).strip()
+        if len(text) >= 40:
+            return text[:1200]
+    # Fallback: the third heading and the block that carries it.
+    headings = soup.find_all(re.compile(r'^h2$', re.I))
+    if len(headings) >= 2:
+        block = headings[1].find_parent(['div', 'section']) or headings[1].parent
+        text = re.sub(r'\s+', ' ', block.get_text(' ', strip=True)).strip()
+        if len(text) >= 40:
+            return text[:1200]
+    return ''
+
+
+def strip_image_blocks(style_prompt: str) -> str:
+    """Remove [HERO_IMAGE]/[FEATURE_IMAGE] art direction from the text-model prompt.
+
+    Those blocks steer the image models. If the HTML model sees them it may render
+    them as visible copy, which is exactly the meta-text failure we forbid.
+    """
+    return re.sub(r'\[(HERO_IMAGE|FEATURE_IMAGE)\].*?\[/\1\]', '', style_prompt or '', flags=re.I | re.S).strip()
+
+
 def style_image_prompt(style_prompt: str, section: str) -> str:
     # Optional sections inside the single style field:
     # [HERO_IMAGE] ... [/HERO_IMAGE] and [FEATURE_IMAGE] ... [/FEATURE_IMAGE]
@@ -966,7 +1004,7 @@ Embedding rule: the rich content is displayed on a light ARTLINE product page. K
 Mandatory visual guardrails: use #101010 for headings and #555555 or #69737D for paragraphs on light surfaces; use #FFFFFF or #F7F8FA for headings and #D0D7DE or #AFB8C1 for paragraphs on dark surfaces. Use #19BCC9 only for compact badges, eyebrow labels, small specification values and subtle borders. Never use turquoise, green, blue, purple or orange for paragraphs or multi-line headings. At least 70 percent of the content area must remain light or transparent. Use 12px radii for sections and cards and 8px for badges. Do not use decorative colored strips, alternating card colors, checkerboard layouts, excessive gradients or repeated heavy shadows.
 The style prompt below is the primary design specification. Follow it precisely unless it conflicts with factual accuracy or HTML validity.
 STYLE PROMPT:
-{style.prompt}
+{strip_image_blocks(style.prompt)}
 Mandatory factual rule: use only facts present in Product JSON. Never invent warranty, partnership, certification, compatibility, performance, contents or support claims.
 Images: hero={hero}; feature={feature}.
 Product JSON: {json.dumps(product, ensure_ascii=False)}"""
