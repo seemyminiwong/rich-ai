@@ -91,7 +91,7 @@ checks = {
     'registry compose': (root / 'docker-compose.registry.yml').exists() and 'rich-ai-api' in (root / 'docker-compose.registry.yml').read_text(encoding='utf-8'),
     'deploy runbook': (root / 'DEPLOY.md').exists(),
     'alembic scaffold': (root / 'apps/api/alembic/env.py').exists() and (root / 'apps/api/alembic/versions/0001_baseline.py').exists() and 'alembic==' in (root / 'apps/api/requirements.txt').read_text(encoding='utf-8'),
-    'license present': (root / 'LICENSE').exists() and 'MIT License' in (root / 'LICENSE').read_text(encoding='utf-8'),
+    'license present': (root / 'LICENSE').exists() and 'PolyForm Noncommercial License 1.0.0' in (root / 'LICENSE').read_text(encoding='utf-8'),
     'critic css': 'v11.8' in css,
 }
 failed = [name for name, ok in checks.items() if not ok]
