@@ -23,6 +23,7 @@ from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, P
 from app.security import current, hash_password, token, verify
 from app.tasks import process_project
 from app.pipeline import is_public_http_url, sanitize_html
+from app.version import __version__
 from app.prompts import (
     BASE_STYLE_NAME,
     BASE_STYLE_VERSION,
@@ -32,7 +33,7 @@ from app.prompts import (
     DEFAULT_STYLE_PROMPT,
 )
 
-APP_VERSION = '11.10'
+APP_VERSION = __version__
 
 Path(settings.media_dir).mkdir(parents=True, exist_ok=True)
 
