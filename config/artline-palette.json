@@ -1,0 +1,134 @@
+{
+  "blue": {
+    "value": "#0000EE",
+    "name": "Blue"
+  },
+  "black": {
+    "value": "#101010",
+    "name": "Black"
+  },
+  "dark-turquoise": {
+    "value": "#19BCC9",
+    "name": "Dark Turquoise"
+  },
+  "dark-turquoise-1": {
+    "value": "#19BDC9",
+    "name": "Dark Turquoise"
+  },
+  "black-1": {
+    "value": "#1A2128",
+    "name": "Black"
+  },
+  "dark-slate-gray": {
+    "value": "#252525",
+    "name": "Dark Slate Gray"
+  },
+  "dark-slate-gray-1": {
+    "value": "#2F3137",
+    "name": "Dark Slate Gray"
+  },
+  "dark-slate-gray-2": {
+    "value": "#313131",
+    "name": "Dark Slate Gray"
+  },
+  "dark-slate-gray-3": {
+    "value": "#35393F",
+    "name": "Dark Slate Gray"
+  },
+  "medium-turquoise": {
+    "value": "#37AEE2",
+    "name": "Medium Turquoise"
+  },
+  "dark-slate-gray-4": {
+    "value": "#434343",
+    "name": "Dark Slate Gray"
+  },
+  "medium-sea-green": {
+    "value": "#51C48A",
+    "name": "Medium Sea Green"
+  },
+  "dark-slate-gray-5": {
+    "value": "#555555",
+    "name": "Dark Slate Gray"
+  },
+  "cornflower-blue": {
+    "value": "#6890E4",
+    "name": "Cornflower Blue"
+  },
+  "dim-gray": {
+    "value": "#69737D",
+    "name": "Dim Gray"
+  },
+  "slate-blue": {
+    "value": "#6D64BB",
+    "name": "Slate Blue"
+  },
+  "slate-gray": {
+    "value": "#6E7781",
+    "name": "Slate Gray"
+  },
+  "medium-slate-blue": {
+    "value": "#735FF2",
+    "name": "Medium Slate Blue"
+  },
+  "gray": {
+    "value": "#808080",
+    "name": "Gray"
+  },
+  "yellow-green": {
+    "value": "#8FAE4F",
+    "name": "Yellow Green"
+  },
+  "dark-gray": {
+    "value": "#999999",
+    "name": "Dark Gray"
+  },
+  "dark-gray-1": {
+    "value": "#9E9EA4",
+    "name": "Dark Gray"
+  },
+  "silver": {
+    "value": "#AFB8C1",
+    "name": "Silver"
+  },
+  "silver-1": {
+    "value": "#BBBBBB",
+    "name": "Silver"
+  },
+  "light-steel-blue": {
+    "value": "#C7BEFF",
+    "name": "Light Steel Blue"
+  },
+  "pale-violet-red": {
+    "value": "#CD7D74",
+    "name": "Pale Violet Red"
+  },
+  "light-gray": {
+    "value": "#D0D7DE",
+    "name": "Light Gray"
+  },
+  "indian-red": {
+    "value": "#E8485E",
+    "name": "Indian Red"
+  },
+  "tomato": {
+    "value": "#EB5757",
+    "name": "Tomato"
+  },
+  "white-smoke": {
+    "value": "#F5F7FA",
+    "name": "White Smoke"
+  },
+  "light-salmon": {
+    "value": "#F7987C",
+    "name": "Light Salmon"
+  },
+  "ghost-white": {
+    "value": "#F7F8FA",
+    "name": "Ghost White"
+  },
+  "burlywood": {
+    "value": "#FFC77E",
+    "name": "Burlywood"
+  }
+}
