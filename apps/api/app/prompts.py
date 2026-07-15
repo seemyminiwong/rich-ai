@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.4"
+BASE_STYLE_VERSION = "12.5"
 BASE_STYLE_NAME = "ARTLINE Base"
 ENGINEERING_STYLE_NAME = "ARTLINE Engineering"
 
