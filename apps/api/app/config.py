@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     admin_password: str = 'change-this-admin-password'
     openai_api_key: str = ''
     openai_text_model: str = 'gpt-5-mini'
+    # Reasoning models spend part of max_output_tokens on hidden reasoning tokens.
+    # Keep the thinking short for formatting-style work; set empty to not send it.
+    openai_reasoning_effort: str = 'low'
     openai_image_model: str = 'gpt-image-1'
     openai_text_models: str = 'gpt-5-mini,gpt-5,gpt-4.1-mini,gpt-4.1,gpt-4o-mini,gpt-4o'
     openai_image_models: str = 'gpt-image-2,gpt-image-1,gpt-image-1-mini'
