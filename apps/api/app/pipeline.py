@@ -404,6 +404,111 @@ def _normalize_jsonld(product: dict):
     }
 
 
+_SPEC_NAME_MAX = 80
+_SPEC_VALUE_MAX = 300
+_SPEC_LIMIT = 60
+
+
+def _flat(node) -> str:
+    return re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
+
+
+def _html_specs(page_html: str) -> list[dict]:
+    """Extract Name/Value specification pairs straight from the page markup.
+
+    Most commerce templates keep the real specification table in HTML and expose
+    only name/description/image in JSON-LD. Reading the table here gives the model
+    real facts for free, without an extra AI call.
+    """
+    try:
+        soup = BeautifulSoup(page_html or "", "html.parser")
+    except Exception:
+        return []
+    for bad in soup(["script", "style", "noscript"]):
+        bad.decompose()
+    rows = []
+
+    def add(name: str, value: str):
+        name = re.sub(r"\s+", " ", name or "").strip(" : \t")
+        value = re.sub(r"\s+", " ", value or "").strip(" : \t")
+        if not name or not value or name.lower() == value.lower():
+            return
+        if len(name) > _SPEC_NAME_MAX or len(value) > _SPEC_VALUE_MAX:
+            return
+        rows.append({"name": name, "value": value})
+
+    for table in soup.find_all("table")[:20]:
+        for tr in table.find_all("tr")[:200]:
+            cells = tr.find_all(["td", "th"], recursive=False) or tr.find_all(["td", "th"])
+            if len(cells) == 2:
+                add(_flat(cells[0]), _flat(cells[1]))
+    for dl in soup.find_all("dl")[:20]:
+        for dt, dd in zip(dl.find_all("dt"), dl.find_all("dd")):
+            add(_flat(dt), _flat(dd))
+    selector = '[class*="spec"],[class*="characteristic"],[class*="attribute"],[class*="param"],[class*="properties"]'
+    for block in soup.select(selector)[:40]:
+        for item in block.find_all(["li", "div", "tr"])[:120]:
+            children = [c for c in item.find_all(recursive=False) if getattr(c, "name", None)]
+            if len(children) == 2:
+                add(_flat(children[0]), _flat(children[1]))
+
+    seen, out = set(), []
+    for row in rows:
+        key = row["name"].lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+        if len(out) >= _SPEC_LIMIT:
+            break
+    return out
+
+
+def _html_features(page_html: str) -> list[str]:
+    """Conservatively collect product bullet points from the main content."""
+    try:
+        soup = BeautifulSoup(page_html or "", "html.parser")
+    except Exception:
+        return []
+    for bad in soup(["script", "style", "noscript", "nav", "footer", "header"]):
+        bad.decompose()
+    root = soup.find("main") or soup.body or soup
+    seen, out = set(), []
+    for item in root.select("ul li")[:200]:
+        text = _flat(item)
+        if not (12 <= len(text) <= 220):
+            continue
+        if item.find("a") and len(text) < 60:
+            continue  # navigation-like entry
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+        if len(out) >= 12:
+            break
+    return out
+
+
+def _merge_specs(primary: list, extra: list) -> list:
+    merged, seen = [], set()
+    for row in list(primary or []) + list(extra or []):
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "").strip()
+        value = str(row.get("value") or "").strip()
+        if not name or not value:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append({"name": name, "value": value})
+        if len(merged) >= _SPEC_LIMIT:
+            break
+    return merged
+
+
 def _extract_json(text: str):
     cleaned = (text or "").strip().replace("```json", "").replace("```", "")
     parsed = _safe_json(cleaned)
@@ -500,29 +605,65 @@ def style_image_prompt(style_prompt: str, section: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-def extract_product(jsonld, title: str, clean_text: str, url: str, model: str):
-    if jsonld:
-        data = _normalize_jsonld(jsonld)
-        if data['name'] and (data['description'] or data['specs']):
-            return data, 0, 0
+def extract_product(jsonld, title: str, clean_text: str, url: str, model: str, page_html: str = ''):
+    """Build the product fact sheet from JSON-LD, the page markup and (if needed) AI.
+
+    JSON-LD alone is rarely enough: most templates omit additionalProperty, so the
+    real specification table lives only in HTML. Never return early on a bare
+    name+description — that starves the content model of facts.
+    """
+    base = _normalize_jsonld(jsonld) if jsonld else {}
+    page_specs = _html_specs(page_html) if page_html else []
+    page_features = _html_features(page_html) if page_html else []
+    if base:
+        base['specs'] = _merge_specs(base.get('specs') or [], page_specs)
+        if not base.get('features'):
+            base['features'] = page_features
+
+    # Enough hard facts already — no AI call needed.
+    if base.get('name') and len(base.get('specs') or []) >= 3:
+        return base, 0, 0
+
     if not client:
-        return _fallback_extract(title, clean_text), 0, 0
+        data = dict(base) if base.get('name') else _fallback_extract(title, clean_text)
+        data['specs'] = _merge_specs(data.get('specs') or [], page_specs)
+        data['features'] = data.get('features') or page_features
+        return data, 0, 0
+
+    spec_block = ''
+    if page_specs:
+        spec_block = '\nSPECIFICATIONS FOUND IN THE PAGE MARKUP (name: value) — prefer these for the specs array and keep every relevant pair:\n' + \
+            '\n'.join(f"{row['name']}: {row['value']}" for row in page_specs)
     prompt = (
-        'Extract factual ecommerce product data from the supplied page text. '
+        'Extract factual ecommerce product data from the supplied page. '
         'Return one JSON object only with keys: name, brand, sku, category, description, '
         'features (array of strings), specs (array of objects with name and value). '
+        'Fill specs with every real technical characteristic you can find; do not summarize them away. '
         'category is a short human-readable product category in the page language '
         '(for example "Ігрові комп\'ютери", "3D-принтери", "Джерела безперебійного живлення"); '
         'derive it from breadcrumbs, the product type or the page text, and leave it empty only if truly unknown. '
-        'Never invent facts.\nURL: ' + url + '\nTITLE: ' + title + '\nPAGE: ' + clean_text
+        'Never invent facts.\nURL: ' + url + '\nTITLE: ' + title + spec_block + '\nPAGE: ' + clean_text
     )
     try:
-        response = _with_retry(lambda: client.responses.create(model=model, input=prompt, max_output_tokens=5000, store=False))
+        response = _with_retry(lambda: client.responses.create(model=model, input=prompt, max_output_tokens=8000, store=False))
         data = _extract_json(response.output_text)
         input_tokens, output_tokens = _usage_counts(response, prompt, response.output_text)
+        # JSON-LD wins for identity fields; specs are the union of every source.
+        for key in ('name', 'brand', 'sku', 'category'):
+            if base.get(key) and not str(data.get(key) or '').strip():
+                data[key] = base[key]
+        if not str(data.get('description') or '').strip() and base.get('description'):
+            data['description'] = base['description']
+        data['specs'] = _merge_specs(data.get('specs') or [], _merge_specs(base.get('specs') or [], page_specs))
+        if not data.get('features'):
+            data['features'] = base.get('features') or page_features
         return data, input_tokens, output_tokens
-    except Exception:
-        return _fallback_extract(title, clean_text), 0, 0
+    except Exception as exc:
+        logger.warning('AI product extraction failed, using page data: %s', exc)
+        data = dict(base) if base.get('name') else _fallback_extract(title, clean_text)
+        data['specs'] = _merge_specs(data.get('specs') or [], page_specs)
+        data['features'] = data.get('features') or page_features
+        return data, 0, 0
 
 
 def generate_image(

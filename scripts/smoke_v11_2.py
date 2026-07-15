@@ -83,6 +83,9 @@ checks = {
     'quality disclaimer': 'critic-note' in web and 'не замінюють ручну перевірку' in web,
     'sku surfaced': "'sku': str(product.get('sku')" in main and 'sku-strip' in web,
     'category extracted': 'category is a short human-readable product category' in pipeline and '"category"' in pipeline,
+    'html spec parsing': 'def _html_specs' in pipeline and 'def _merge_specs' in pipeline and 'page_html' in tasks,
+    'no early return on bare description': "if data['name'] and (data['description'] or data['specs'])" not in pipeline,
+    'specs merged into prompt': 'SPECIFICATIONS FOUND IN THE PAGE MARKUP' in pipeline,
 
     # --- v12 foundation ---
     'single version source': '__version__ = "12.0"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
