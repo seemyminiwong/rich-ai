@@ -16,6 +16,7 @@ from app.pipeline import (
     inspect_product_references,
     materialize_product_reference,
     parse_page,
+    select_key_feature,
     style_image_prompt,
     translate_html,
     critic_html,
@@ -223,16 +224,26 @@ def process_project(self, project_id):
                 db.add(Asset(project_id=project.id,kind='image',label='feature-custom',url=feature,prompt='',model='custom',metadata_json=json.dumps({'source':'custom'},ensure_ascii=False)))
                 log(db, project, 'images', 'Використовується власне додаткове зображення', 35)
             elif style_feature:
-                log(db, project, 'images', f'Створення додаткового зображення · {project.image_model}', 35)
+                # Pick the one feature the shot must communicate instead of dumping the
+                # whole fact sheet on the image model and letting it choose at random.
+                key_feature = select_key_feature(product)
+                log(db, project, 'images', f'Створення Feature · головна функція: {key_feature[:90] or "не визначено, використовується назва"}', 35)
+                feature_prompt = (
+                    f"{style_feature}\n"
+                    f"SINGLE FEATURE TO COMMUNICATE: {key_feature or product_name}\n"
+                    "Build the composition around exactly this feature and ignore every other characteristic. "
+                    "Do not illustrate any capability that is not this one.\n"
+                    f"Negative requirements: {negative}\nProduct: {product_name}."
+                )
                 feature, feature_generated, feature_error = generate_image(
-                    f"{style_feature}\nNegative requirements: {negative}\nProduct: {product_name}. Verified product facts: {facts}",
+                    feature_prompt,
                     project.id,'feature',project.image_model,project.image_quality,fallback,
                     reference_url=original_reference_url,reference_path=reference_path,size='1024x1024')
                 if reference_path:
                     project.image_request_count += 1
                 if feature_generated:
                     project.image_count += 1
-                    db.add(Asset(project_id=project.id,kind='image',label='feature-generated',url=feature,prompt=style_feature,model=project.image_model,width=1024,height=1024,cost=image_rate(project.image_model,project.image_quality),metadata_json=json.dumps({'source':'generated','reference_url':original_reference_url,'reference_asset_url':fallback},ensure_ascii=False)))
+                    db.add(Asset(project_id=project.id,kind='image',label='feature-generated',url=feature,prompt=feature_prompt,model=project.image_model,width=1024,height=1024,cost=image_rate(project.image_model,project.image_quality),metadata_json=json.dumps({'source':'generated','key_feature':key_feature,'reference_url':original_reference_url,'reference_asset_url':fallback},ensure_ascii=False)))
                 elif feature_error:
                     log(db, project, 'images', f'Feature не згенеровано; використовується реальне фото товару. Причина: {feature_error}', 38, 'warning')
             else:
