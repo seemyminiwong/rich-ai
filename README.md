@@ -157,4 +157,4 @@ PYTHONPATH=apps/api pytest -q tests
 
 Проєкт розповсюджується за ліцензією **MIT** — див. файл [LICENSE](LICENSE).
 
-Правовласник — `Copyright (c) 2026 seemyminiwong`. За потреби замініть на точне юридичне ім’я власника.
+Правовласник — `Copyright (c) 2026 seemyminiwong`.
