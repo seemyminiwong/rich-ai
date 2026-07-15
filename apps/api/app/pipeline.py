@@ -339,11 +339,28 @@ def inspect_product_references(images: list[str], preferred_url: str = '') -> li
 
     with httpx.Client(timeout=30, follow_redirects=True, headers=headers) as http:
         inspected.extend(inspect_pool(http, preferred_candidates[:8]))
-        # Do not scan unrelated page images once a validated variant of the official
-        # primary product photo is available. This keeps normal ARTLINE pages fast.
         if not inspected:
             inspected.extend(inspect_pool(http, fallback_candidates[:16]))
+        else:
+            # Also validate a few other gallery frames: the primary photo still wins for
+            # Hero (its +100_000 score), but a second, different real frame can then be
+            # used as the Feature image instead of generating one.
+            inspected.extend(inspect_pool(http, fallback_candidates[:6]))
     return sorted(inspected, key=lambda row: row['score'], reverse=True)
+
+
+def select_feature_photo(ranked: list, primary: dict | None = None) -> dict:
+    """Pick a second, different real gallery photo to show as the Feature image.
+
+    Showing a genuine detail frame from the product gallery is honest and free —
+    an edited or generated Feature image kept drifting into a different product.
+    """
+    primary_identity = (primary or {}).get('identity')
+    for row in ranked or []:
+        identity = row.get('identity')
+        if identity and identity != primary_identity:
+            return row
+    return {}
 
 
 def choose_product_reference(images: list[str], preferred_url: str = '') -> str:
@@ -725,7 +742,7 @@ def _reference_image(url: str):
         return None
 
 
-def materialize_product_reference(url: str, project_id: str):
+def materialize_product_reference(url: str, project_id: str, filename: str = 'product-reference.png'):
     """Persist the exact selected source photo and return its public URL/path/metadata."""
     temporary = _reference_image(url)
     if not temporary:
@@ -733,12 +750,12 @@ def materialize_product_reference(url: str, project_id: str):
     try:
         folder = Path(settings.media_dir) / project_id
         folder.mkdir(parents=True, exist_ok=True)
-        path = folder / 'product-reference.png'
+        path = folder / filename
         image = Image.open(temporary)
         image.save(path, format='PNG', optimize=True)
         width, height = image.size
         return (
-            f'/media/{project_id}/product-reference.png',
+            f'/media/{project_id}/{filename}',
             path,
             {'source_url': url, 'width': width, 'height': height, 'format': 'PNG', 'is_reference': True},
         )

@@ -16,6 +16,7 @@ from app.pipeline import (
     inspect_product_references,
     materialize_product_reference,
     parse_page,
+    select_feature_photo,
     select_key_feature,
     style_image_prompt,
     translate_html,
@@ -247,10 +248,26 @@ def process_project(self, project_id):
                 elif feature_error:
                     log(db, project, 'images', f'Feature не згенеровано; використовується реальне фото товару. Причина: {feature_error}', 38, 'warning')
             else:
-                feature = fallback
-                if feature:
-                    db.add(Asset(project_id=project.id,kind='image',label='feature-source',url=feature,prompt='',model='source',metadata_json=json.dumps({'source':'product-page'},ensure_ascii=False)))
-                log(db, project, 'images', 'Feature-генерацію вимкнено — використовується фото товару', 35)
+                # Show a real gallery frame instead of generating one: an edited Feature
+                # image kept drifting into a different product. Prefer a frame that is
+                # not the one already used for Hero.
+                feature_choice = select_feature_photo(ranked_references, selected_reference)
+                feature = ''
+                if feature_choice:
+                    feature_url, _feature_path, feature_meta = materialize_product_reference(feature_choice['url'], project.id, 'feature-photo.png')
+                    feature = feature_url or feature_choice['url']
+                    db.add(Asset(
+                        project_id=project.id, kind='image', label='feature-source', url=feature, prompt='', model='source',
+                        width=feature_meta.get('width') or feature_choice.get('width'),
+                        height=feature_meta.get('height') or feature_choice.get('height'),
+                        metadata_json=json.dumps({'source': 'product-page', 'reason': 'distinct gallery frame', 'selected_candidate': feature_choice}, ensure_ascii=False),
+                    ))
+                    log(db, project, 'images', 'Feature: використано окреме реальне фото товару з галереї', 35)
+                else:
+                    feature = fallback
+                    if feature:
+                        db.add(Asset(project_id=project.id,kind='image',label='feature-source',url=feature,prompt='',model='source',metadata_json=json.dumps({'source':'product-page','reason':'no distinct gallery frame'},ensure_ascii=False)))
+                    log(db, project, 'images', 'Feature: окремого кадру в галереї немає — використано головне фото товару', 35)
             recalculate_cost(project)
             project.cost_breakdown_json = json.dumps(cost_breakdown(project, extract_in, extract_out, content_in, content_out), ensure_ascii=False)
             db.commit()

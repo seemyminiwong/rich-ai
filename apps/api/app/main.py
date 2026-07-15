@@ -51,7 +51,9 @@ MANAGED_STYLES = [
             'description': f'Керований базовий стиль ARTLINE v{BASE_STYLE_VERSION}: цілісний дизайн, корисний SEO/GEO-текст і правдиві product-first зображення',
             'prompt': DEFAULT_STYLE_PROMPT,
             'hero_prompt': DEFAULT_HERO_PROMPT,
-            'feature_prompt': DEFAULT_FEATURE_PROMPT,
+            # Empty on purpose: the Feature image is a real gallery photo, not a
+            # generated one. AI editing kept drifting into a different product.
+            'feature_prompt': '',
             'negative_prompt': DEFAULT_NEGATIVE_PROMPT,
             'score_json': json.dumps({'consistency': 98, 'readability': 98, 'brand_fit': 98}),
         },
@@ -63,7 +65,9 @@ MANAGED_STYLES = [
             'description': f'Керований інженерний стиль ARTLINE v{BASE_STYLE_VERSION} для технічних категорій: цифри з одиницями, підтверджені конструктивні рішення та реальні межі застосування',
             'prompt': ENGINEERING_STYLE_PROMPT,
             'hero_prompt': ENGINEERING_HERO_PROMPT,
-            'feature_prompt': ENGINEERING_FEATURE_PROMPT,
+            # Empty on purpose: the Feature image is a real gallery photo, not a
+            # generated one. AI editing kept drifting into a different product.
+            'feature_prompt': '',
             'negative_prompt': ENGINEERING_NEGATIVE_PROMPT,
             'score_json': json.dumps({'consistency': 98, 'readability': 98, 'brand_fit': 98}),
         },
