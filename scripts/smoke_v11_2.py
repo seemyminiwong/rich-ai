@@ -62,7 +62,12 @@ checks = {
 
     # --- v11.9: delete styles + improved base prompt ---
     'delete style endpoint': "@app.delete('/api/styles/{style_id}')" in main and 'function deleteStyle' in web,
-    'base style protected from delete': 'ARTLINE Base видалити не можна' in main,
+    'managed styles protected from delete': 'видалити не можна' in main and "s.name in {spec['name'] for spec in MANAGED_STYLES}" in main,
+    'engineering style seeded as default': 'ENGINEERING_STYLE_PROMPT' in prompts and 'MANAGED_STYLES' in main and "'name': ENGINEERING_STYLE_NAME" in main,
+    'engineering prompt keeps contracts': all(s in prompts.split('ENGINEERING_STYLE_PROMPT')[1] for s in ('NEVER DESCRIBE THE PAGE OR THE IMAGES', 'exactly six sections', 'Marketing adjectives are banned')),
+    'copy works without secure context': 'function legacyCopy' in web and 'window.isSecureContext' in web,
+    'reviewer limited to quality control': 'ROLE_PAGES' in web and "reviewer:['projects']" in web and 'allowedTabs' in web,
+    'dynamic review checklist + history': 'function reviewChecklist' in web and 'function reviewHistory' in web and "'reviewer': reviewers.get" in main,
     'delete reassigns projects': 'reassigned_projects' in main,
     'base prompt requires alt text': 'must include a concise descriptive alt attribute' in prompts,
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
