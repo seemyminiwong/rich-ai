@@ -60,8 +60,18 @@ checks = {
     'dead endpoints removed': all(f"'{p}'" not in main for p in ('/api/brands', '/api/knowledge', '/api/playground', '/api/compare', '/api/workflows', '/api/publish', '/api/benchmark', '/api/analytics')),
     'dead models removed': all(m not in models for m in ('class BrandProfile', 'class KnowledgeDocument', 'class WorkflowTemplate', 'class PublishTarget', 'class BenchmarkRun')),
 
+    # --- v11.9: delete styles + improved base prompt ---
+    'delete style endpoint': "@app.delete('/api/styles/{style_id}')" in main and 'function deleteStyle' in web,
+    'base style protected from delete': 'ARTLINE Base видалити не можна' in main,
+    'delete reassigns projects': 'reassigned_projects' in main,
+    'base prompt requires alt text': 'must include a concise descriptive alt attribute' in prompts,
+    'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
+    'base prompt limits paragraphs': '350-600 words' in prompts,
+    'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
+    'base style version bumped': 'BASE_STYLE_VERSION = "11.9"' in prompts,
+
     # --- version bump ---
-    'version 11.8': "APP_VERSION = '11.8'" in main and 'v=11.8' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
+    'version 11.9': "APP_VERSION = '11.9'" in main and 'v=11.9' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
     'critic css': 'v11.8' in css,
 }
 failed = [name for name, ok in checks.items() if not ok]

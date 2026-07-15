@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "11.7"
+BASE_STYLE_VERSION = "11.9"
 BASE_STYLE_NAME = "ARTLINE Base"
 
 DEFAULT_STYLE_PROMPT = r'''Create production-ready premium ecommerce rich content that feels native to artline.ua and belongs to one coherent ARTLINE design system.
@@ -23,6 +23,7 @@ SOURCE OF TRUTH
 - If a fact is absent or ambiguous, omit it.
 - Convert confirmed specifications into practical buyer value, but never present an inference as a confirmed fact.
 - Keep official brand names, model IDs, technology names, numbers and units unchanged.
+- If confirmed facts are too few to fill a fixed element count, reframe genuine facts into distinct practical angles instead of inventing new specifications; never fabricate to reach a required count.
 
 LANGUAGE CONTRACT
 - Write every visible sentence only in the target language supplied by the project.
@@ -41,6 +42,7 @@ SEO AND GENERATIVE-ENGINE VALUE
 - Prefer answer-first paragraphs: begin with the useful conclusion, then support it with the confirmed fact.
 - Use related category and use-case terminology only where it is genuinely relevant.
 - Do not repeat the same keyword, product name, claim or sentence unnaturally.
+- Each section must contribute new information; never reuse the same sentence, benefit, specification or paragraph across sections.
 - Do not create hidden SEO text, meta tags, schema markup, keyword lists, fake FAQs or unsupported comparisons.
 
 HTML CONTRACT
@@ -49,6 +51,7 @@ HTML CONTRACT
 - Allowed elements: section, div, h2, h3, p, ul, li, img, strong, span.
 - Never use h1, script, style, JavaScript, forms, buttons, prices, purchase links, tabs, accordions, video, SVG, base64 images, markdown or code fences.
 - Use only absolute or current-project image URLs supplied in the request. Never invent URLs.
+- Every <img> must include a concise descriptive alt attribute in the target language that names the product and what the image shows; never leave alt empty and never stuff keywords. Add loading="lazy" to every non-Hero image.
 - Add the required HTML comment before every major section.
 - Close every element and use box-sizing:border-box wherever dimensions or layout are set.
 - Do not use media queries. Desktop and mobile are separate outputs.
@@ -65,7 +68,7 @@ Keep the root transparent. Never create a dark full-page canvas.
 ARTLINE DESIGN SYSTEM
 - At least 70% of the total page area must remain white, transparent or light.
 - Primary text on light surfaces: #101010.
-- Secondary text on light surfaces: #555555 or #69737D.
+- Body and secondary text on light surfaces: #555555. Use #69737D only for small eyebrow labels or captions, never for paragraphs.
 - Primary text on dark surfaces: #FFFFFF or #F7F8FA.
 - Secondary text on dark surfaces: #D0D7DE or #AFB8C1.
 - Primary accent: #19BCC9.
@@ -103,6 +106,7 @@ TYPOGRAPHY
 - Card h3: 18-20px, line-height 1.25-1.35, weight 700-800.
 - Body desktop: 16-17px, line-height 1.55-1.7. Body mobile: 14-16px, line-height 1.55-1.65.
 - Keep paragraphs concise and readable. Avoid all-caps except short badges.
+- Limit paragraphs to 2-3 sentences and about 70 characters per line on desktop. Target roughly 350-600 words of visible copy across the whole page.
 
 PAGE STRUCTURE
 Create exactly six sections, in this order, and no others:
@@ -131,6 +135,7 @@ Do not add a trust strip, system banner, project metadata, generation status, te
 - Hero heading is #FFFFFF; subtitle #F7F8FA; paragraph #D0D7DE. Accent color is reserved for the compact badge.
 - Desktop: min-height 540-580px; product on the right; text on the left; padding approximately 60px 46px; background-size:cover.
 - Mobile: use the dedicated mobile Hero asset; product in the upper area; text below the main silhouette; min-height approximately 600px; padding approximately 320px 18px 26px; background-size:cover.
+- Mobile Hero layout: use display:flex; flex-direction:column; justify-content:flex-end so the copy island sits in the lower text-safe area rather than relying only on a large fixed top padding.
 
 2. KEY BENEFITS — WHY THIS PRODUCT MATTERS
 - Use exactly six equal light content islands. Every benefit must have its own visible card; never render benefits as bare text columns.
