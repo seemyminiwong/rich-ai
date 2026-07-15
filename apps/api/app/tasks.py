@@ -112,7 +112,7 @@ def process_project(self, project_id):
 
             log(db, project, 'extract', f'Витягування характеристик · {project.text_model}', 15)
             product, input_tokens, output_tokens = extract_product(
-                jsonld, title, clean_text, project.source_url, project.text_model
+                jsonld, title, clean_text, project.source_url, project.text_model, page_html
             )
             project.product_json = json.dumps(product, ensure_ascii=False)
             detected_name = str(product.get('name') or title or '').strip()
