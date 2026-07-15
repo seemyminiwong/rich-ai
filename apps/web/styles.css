@@ -87,6 +87,12 @@
 .hint:hover::after,.hint:focus::after{opacity:1;visibility:visible}
 .hint:focus-visible{box-shadow:0 0 0 3px rgba(25,188,201,.35)}
 
+/* v12: project category chip + wider toolbar */
+.cat-chip{display:inline-block;margin-right:8px;padding:3px 8px;border-radius:8px;background:#EAF9FB;border:1px solid #B8E8ED;color:#157985;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.03em;vertical-align:middle;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.project-toolbar{grid-template-columns:minmax(220px,1fr) 160px 170px 180px auto}
+@media(max-width:1200px){.project-toolbar{grid-template-columns:1fr 1fr 1fr}.project-toolbar .view-switch{grid-column:1/-1;justify-self:start}}
+@media(max-width:760px){.project-toolbar{grid-template-columns:1fr}}
+
 /* v12: review history */
 .review-log{display:grid;gap:10px}
 .review-entry{padding:14px 16px;border-radius:12px;background:var(--surface-soft);border:1px solid var(--border);border-left:4px solid var(--border)}

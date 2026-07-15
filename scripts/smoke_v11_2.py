@@ -93,6 +93,9 @@ checks = {
     'category from breadcrumbs': 'def _html_breadcrumbs' in pipeline and 'def _html_category' in pipeline and 'BreadcrumbList' in pipeline,
     'category required before skipping ai': "len(base.get('specs') or []) >= 3 and str(base.get('category') or '').strip()" in pipeline,
     'breadcrumb trail passed to ai': 'BREADCRUMB TRAIL' in pipeline,
+    'category never empty': 'def _ensure_category' in pipeline and 'def _category_from_name' in pipeline and 'def _html_meta_category' in pipeline,
+    'category resolved on every exit path': pipeline.count('_ensure_category(') >= 5,
+    'category on projects screen': 'cat-chip' in web and 'projectCategories' in web and "['category_asc','За категорією']" in web,
     'no early return on bare description': "if data['name'] and (data['description'] or data['specs'])" not in pipeline,
     'specs merged into prompt': 'SPECIFICATIONS FOUND IN THE PAGE MARKUP' in pipeline,
 

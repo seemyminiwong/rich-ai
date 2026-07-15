@@ -587,6 +587,58 @@ def _html_category(page_html: str, product_name: str = '') -> str:
     return candidates[-1] if candidates else ''
 
 
+def _html_meta_category(page_html: str) -> str:
+    """Read the category from product meta tags, if the template exposes one."""
+    try:
+        soup = BeautifulSoup(page_html or "", "html.parser")
+    except Exception:
+        return ""
+    for attrs in ({"property": "product:category"}, {"name": "product:category"},
+                  {"itemprop": "category"}, {"property": "og:category"}, {"name": "category"}):
+        tag = soup.find("meta", attrs=attrs)
+        value = (tag.get("content") if tag else "") or ""
+        value = re.sub(r"\s+", " ", value).strip(" >/")
+        if value and len(value) <= 80:
+            return value.split(">")[-1].strip() if ">" in value else value
+    return ""
+
+
+def _category_from_name(name: str) -> str:
+    """Derive the category from the leading words of the product name.
+
+    ARTLINE names start with the category and switch to Latin script at the brand:
+    "3D принтер Bambu Lab A1 Mini" -> "3D принтер";
+    "Система зберігання енергії Solis SV-1SL6K1" -> "Система зберігання енергії".
+    Deterministic last resort when the page exposes no category anywhere.
+    """
+    picked = []
+    for token in re.split(r"\s+", (name or "").strip()):
+        core = token.strip('.,;:()[]"«»—-')
+        if not core:
+            continue
+        if re.search(r"[А-Яа-яЇїІіЄєҐґ]", core):
+            picked.append(core)
+            continue
+        # Allow one short technical token ("3D", "UPS") before the first Cyrillic word.
+        if not picked and len(core) <= 4 and re.fullmatch(r"[0-9A-Za-z]+", core):
+            picked.append(core)
+            continue
+        break  # a Latin brand token: the category part has ended
+    result = " ".join(picked).strip()
+    if not (3 <= len(result) <= 60) or len(picked) > 5:
+        return ""
+    if not re.search(r"[А-Яа-яЇїІіЄєҐґ]", result):
+        return ""  # nothing but a stray latin token
+    return result
+
+
+def _ensure_category(data: dict, page_category: str = '') -> dict:
+    """Category resolution order: page data -> AI -> product name. Never leave it empty."""
+    if not str(data.get('category') or '').strip():
+        data['category'] = page_category or _category_from_name(data.get('name') or '')
+    return data
+
+
 def _merge_specs(primary: list, extra: list) -> list:
     merged, seen = [], set()
     for row in list(primary or []) + list(extra or []):
@@ -713,7 +765,7 @@ def extract_product(jsonld, title: str, clean_text: str, url: str, model: str, p
     page_specs = _html_specs(page_html) if page_html else []
     page_features = _html_features(page_html) if page_html else []
     page_trail = _html_breadcrumbs(page_html) if page_html else []
-    page_category = _html_category(page_html, base.get('name') or title) if page_html else ''
+    page_category = (_html_category(page_html, base.get('name') or title) or _html_meta_category(page_html)) if page_html else ''
     if base:
         base['specs'] = _merge_specs(base.get('specs') or [], page_specs)
         if not base.get('features'):
@@ -724,15 +776,13 @@ def extract_product(jsonld, title: str, clean_text: str, url: str, model: str, p
     # Enough hard facts already — no AI call needed. The category must be resolved too,
     # otherwise skipping the AI call would silently leave it empty.
     if base.get('name') and len(base.get('specs') or []) >= 3 and str(base.get('category') or '').strip():
-        return base, 0, 0
+        return _ensure_category(base, page_category), 0, 0
 
     if not client:
         data = dict(base) if base.get('name') else _fallback_extract(title, clean_text)
         data['specs'] = _merge_specs(data.get('specs') or [], page_specs)
         data['features'] = data.get('features') or page_features
-        if not str(data.get('category') or '').strip():
-            data['category'] = page_category
-        return data, 0, 0
+        return _ensure_category(data, page_category), 0, 0
 
     spec_block = ''
     if page_specs:
@@ -763,20 +813,16 @@ def extract_product(jsonld, title: str, clean_text: str, url: str, model: str, p
                 data[key] = base[key]
         if not str(data.get('description') or '').strip() and base.get('description'):
             data['description'] = base['description']
-        if not str(data.get('category') or '').strip():
-            data['category'] = page_category
         data['specs'] = _merge_specs(data.get('specs') or [], _merge_specs(base.get('specs') or [], page_specs))
         if not data.get('features'):
             data['features'] = base.get('features') or page_features
-        return data, input_tokens, output_tokens
+        return _ensure_category(data, page_category), input_tokens, output_tokens
     except Exception as exc:
         logger.warning('AI product extraction failed, using page data: %s', exc)
         data = dict(base) if base.get('name') else _fallback_extract(title, clean_text)
         data['specs'] = _merge_specs(data.get('specs') or [], page_specs)
         data['features'] = data.get('features') or page_features
-        if not str(data.get('category') or '').strip():
-            data['category'] = page_category
-        return data, 0, 0
+        return _ensure_category(data, page_category), 0, 0
 
 
 def generate_image(
