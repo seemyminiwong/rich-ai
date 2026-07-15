@@ -21,6 +21,35 @@ logger = logging.getLogger("richstudio.pipeline")
 client = OpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
 
 
+def _is_reasoning_model(model: str) -> bool:
+    name = (model or '').lower()
+    return name.startswith(('gpt-5', 'o1', 'o3', 'o4')) or 'reasoning' in name
+
+
+def _responses_create(model: str, prompt: str, max_output_tokens: int):
+    """Call the Responses API, adapting the token budget for reasoning models.
+
+    Reasoning models bill hidden reasoning tokens against max_output_tokens, so a
+    normal budget can leave nothing for the visible answer (empty or truncated
+    output). Give them more room and keep the thinking short for formatting work.
+    """
+    options = dict(model=model, input=prompt, max_output_tokens=max_output_tokens, store=False)
+    if _is_reasoning_model(model):
+        options['max_output_tokens'] = max(max_output_tokens * 2, 32000)
+        effort = (settings.openai_reasoning_effort or '').strip()
+        if effort:
+            options['reasoning'] = {'effort': effort}
+    try:
+        return _with_retry(lambda: client.responses.create(**options))
+    except Exception as exc:
+        # Some models reject the reasoning parameter or a larger budget; degrade safely.
+        if 'reasoning' in options and 'reasoning' in str(exc).lower():
+            logger.warning('Model %s rejected the reasoning parameter, retrying without it: %s', model, exc)
+            options.pop('reasoning', None)
+            return _with_retry(lambda: client.responses.create(**options))
+        raise
+
+
 def _with_retry(call, attempts=3, base_delay=1.5):
     """Retry transient OpenAI/network failures with exponential backoff.
 
@@ -645,7 +674,7 @@ def extract_product(jsonld, title: str, clean_text: str, url: str, model: str, p
         'Never invent facts.\nURL: ' + url + '\nTITLE: ' + title + spec_block + '\nPAGE: ' + clean_text
     )
     try:
-        response = _with_retry(lambda: client.responses.create(model=model, input=prompt, max_output_tokens=8000, store=False))
+        response = _responses_create(model, prompt, 8000)
         data = _extract_json(response.output_text)
         input_tokens, output_tokens = _usage_counts(response, prompt, response.output_text)
         # JSON-LD wins for identity fields; specs are the union of every source.
@@ -845,14 +874,14 @@ def generate_html(product, style, language, variant, hero, feature, model: str):
         return fallback, 0, 0, 'OpenAI API key is not configured'
     base_prompt = _prompt(product, style, language, variant, hero, feature)
     try:
-        response = _with_retry(lambda: client.responses.create(model=model, input=base_prompt, max_output_tokens=16000, store=False))
+        response = _responses_create(model, base_prompt, 16000)
         output = _html_only(response.output_text)
         input_tokens, output_tokens = _usage_counts(response, base_prompt, response.output_text)
         if not _language_matches(output, language):
             correction = f"""Rewrite only the visible text in the HTML below into the required target language. Preserve every HTML tag, inline CSS declaration, URL, number, unit, model name and trademark. Do not add or remove sections. {language_rule(language)}
 HTML:
 {output}"""
-            corrected = _with_retry(lambda: client.responses.create(model=model, input=correction, max_output_tokens=16000, store=False))
+            corrected = _responses_create(model, correction, 16000)
             output = _html_only(corrected.output_text)
             ci, co = _usage_counts(corrected, correction, corrected.output_text)
             input_tokens += ci
@@ -865,7 +894,7 @@ HTML:
         if _section_count(output) < 3:
             logger.warning('Incomplete page for %s/%s (%d h2), retrying', language, variant, _section_count(output))
             retry_prompt = base_prompt + "\n\nIMPORTANT: Return the COMPLETE page as one <section> with ALL SIX sections in order (Hero, Key Benefits, Core Feature, Use Scenarios, Buyer Confidence, Final Summary). Do not stop after the Hero and do not omit any section."
-            retried = _with_retry(lambda: client.responses.create(model=model, input=retry_prompt, max_output_tokens=16000, store=False))
+            retried = _responses_create(model, retry_prompt, 16000)
             retried_out = _html_only(retried.output_text)
             ri, ro = _usage_counts(retried, retry_prompt, retried.output_text)
             input_tokens += ri
@@ -912,7 +941,7 @@ Keep product names, brands, model IDs, technology names, numbers and units uncha
 Do not add facts, HTML, markdown, explanations or extra keys.
 SEGMENTS:
 {json.dumps(segments, ensure_ascii=False)}"""
-    response = _with_retry(lambda: client.responses.create(model=model, input=prompt, max_output_tokens=12000, store=False))
+    response = _responses_create(model, prompt, 12000)
     translated = _extract_json(response.output_text)
     result = template
     for key, original in segments.items():
