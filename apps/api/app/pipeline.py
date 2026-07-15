@@ -746,6 +746,33 @@ def materialize_product_reference(url: str, project_id: str):
         temporary.unlink(missing_ok=True)
 
 
+def select_key_feature(product: dict) -> str:
+    """Pick the single confirmed feature the Feature image must communicate.
+
+    The image model used to receive the whole product JSON and had to guess what
+    mattered. Choosing here keeps the shot focused on one real capability.
+    Order: page bullet points -> first meaningful specification -> first sentence
+    of the description. Returns '' rather than inventing anything.
+    """
+    for value in (product.get('features') or []):
+        text = re.sub(r'\s+', ' ', str(value or '')).strip()
+        if 12 <= len(text) <= 200:
+            return text
+    for spec in (product.get('specs') or []):
+        if not isinstance(spec, dict):
+            continue
+        name = re.sub(r'\s+', ' ', str(spec.get('name') or '')).strip()
+        value = re.sub(r'\s+', ' ', str(spec.get('value') or '')).strip()
+        if name and value and len(name) + len(value) <= 120:
+            return f'{name}: {value}'
+    description = re.sub(r'\s+', ' ', str(product.get('description') or '')).strip()
+    if description:
+        first = re.split(r'(?<=[.!?])\s+', description)[0]
+        if 12 <= len(first) <= 200:
+            return first
+    return ''
+
+
 def style_image_prompt(style_prompt: str, section: str) -> str:
     # Optional sections inside the single style field:
     # [HERO_IMAGE] ... [/HERO_IMAGE] and [FEATURE_IMAGE] ... [/FEATURE_IMAGE]
