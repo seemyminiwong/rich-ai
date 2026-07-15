@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile Python
+        run: python -m compileall -q apps/api/app
+      - name: Node syntax check
+        run: node --check apps/web/app.js
+      - name: Smoke checks
+        run: python scripts/smoke_v11_2.py
+      - name: Install test deps
+        run: pip install -r apps/api/requirements.txt pytest
+      - name: Pytest
+        run: PYTHONPATH=apps/api pytest -q tests
+
+  build-and-push:
+    needs: checks
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Read version
+        id: v
+        run: echo "version=$(grep -oP '__version__ = \"\K[^\"]+' apps/api/app/version.py)" >> "$GITHUB_OUTPUT"
+      - name: Build & push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./apps/api
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/rich-ai-api:latest
+            ghcr.io/${{ github.repository_owner }}/rich-ai-api:${{ steps.v.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/rich-ai-api:${{ github.sha }}
+      - name: Build & push Web image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./apps/web
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/rich-ai-web:latest
+            ghcr.io/${{ github.repository_owner }}/rich-ai-web:${{ steps.v.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/rich-ai-web:${{ github.sha }}

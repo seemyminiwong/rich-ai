@@ -6,6 +6,7 @@ import logging
 import re
 import socket
 import tempfile
+import time
 from pathlib import Path
 from io import BytesIO
 from urllib.parse import urljoin, urlparse
@@ -18,6 +19,28 @@ from app.config import settings
 logger = logging.getLogger("richstudio.pipeline")
 
 client = OpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+
+
+def _with_retry(call, attempts=3, base_delay=1.5):
+    """Retry transient OpenAI/network failures with exponential backoff.
+
+    Only retries errors that look transient (rate limit, timeout, 5xx, dropped
+    connection). Deterministic errors (bad request, auth) raise immediately.
+    """
+    last = None
+    for attempt in range(attempts):
+        try:
+            return call()
+        except Exception as exc:
+            last = exc
+            message = str(exc).lower()
+            transient = any(k in message for k in ('rate limit', 'timeout', 'timed out', 'temporar', 'overload', 'connection', 'reset', '429', '500', '502', '503', '504'))
+            if attempt == attempts - 1 or not transient:
+                raise
+            logger.warning('OpenAI call failed (attempt %d/%d), retrying: %s', attempt + 1, attempts, exc)
+            time.sleep(base_delay * (2 ** attempt))
+    if last:
+        raise last
 
 
 # Rich content is embedded, untrusted HTML. It is rendered in the operator UI and
@@ -494,7 +517,7 @@ def extract_product(jsonld, title: str, clean_text: str, url: str, model: str):
         'Never invent facts.\nURL: ' + url + '\nTITLE: ' + title + '\nPAGE: ' + clean_text
     )
     try:
-        response = client.responses.create(model=model, input=prompt, max_output_tokens=5000, store=False)
+        response = _with_retry(lambda: client.responses.create(model=model, input=prompt, max_output_tokens=5000, store=False))
         data = _extract_json(response.output_text)
         input_tokens, output_tokens = _usage_counts(response, prompt, response.output_text)
         return data, input_tokens, output_tokens
@@ -545,7 +568,7 @@ def generate_image(
             # rejects an explicit parameter, so omit it there.
             if not model.startswith('gpt-image-2'):
                 edit_options['extra_body'] = {'input_fidelity': 'high'}
-            response = client.images.edit(**edit_options)
+            response = _with_retry(lambda: client.images.edit(**edit_options))
         item = response.data[0]
         folder = Path(settings.media_dir) / project_id
         folder.mkdir(parents=True, exist_ok=True)
@@ -676,14 +699,14 @@ def generate_html(product, style, language, variant, hero, feature, model: str):
         return fallback, 0, 0, 'OpenAI API key is not configured'
     base_prompt = _prompt(product, style, language, variant, hero, feature)
     try:
-        response = client.responses.create(model=model, input=base_prompt, max_output_tokens=16000, store=False)
+        response = _with_retry(lambda: client.responses.create(model=model, input=base_prompt, max_output_tokens=16000, store=False))
         output = _html_only(response.output_text)
         input_tokens, output_tokens = _usage_counts(response, base_prompt, response.output_text)
         if not _language_matches(output, language):
             correction = f"""Rewrite only the visible text in the HTML below into the required target language. Preserve every HTML tag, inline CSS declaration, URL, number, unit, model name and trademark. Do not add or remove sections. {language_rule(language)}
 HTML:
 {output}"""
-            corrected = client.responses.create(model=model, input=correction, max_output_tokens=16000, store=False)
+            corrected = _with_retry(lambda: client.responses.create(model=model, input=correction, max_output_tokens=16000, store=False))
             output = _html_only(corrected.output_text)
             ci, co = _usage_counts(corrected, correction, corrected.output_text)
             input_tokens += ci
@@ -728,7 +751,7 @@ Keep product names, brands, model IDs, technology names, numbers and units uncha
 Do not add facts, HTML, markdown, explanations or extra keys.
 SEGMENTS:
 {json.dumps(segments, ensure_ascii=False)}"""
-    response = client.responses.create(model=model, input=prompt, max_output_tokens=12000, store=False)
+    response = _with_retry(lambda: client.responses.create(model=model, input=prompt, max_output_tokens=12000, store=False))
     translated = _extract_json(response.output_text)
     result = template
     for key, original in segments.items():

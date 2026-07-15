@@ -80,11 +80,18 @@ checks = {
     'cost breakdown ui': 'function costPanel' in web,
     'live project timer': 'function startProjectTimer' in web and 'id="liveTimer"' in web,
     'quality disclaimer': 'critic-note' in web and 'не замінюють ручну перевірку' in web,
-    'sku surfaced': "'sku': str(product.get('sku')" in main and 'sku-block' in web,
+    'sku surfaced': "'sku': str(product.get('sku')" in main and 'sku-strip' in web,
     'category extracted': 'category is a short human-readable product category' in pipeline and '"category"' in pipeline,
 
-    # --- version bump ---
-    'version 11.10': "APP_VERSION = '11.10'" in main and 'v=11.10' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
+    # --- v12 foundation ---
+    'single version source': '__version__ = "12.0"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
+    'index version synced': 'v=12.0' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
+    'openai retries': 'def _with_retry' in pipeline and '_with_retry(lambda: client.responses.create' in pipeline and '_with_retry(lambda: client.images.edit' in pipeline,
+    'ci workflow': (root / '.github/workflows/ci.yml').exists() and 'ghcr.io' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8'),
+    'registry compose': (root / 'docker-compose.registry.yml').exists() and 'rich-ai-api' in (root / 'docker-compose.registry.yml').read_text(encoding='utf-8'),
+    'deploy runbook': (root / 'DEPLOY.md').exists(),
+    'alembic scaffold': (root / 'apps/api/alembic/env.py').exists() and (root / 'apps/api/alembic/versions/0001_baseline.py').exists() and 'alembic==' in (root / 'apps/api/requirements.txt').read_text(encoding='utf-8'),
+    'license present': (root / 'LICENSE').exists() and 'MIT License' in (root / 'LICENSE').read_text(encoding='utf-8'),
     'critic css': 'v11.8' in css,
 }
 failed = [name for name, ok in checks.items() if not ok]

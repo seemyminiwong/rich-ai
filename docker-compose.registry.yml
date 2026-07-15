@@ -1,0 +1,14 @@
+# Overlay for deploying prebuilt images from GHCR instead of building on the host.
+# Usage:
+#   export IMAGE_TAG=latest   (or a specific version like 12.0)
+#   docker compose -f docker-compose.yml -f docker-compose.registry.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.registry.yml up -d
+#
+# Replace the owner (seemyminiwong) if the repository moves.
+services:
+  api:
+    image: ghcr.io/seemyminiwong/rich-ai-api:${IMAGE_TAG:-latest}
+  worker:
+    image: ghcr.io/seemyminiwong/rich-ai-api:${IMAGE_TAG:-latest}
+  web:
+    image: ghcr.io/seemyminiwong/rich-ai-web:${IMAGE_TAG:-latest}
