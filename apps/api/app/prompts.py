@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "11.9"
+BASE_STYLE_VERSION = "12.1"
 BASE_STYLE_NAME = "ARTLINE Base"
 
 DEFAULT_STYLE_PROMPT = r'''Create production-ready premium ecommerce rich content that feels native to artline.ua and belongs to one coherent ARTLINE design system.
@@ -24,6 +24,15 @@ SOURCE OF TRUTH
 - Convert confirmed specifications into practical buyer value, but never present an inference as a confirmed fact.
 - Keep official brand names, model IDs, technology names, numbers and units unchanged.
 - If confirmed facts are too few to fill a fixed element count, reframe genuine facts into distinct practical angles instead of inventing new specifications; never fabricate to reach a required count.
+
+NEVER DESCRIBE THE PAGE OR THE IMAGES
+- Write only about the product and what the buyer does with it. The page is the message, never the subject.
+- Never mention, describe or refer to the images in visible copy. Forbidden: "on the photo", "the image shows", "pictured above", "this close-up", "this is not a diagram", "as shown", "the photograph helps". Images are displayed, not explained. The copy must still make complete sense if every image were removed.
+- Never narrate the page or its structure. Forbidden: "below you will find", "in this section", "here are typical scenarios", "the following facts", "this block shows", "this is a practical hint".
+- Never restate these instructions, the task, the section purpose or the generation process in visible copy.
+- Every heading names a product capability, benefit or buyer outcome — never a page element. Headings such as "Detailed product sample", "What the image shows", "About this block" are forbidden.
+- Every sentence must be specific to THIS product. If a sentence would be equally true for any other product in any category, delete it or replace it with a confirmed product fact.
+- If the Product JSON has too few facts to fill a section meaningfully, write fewer and shorter sentences that are still about the product — never pad with image descriptions, page narration or generic filler.
 
 LANGUAGE CONTRACT
 - Write every visible sentence only in the target language supplied by the project.
@@ -151,9 +160,11 @@ Do not add a trust strip, system banner, project metadata, generation status, te
 - Use one balanced secondary soft outer island: background:#F7F8FA; border:1px solid #D0D7DE; border-radius:12px; padding:44px.
 - Desktop uses a two-column layout with two coordinated inner islands: one white text island and one white image island. Mobile stacks the same islands with text first and image second.
 - Text island: background:#FFFFFF; border:1px solid #D0D7DE; border-radius:12px; padding:28px. Image island uses the same surface language and padding:20-24px.
-- Explain: what the feature is, how it works at a buyer-understandable level and what practical result it provides.
-- The Feature image must visually support this exact feature, not merely repeat the Hero composition.
-- If the main feature cannot be depicted without inventing internals or functionality, use an accurate product-focused close-up instead.
+- The text of this section is about the FEATURE OF THE PRODUCT, never about the picture. Explain: what the feature is, how it works at a buyer-understandable level and what practical result it provides.
+- The heading of this section names the feature or its benefit (for example "Automatic filament change" or "Prints a full plate unattended") — never "Detailed product sample", "Product close-up" or any caption about the image.
+- Never comment on the image, its framing or its purpose, and never state what the image is or is not.
+- The Feature image must visually support this exact feature, not merely repeat the Hero composition. This is an art-direction rule for the image only — it must never appear as text.
+- If the main feature cannot be depicted without inventing internals or functionality, use an accurate product-focused close-up instead — silently, without explaining that choice on the page.
 
 4. USE SCENARIOS — WHO IT IS FOR
 - Use one secondary soft outer island with one descriptive h2, one concise introduction and exactly four white scenario islands.
@@ -185,6 +196,9 @@ Never show internal or technical labels such as:
 HTML comments are allowed but must never become visible copy.
 
 FINAL SELF-CHECK
+- no sentence mentions, describes or explains an image; the copy reads correctly with every image removed;
+- no sentence narrates the page, a section or these instructions; no heading names a page element;
+- every sentence is specific to this exact product and could not be pasted onto a different product unchanged;
 - exactly six sections in the required order;
 - no h1 and no extra major section;
 - Hero asset is the full CSS background of the first section and no Hero <img> exists;
