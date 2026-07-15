@@ -32,7 +32,7 @@ from app.prompts import (
     DEFAULT_STYLE_PROMPT,
 )
 
-APP_VERSION = '11.8'
+APP_VERSION = '11.9'
 
 Path(settings.media_dir).mkdir(parents=True, exist_ok=True)
 
@@ -307,6 +307,25 @@ def update_style(style_id: str, payload: StyleIn, db: Session = Depends(get_db),
     s.score_json = json.dumps(score, ensure_ascii=False); s.preview_html = preview
     current_version = db.scalar(select(func.max(StyleVersion.version)).where(StyleVersion.style_id == s.id)) or 0
     db.add(StyleVersion(style_id=s.id, version=current_version + 1, prompt=s.prompt, hero_prompt=s.hero_prompt, feature_prompt=s.feature_prompt, created_by=user.id)); audit(db, user, 'style.update', 'style', s.id); db.commit(); return style_dict(s)
+
+
+@app.delete('/api/styles/{style_id}')
+def delete_style(style_id: str, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin, Role.editor))):
+    s = db.get(Style, style_id)
+    if not s: raise HTTPException(404, 'Стиль не знайдено')
+    if s.name == BASE_STYLE_NAME: raise HTTPException(400, 'Базовий стиль ARTLINE Base видалити не можна')
+    if s.is_default: raise HTTPException(400, 'Спершу призначте інший стиль за замовчуванням, потім видаляйте цей')
+    name = s.name
+    default = db.scalar(select(Style).where(Style.is_default == True)) or db.scalar(select(Style).where(Style.name == BASE_STYLE_NAME))
+    reassigned = 0
+    if default:
+        for p in db.scalars(select(Project).where(Project.style_id == style_id)).all():
+            p.style_id = default.id
+            reassigned += 1
+    db.execute(sa_delete(StyleVersion).where(StyleVersion.style_id == style_id))
+    db.delete(s)
+    audit(db, user, 'style.delete', 'style', style_id, {'name': name, 'reassigned_projects': reassigned}); db.commit()
+    return {'deleted': True, 'reassigned_projects': reassigned}
 
 
 @app.get('/api/styles/{style_id}/versions')
