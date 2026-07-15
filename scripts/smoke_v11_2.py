@@ -90,6 +90,9 @@ checks = {
     'sku surfaced': "'sku': str(product.get('sku')" in main and 'sku-strip' in web,
     'category extracted': 'category is a short human-readable product category' in pipeline and '"category"' in pipeline,
     'html spec parsing': 'def _html_specs' in pipeline and 'def _merge_specs' in pipeline and 'page_html' in tasks,
+    'category from breadcrumbs': 'def _html_breadcrumbs' in pipeline and 'def _html_category' in pipeline and 'BreadcrumbList' in pipeline,
+    'category required before skipping ai': "len(base.get('specs') or []) >= 3 and str(base.get('category') or '').strip()" in pipeline,
+    'breadcrumb trail passed to ai': 'BREADCRUMB TRAIL' in pipeline,
     'no early return on bare description': "if data['name'] and (data['description'] or data['specs'])" not in pipeline,
     'specs merged into prompt': 'SPECIFICATIONS FOUND IN THE PAGE MARKUP' in pipeline,
 

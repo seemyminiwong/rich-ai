@@ -519,6 +519,74 @@ def _html_features(page_html: str) -> list[str]:
     return out
 
 
+_GENERIC_CRUMBS = {
+    'home', 'головна', 'главная', 'головна сторінка', 'main', 'artline', 'shop', 'магазин',
+    'каталог', 'catalog', 'катало́г', 'products', 'товари', 'товары', 'usi-tovary', 'все товары',
+}
+
+
+def _html_breadcrumbs(page_html: str) -> list[str]:
+    """Return the breadcrumb trail from JSON-LD BreadcrumbList or breadcrumb markup."""
+    try:
+        soup = BeautifulSoup(page_html or "", "html.parser")
+    except Exception:
+        return []
+    # Structured data first — it is the most reliable source.
+    for tag in soup.select('script[type="application/ld+json"]'):
+        parsed = _safe_json(tag.string or tag.get_text() or "")
+        if parsed is None:
+            continue
+        for node in _nodes(parsed):
+            if not isinstance(node, dict):
+                continue
+            kinds = node.get("@type") if isinstance(node.get("@type"), list) else [node.get("@type")]
+            if "BreadcrumbList" not in kinds:
+                continue
+            names = []
+            for item in node.get("itemListElement") or []:
+                if not isinstance(item, dict):
+                    continue
+                name = item.get("name")
+                inner = item.get("item")
+                if not name and isinstance(inner, dict):
+                    name = inner.get("name")
+                if name:
+                    names.append(re.sub(r"\s+", " ", str(name)).strip())
+            if len(names) >= 2:
+                return names
+    # Fall back to common breadcrumb markup.
+    for selector in ('[class*="breadcrumb"]', '[id*="breadcrumb"]', '[itemtype*="BreadcrumbList"]', 'nav[aria-label*="read"]'):
+        for block in soup.select(selector)[:5]:
+            names = []
+            for item in block.find_all(["a", "li", "span"]):
+                text = _flat(item)
+                if text and text not in names and len(text) <= 80:
+                    names.append(text)
+            if len(names) >= 2:
+                return names
+    return []
+
+
+def _html_category(page_html: str, product_name: str = '') -> str:
+    """Pick the product category from the breadcrumb trail.
+
+    The last crumb is normally the product itself and the first ones are the shop
+    root, so the useful category is the last remaining entry.
+    """
+    trail = _html_breadcrumbs(page_html)
+    name = re.sub(r"\s+", " ", (product_name or "")).strip().lower()
+    candidates = []
+    for crumb in trail:
+        value = crumb.strip(" /›»>-")
+        low = value.lower()
+        if not value or low in _GENERIC_CRUMBS or len(value) > 80:
+            continue
+        if name and (low in name or name in low):
+            continue  # the product itself, not a category
+        candidates.append(value)
+    return candidates[-1] if candidates else ''
+
+
 def _merge_specs(primary: list, extra: list) -> list:
     merged, seen = [], set()
     for row in list(primary or []) + list(extra or []):
@@ -644,25 +712,36 @@ def extract_product(jsonld, title: str, clean_text: str, url: str, model: str, p
     base = _normalize_jsonld(jsonld) if jsonld else {}
     page_specs = _html_specs(page_html) if page_html else []
     page_features = _html_features(page_html) if page_html else []
+    page_trail = _html_breadcrumbs(page_html) if page_html else []
+    page_category = _html_category(page_html, base.get('name') or title) if page_html else ''
     if base:
         base['specs'] = _merge_specs(base.get('specs') or [], page_specs)
         if not base.get('features'):
             base['features'] = page_features
+        if not str(base.get('category') or '').strip():
+            base['category'] = page_category
 
-    # Enough hard facts already — no AI call needed.
-    if base.get('name') and len(base.get('specs') or []) >= 3:
+    # Enough hard facts already — no AI call needed. The category must be resolved too,
+    # otherwise skipping the AI call would silently leave it empty.
+    if base.get('name') and len(base.get('specs') or []) >= 3 and str(base.get('category') or '').strip():
         return base, 0, 0
 
     if not client:
         data = dict(base) if base.get('name') else _fallback_extract(title, clean_text)
         data['specs'] = _merge_specs(data.get('specs') or [], page_specs)
         data['features'] = data.get('features') or page_features
+        if not str(data.get('category') or '').strip():
+            data['category'] = page_category
         return data, 0, 0
 
     spec_block = ''
     if page_specs:
         spec_block = '\nSPECIFICATIONS FOUND IN THE PAGE MARKUP (name: value) — prefer these for the specs array and keep every relevant pair:\n' + \
             '\n'.join(f"{row['name']}: {row['value']}" for row in page_specs)
+    # Breadcrumbs are stripped from the page text, so pass the trail explicitly —
+    # it is the most reliable source of the product category.
+    if page_trail:
+        spec_block += '\nBREADCRUMB TRAIL (shop root first, product last) — derive the category from it:\n' + ' > '.join(page_trail)
     prompt = (
         'Extract factual ecommerce product data from the supplied page. '
         'Return one JSON object only with keys: name, brand, sku, category, description, '
@@ -677,12 +756,15 @@ def extract_product(jsonld, title: str, clean_text: str, url: str, model: str, p
         response = _responses_create(model, prompt, 8000)
         data = _extract_json(response.output_text)
         input_tokens, output_tokens = _usage_counts(response, prompt, response.output_text)
-        # JSON-LD wins for identity fields; specs are the union of every source.
+        # Structured data (JSON-LD, breadcrumbs) is authoritative for identity fields;
+        # specs are the union of every source.
         for key in ('name', 'brand', 'sku', 'category'):
-            if base.get(key) and not str(data.get(key) or '').strip():
+            if str(base.get(key) or '').strip():
                 data[key] = base[key]
         if not str(data.get('description') or '').strip() and base.get('description'):
             data['description'] = base['description']
+        if not str(data.get('category') or '').strip():
+            data['category'] = page_category
         data['specs'] = _merge_specs(data.get('specs') or [], _merge_specs(base.get('specs') or [], page_specs))
         if not data.get('features'):
             data['features'] = base.get('features') or page_features
@@ -692,6 +774,8 @@ def extract_product(jsonld, title: str, clean_text: str, url: str, model: str, p
         data = dict(base) if base.get('name') else _fallback_extract(title, clean_text)
         data['specs'] = _merge_specs(data.get('specs') or [], page_specs)
         data['features'] = data.get('features') or page_features
+        if not str(data.get('category') or '').strip():
+            data['category'] = page_category
         return data, 0, 0
 
 
