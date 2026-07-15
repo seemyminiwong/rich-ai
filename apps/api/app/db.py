@@ -61,6 +61,23 @@ def ensure_schema():
                 connection.execute(text(
                     f'ALTER TYPE "{enum_schema}"."{enum_name}" ADD VALUE IF NOT EXISTS \'{value}\''
                 ))
+    # Add columns introduced by newer versions to already-existing tables.
+    # create_all() never alters existing tables, so add them here (idempotent).
+    column_migrations = {
+        ('projects', 'cost_breakdown_json'): "text DEFAULT '{}'",
+    }
+    for (table_name, column_name), column_type in column_migrations.items():
+        if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', table_name) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', column_name):
+            raise RuntimeError('Column migration contains unsupported identifier characters')
+        with engine.begin() as connection:
+            table_exists = connection.execute(text(
+                'SELECT 1 FROM information_schema.tables WHERE table_schema=:schema AND table_name=:table_name'
+            ), {'schema': settings.db_schema, 'table_name': table_name}).first()
+            if not table_exists:
+                continue
+            connection.execute(text(
+                f'ALTER TABLE "{settings.db_schema}"."{table_name}" ADD COLUMN IF NOT EXISTS {column_name} {column_type}'
+            ))
 
 metadata_obj = MetaData(schema=settings.db_schema)
 

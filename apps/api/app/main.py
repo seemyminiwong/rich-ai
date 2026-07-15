@@ -32,7 +32,7 @@ from app.prompts import (
     DEFAULT_STYLE_PROMPT,
 )
 
-APP_VERSION = '11.9'
+APP_VERSION = '11.10'
 
 Path(settings.media_dir).mkdir(parents=True, exist_ok=True)
 
@@ -90,7 +90,7 @@ class UserCreate(BaseModel):
     role: Role = Role.viewer
 class ProjectIn(BaseModel):
     name: str = ''; source_url: HttpUrl; style_id: str | None = None
-    languages: list[str] = Field(default_factory=lambda: ['ru'])
+    languages: list[str] = Field(default_factory=lambda: ['ua', 'ru'])
     variants: list[str] = Field(default_factory=lambda: ['desktop', 'mobile'])
     text_model: str | None = None; image_model: str | None = None; image_quality: str = 'medium'
     custom_hero_url: str = ''; custom_feature_url: str = ''
@@ -183,9 +183,17 @@ def user_dict(x):
 def style_dict(x): return {'id': x.id, 'name': x.name, 'description': x.description, 'prompt': x.prompt, 'hero_prompt': x.hero_prompt, 'feature_prompt': x.feature_prompt, 'negative_prompt': x.negative_prompt, 'score': json.loads(x.score_json or '{}'), 'preview_html': x.preview_html, 'is_default': x.is_default}
 def artifact_dict(x): return {'id': x.id, 'language': x.language, 'variant': x.variant, 'html': x.html, 'version': x.version, 'created_at': x.created_at}
 def project_dict(p, full=False, style_name=''):
+    try:
+        product = json.loads(p.product_json or '{}')
+    except Exception:
+        product = {}
+    try:
+        breakdown = json.loads(getattr(p, 'cost_breakdown_json', None) or '{}')
+    except Exception:
+        breakdown = {}
     r = {'id': p.id, 'name': p.name, 'source_url': p.source_url, 'style_id': p.style_id, 'style_name': style_name, 'owner_id': p.owner_id, 'status': p.status.value, 'stage': p.stage, 'progress': p.progress,
          'languages': [x for x in p.languages.split(',') if x], 'variants': [x for x in p.variants.split(',') if x], 'text_model': p.text_model, 'image_model': p.image_model, 'image_quality': p.image_quality,
-         'custom_hero_url': p.custom_hero_url, 'custom_feature_url': p.custom_feature_url, 'product_category': p.product_category, 'error': p.error, 'duration_seconds': p.duration_seconds, 'input_tokens': p.input_tokens, 'output_tokens': p.output_tokens,
+         'custom_hero_url': p.custom_hero_url, 'custom_feature_url': p.custom_feature_url, 'product_category': p.product_category, 'sku': str(product.get('sku') or ''), 'cost_breakdown': breakdown, 'error': p.error, 'duration_seconds': p.duration_seconds, 'input_tokens': p.input_tokens, 'output_tokens': p.output_tokens,
          'image_count': p.image_count, 'text_request_count': p.text_request_count, 'image_request_count': p.image_request_count, 'text_cost': p.text_cost, 'image_cost': p.image_cost, 'estimated_cost': p.estimated_cost,
          'created_at': p.created_at, 'started_at': p.started_at, 'finished_at': p.finished_at}
     if full:
