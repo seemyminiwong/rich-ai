@@ -2,6 +2,7 @@ import hashlib
 import html as html_lib
 import io
 import json
+import logging
 import re
 import secrets
 import shutil
@@ -25,6 +26,8 @@ from app.tasks import process_project
 from app.pipeline import _is_reasoning_model, is_public_http_url, sanitize_html, style_image_prompt, text_client
 from app.runtime import mask, runtime_config, set_runtime
 from app.version import __version__
+
+logger = logging.getLogger(__name__)
 from app.prompts import (
     BASE_STYLE_NAME,
     DEFAULT_FEATURE_PROMPT,
@@ -123,6 +126,10 @@ class RegisterIn(BaseModel): token: str; name: str = Field(min_length=2, max_len
 class InviteIn(BaseModel): email: str; role: Role = Role.viewer
 class UserUpdate(BaseModel): role: Role | None = None; active: bool | None = None; name: str | None = None
 class UserPasswordIn(BaseModel): password: str = Field(min_length=8, max_length=200)
+class ClientErrorIn(BaseModel):
+    text: str = Field(max_length=2000)
+    url: str = Field(default='', max_length=500)
+    agent: str = Field(default='', max_length=300)
 class SecretsIn(BaseModel):
     llm_provider: str | None = None
     openai_api_key: str | None = None
@@ -996,6 +1003,25 @@ def test_secrets(user=Depends(require_root)):
     except Exception as exc:
         return {'ok': False, 'provider': provider, 'detail': str(exc)[:300]}
     return {'ok': True, 'provider': provider, 'models': len(names)}
+
+
+@app.post('/api/client-error')
+def client_error(body: ClientErrorIn, db: Session = Depends(get_db), user=Depends(current)):
+    """A frontend crash the operator would otherwise never report.
+
+    The browser sends this at most once a minute, so it cannot be used to flood the
+    alert channel. Recorded in the audit log either way; alerting is best-effort.
+    """
+    detail = body.text.strip()[:1000]
+    logger.warning('Frontend error from %s at %s: %s', user.email, body.url[:200], detail)
+    audit(db, user, 'client.error', entity_type='frontend', metadata={'url': body.url[:200], 'text': detail})
+    db.commit()
+    try:
+        from app.tasks import send_alert
+        send_alert(f'Rich Studio UI error\nUser: {user.email}\nPage: {body.url[:200]}\n{detail[:400]}')
+    except Exception:
+        pass
+    return {'ok': True}
 
 
 @app.get('/api/usage')

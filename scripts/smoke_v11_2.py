@@ -12,6 +12,7 @@ db = (root / 'apps/api/app/db.py').read_text(encoding='utf-8')
 prompts = (root / 'apps/api/app/prompts.py').read_text(encoding='utf-8')
 runtime = (root / 'apps/api/app/runtime.py').read_text(encoding='utf-8')
 config = (root / 'apps/api/app/config.py').read_text(encoding='utf-8')
+nginx = (root / 'apps/web/nginx.conf').read_text(encoding='utf-8')
 
 checks = {
     # --- retained pipeline guarantees ---
@@ -156,6 +157,12 @@ checks = {
     'discovery only verifies the curated list': "kept_text = [x for x in text_models if x in live]" in main,
     'reasoning list derives from chosen models': 'reasoning_models = [x for x in text_models if _is_reasoning_model(x)]' in main,
     'unpriced models are surfaced': "'unpriced'" in main and 'function modelNotes' in web,
+    'ai preview iframes are fully sandboxed': 'sandbox=""' in web and 'allow-same-origin' not in web,
+    'index.html is never cached': 'no-store, must-revalidate' in nginx,
+    'assets are immutable': 'max-age=31536000, immutable' in nginx,
+    'security headers repeated where add_header breaks inheritance': nginx.count('X-Content-Type-Options') == 3,
+    'frontend crashes reach the alert channel': "addEventListener('error'" in web and "@app.post('/api/client-error')" in main,
+    'close buttons are labelled': web.count('aria-label="Закрити"') == 7,
     'ci workflow': (root / '.github/workflows/ci.yml').exists() and 'ghcr.io' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8'),
     'registry compose': (root / 'docker-compose.registry.yml').exists() and 'rich-ai-api' in (root / 'docker-compose.registry.yml').read_text(encoding='utf-8'),
     'deploy runbook': (root / 'docs/DEPLOY.md').exists(),
