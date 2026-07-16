@@ -119,6 +119,10 @@ button:focus-visible,a:focus-visible,select:focus-visible{outline:3px solid rgba
 /* v12: style demo preview */
 .style-demo{height:62vh}
 
+/* v12: style delete affordance */
+.delete-why{color:var(--muted);font-size:11px;line-height:1.4;max-width:260px}
+.style-savebar .row{align-items:center;gap:10px}
+
 /* v12: permissions editor */
 .perm-list{display:grid;gap:10px;margin:4px 0 4px}
 .perm-row{align-items:flex-start;gap:10px}
