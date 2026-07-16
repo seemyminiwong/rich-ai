@@ -22,7 +22,7 @@ from app.db import Base, SessionLocal, engine, ensure_schema, get_db
 from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Project, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
 from app.tasks import process_project
-from app.pipeline import is_public_http_url, sanitize_html, style_image_prompt, text_client
+from app.pipeline import _is_reasoning_model, is_public_http_url, sanitize_html, style_image_prompt, text_client
 from app.runtime import mask, runtime_config, set_runtime
 from app.version import __version__
 from app.prompts import (
@@ -778,28 +778,45 @@ def save_artifact(artifact_id: str, payload: HtmlIn, db: Session = Depends(get_d
 
 @app.get('/api/models')
 def available_models(user=Depends(current)):
+    """The models this studio can actually run, not OpenAI's catalogue.
+
+    Listing every discovered model was noise: codex, search-preview, instruct,
+    audio and dated snapshots cannot serve this pipeline, and none of them are
+    priced - so the New Project dialog would have quoted a cost that is simply a
+    guess. The curated .env lists are the source of truth; discovery is used only
+    to verify them against the live key. Anything genuinely missing here can still
+    be typed by hand via "Інша модель" in the dialog.
+    """
     cfg = runtime_config()
-    text_models = list(settings.text_models); image_models = list(settings.image_models); reasoning_models = []; source = 'configuration'
+    text_models = list(settings.text_models)
+    image_models = list(settings.image_models)
+    if cfg['gemini_api_key']:
+        image_models = list(dict.fromkeys(list(settings.gemini_models) + image_models))
+    source = 'configuration'
+    unavailable = []
     if cfg['openai_api_key']:
         try:
             from openai import OpenAI
-            rows = OpenAI(api_key=cfg['openai_api_key']).models.list().data
-            ids = sorted({x.id for x in rows})
-            excluded = ('audio', 'realtime', 'transcribe', 'tts', 'embedding', 'moderation', 'whisper', 'dall-e')
-            discovered_image = [x for x in ids if ('image' in x or x.startswith('dall-e'))]
-            discovered_text = [x for x in ids if any(x.startswith(prefix) for prefix in ('gpt-', 'o1', 'o3', 'o4')) and not any(k in x for k in excluded) and x not in discovered_image]
-            reasoning_models = [x for x in discovered_text if x.startswith(('o1', 'o3', 'o4')) or 'reasoning' in x]
-            text_models = sorted(dict.fromkeys(discovered_text + text_models)); image_models = sorted(dict.fromkeys(discovered_image + image_models)); source = 'openai+configuration'
+            live = {x.id for x in OpenAI(api_key=cfg['openai_api_key']).models.list()}
+            is_gemini = lambda name: name.startswith('gemini-')
+            unavailable = [x for x in text_models + image_models if not is_gemini(x) and x not in live]
+            kept_text = [x for x in text_models if x in live]
+            kept_image = [x for x in image_models if is_gemini(x) or x in live]
+            # Only trust the filter when the key can see something; an empty result
+            # means the listing failed us, not that every model vanished.
+            if kept_text:
+                text_models = kept_text
+            if kept_image:
+                image_models = kept_image
+            source = 'configuration+verified'
         except Exception:
             pass
-    # Gemini image models are offered only when a Gemini key exists: picking one
-    # without a key would fail at generation time instead of here.
-    if cfg['gemini_api_key']:
-        image_models = list(dict.fromkeys(list(settings.gemini_models) + image_models))
-        source = f'{source}+gemini'
+    # Which of the chosen text models bill hidden reasoning tokens - that is what an
+    # operator needs to know, not that o4-mini-deep-research exists somewhere.
+    reasoning_models = [x for x in text_models if _is_reasoning_model(x)]
     # Pricing travels with the model list so the New Project dialog can price a run
     # before it starts, using the same figures the worker bills against.
-    return {'text_models': text_models, 'image_models': image_models, 'reasoning_models': reasoning_models, 'source': source, 'default_text_model': settings.openai_text_model, 'default_image_model': settings.openai_image_model, 'text_pricing': settings.text_pricing, 'image_pricing': settings.image_pricing}
+    return {'text_models': text_models, 'image_models': image_models, 'reasoning_models': reasoning_models, 'source': source, 'unavailable': unavailable, 'unpriced': sorted({x for x in text_models if x not in settings.text_pricing} | {x for x in image_models if x not in settings.image_pricing}), 'default_text_model': settings.openai_text_model, 'default_image_model': settings.openai_image_model, 'text_pricing': settings.text_pricing, 'image_pricing': settings.image_pricing}
 
 
 @app.get('/api/assets')

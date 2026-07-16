@@ -214,3 +214,6 @@ optgroup{font-weight:800}
    same y. Titles run one to four lines, so clamp them to two and reserve the space
    whether or not the second line is used. Full name stays available via title=. */
 .project-grid:not(.list-view) .project h3{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.3;min-height:calc(2 * 1.3em);margin:16px 0 6px}
+
+.model-list code.is-reasoning{border-color:#B8E8ED;background:#EAF9FB;color:#157985}
+.model-list+h2{margin-top:20px}
