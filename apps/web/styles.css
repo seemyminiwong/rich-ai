@@ -170,3 +170,14 @@ button:focus-visible,a:focus-visible,select:focus-visible{outline:3px solid rgba
 .key-src.db{background:#E8F8F0;color:#14784A}
 .key-src.env{background:#EEF1F3;color:#555}
 .key-src.none{background:#FDECEC;color:#B42D2D}
+
+/* Vertical rhythm. Stacked sections had no gap at all, so panels butted into each
+   other while their columns kept a 14px gap. And the last .metrics in a panel kept
+   its 18px margin, making every panel bottom-heavy: 22px above the heading, 40px
+   below the last card. */
+.container>section{margin-bottom:16px}
+.container>section:last-child{margin-bottom:0}
+.panel>*:last-child,.panel>form>*:last-child{margin-bottom:0}
+.panel h2{margin:0 0 14px;font-size:19px}
+.panel h2+.model-list{margin-top:0}
+.panel .model-list+h2{margin-top:20px}
