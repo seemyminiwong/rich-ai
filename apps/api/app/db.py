@@ -65,6 +65,7 @@ def ensure_schema():
     # create_all() never alters existing tables, so add them here (idempotent).
     column_migrations = {
         ('projects', 'cost_breakdown_json'): "text DEFAULT '{}'",
+        ('users', 'permissions_json'): "text DEFAULT '{}'",
     }
     for (table_name, column_name), column_type in column_migrations.items():
         if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', table_name) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', column_name):

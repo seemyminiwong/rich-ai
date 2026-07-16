@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import Base, SessionLocal, engine, ensure_schema, get_db
 from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Project, Review, Role, Status, Style, StyleVersion, User
-from app.security import current, hash_password, token, verify
+from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
 from app.tasks import process_project
 from app.pipeline import is_public_http_url, sanitize_html, style_image_prompt
 from app.version import __version__
@@ -218,8 +218,20 @@ def audit(db, user, action, entity_type='', entity_id='', metadata=None):
     db.add(AuditLog(user_id=getattr(user, 'id', None), action=action, entity_type=entity_type, entity_id=entity_id, metadata_json=json.dumps(metadata or {}, ensure_ascii=False)))
 
 
+def is_root_admin(x) -> bool:
+    """The account seeded from ADMIN_EMAIL. It is managed via .env, not the UI."""
+    return (x.email or '').strip().lower() == (settings.admin_email or '').strip().lower()
+
+
 def user_dict(x):
-    return {'id': x.id, 'email': x.email, 'name': x.name, 'role': x.role.value, 'active': x.active, 'created_at': x.created_at, 'last_login_at': x.last_login_at}
+    try:
+        overrides = json.loads(getattr(x, 'permissions_json', None) or '{}')
+    except Exception:
+        overrides = {}
+    return {'id': x.id, 'email': x.email, 'name': x.name, 'role': x.role.value, 'active': x.active, 'is_root': is_root_admin(x),
+            'permissions': sorted(effective_perms(x)),
+            'granted': sorted(overrides.get('grant') or []), 'revoked': sorted(overrides.get('revoke') or []),
+            'created_at': x.created_at, 'last_login_at': x.last_login_at}
 def style_dict(x): return {'id': x.id, 'name': x.name, 'description': x.description, 'prompt': x.prompt, 'hero_prompt': x.hero_prompt, 'feature_prompt': x.feature_prompt, 'negative_prompt': x.negative_prompt, 'score': json.loads(x.score_json or '{}'), 'preview_html': x.preview_html, 'is_default': x.is_default}
 def artifact_dict(x): return {'id': x.id, 'language': x.language, 'variant': x.variant, 'html': x.html, 'version': x.version, 'created_at': x.created_at}
 def project_dict(p, full=False, style_name=''):
@@ -271,12 +283,12 @@ def me(user=Depends(current)): return user_dict(user)
 
 
 @app.get('/api/users')
-def users(db: Session = Depends(get_db), user=Depends(require_roles(Role.admin))):
+def users(db: Session = Depends(get_db), user=Depends(require_perm('users.manage'))):
     return [user_dict(x) for x in db.scalars(select(User).order_by(User.created_at.desc())).all()]
 
 
 @app.post('/api/users')
-def create_user(payload: UserCreate, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin))):
+def create_user(payload: UserCreate, db: Session = Depends(get_db), user=Depends(require_perm('users.manage'))):
     email = payload.email.strip().lower()
     if db.scalar(select(User).where(User.email == email)): raise HTTPException(409, 'Користувач уже існує')
     target = User(email=email, name=payload.name.strip(), password_hash=hash_password(payload.password), role=payload.role, active=True)
@@ -285,7 +297,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), user=Depends
 
 
 @app.post('/api/users/invites')
-def create_invite(payload: InviteIn, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin))):
+def create_invite(payload: InviteIn, db: Session = Depends(get_db), user=Depends(require_perm('users.manage'))):
     if db.scalar(select(User).where(User.email == payload.email)): raise HTTPException(409, 'Користувач уже існує')
     raw = secrets.token_urlsafe(32); inv = Invite(email=payload.email, role=payload.role, token_hash=hashlib.sha256(raw.encode()).hexdigest(), created_by=user.id, expires_at=datetime.utcnow() + timedelta(days=7))
     db.add(inv); audit(db, user, 'invite.create', 'invite', inv.id, {'email': payload.email, 'role': payload.role.value}); db.commit()
@@ -293,10 +305,12 @@ def create_invite(payload: InviteIn, db: Session = Depends(get_db), user=Depends
 
 
 @app.patch('/api/users/{user_id}')
-def update_user(user_id: str, payload: UserUpdate, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin))):
+def update_user(user_id: str, payload: UserUpdate, db: Session = Depends(get_db), user=Depends(require_perm('users.manage'))):
     target = db.get(User, user_id)
     if not target: raise HTTPException(404, 'Користувача не знайдено')
     updates = payload.model_dump(exclude_none=True)
+    if is_root_admin(target) and (updates.get('role') not in (None, Role.admin) or updates.get('active') is False):
+        raise HTTPException(400, 'Головного адміністратора не можна деактивувати або змінити його роль')
     if target.id == user.id:
         if updates.get('active') is False:
             raise HTTPException(400, 'Не можна деактивувати власний обліковий запис')
@@ -310,19 +324,52 @@ def update_user(user_id: str, payload: UserUpdate, db: Session = Depends(get_db)
     audit(db, user, 'user.update', 'user', target.id, {k: (v.value if isinstance(v, Role) else v) for k, v in updates.items()}); db.commit(); return user_dict(target)
 
 
-@app.post('/api/users/{user_id}/password')
-def reset_user_password(user_id: str, payload: UserPasswordIn, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin))):
+@app.get('/api/permissions')
+def permissions_catalog(user=Depends(require_perm('users.manage'))):
+    return {
+        'permissions': [{'key': k, 'label': v} for k, v in PERMISSIONS.items()],
+        'role_defaults': {role.value: sorted(perms) for role, perms in ROLE_DEFAULTS.items()},
+    }
+
+
+class UserPermsIn(BaseModel):
+    grant: list[str] = Field(default_factory=list)
+    revoke: list[str] = Field(default_factory=list)
+
+
+@app.patch('/api/users/{user_id}/permissions')
+def update_user_permissions(user_id: str, payload: UserPermsIn, db: Session = Depends(get_db), user=Depends(require_perm('users.manage'))):
     target = db.get(User, user_id)
     if not target: raise HTTPException(404, 'Користувача не знайдено')
+    if is_root_admin(target): raise HTTPException(400, 'Права головного адміністратора змінювати не можна')
+    grant = [p for p in dict.fromkeys(payload.grant) if p in PERMISSIONS]
+    revoke = [p for p in dict.fromkeys(payload.revoke) if p in PERMISSIONS and p not in grant]
+    # Never let an admin strip their own or the last admin's access to user management.
+    if 'users.manage' in revoke and target.role == Role.admin:
+        remaining = db.scalar(select(func.count(User.id)).where(User.role == Role.admin, User.active == True, User.id != target.id)) or 0
+        if target.id == user.id or remaining == 0:
+            raise HTTPException(400, 'Не можна забрати керування користувачами в останнього адміністратора')
+    target.permissions_json = json.dumps({'grant': grant, 'revoke': revoke}, ensure_ascii=False)
+    audit(db, user, 'user.permissions', 'user', target.id, {'grant': grant, 'revoke': revoke}); db.commit(); db.refresh(target)
+    return user_dict(target)
+
+
+@app.post('/api/users/{user_id}/password')
+def reset_user_password(user_id: str, payload: UserPasswordIn, db: Session = Depends(get_db), user=Depends(require_perm('users.manage'))):
+    target = db.get(User, user_id)
+    if not target: raise HTTPException(404, 'Користувача не знайдено')
+    if is_root_admin(target):
+        raise HTTPException(400, 'Пароль головного адміністратора змінюється лише через ADMIN_PASSWORD у .env на сервері')
     target.password_hash = hash_password(payload.password)
     audit(db, user, 'user.password_reset', 'user', target.id); db.commit(); return {'ok': True}
 
 
 @app.delete('/api/users/{user_id}')
-def delete_user(user_id: str, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin))):
+def delete_user(user_id: str, db: Session = Depends(get_db), user=Depends(require_perm('users.manage'))):
     if user_id == user.id: raise HTTPException(400, 'Не можна видалити власний обліковий запис')
     target = db.get(User, user_id)
     if not target: raise HTTPException(404, 'Користувача не знайдено')
+    if is_root_admin(target): raise HTTPException(400, 'Головного адміністратора видалити не можна')
     linked = db.scalar(select(func.count(Project.id)).where(Project.owner_id == target.id)) or 0
     if linked:
         target.active = False
@@ -336,7 +383,7 @@ def styles(db: Session = Depends(get_db), user=Depends(current)): return [style_
 
 
 @app.post('/api/styles')
-def create_style(payload: StyleIn, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin, Role.editor))):
+def create_style(payload: StyleIn, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
     if payload.is_default:
         for item in db.scalars(select(Style)).all(): item.is_default = False
     data = payload.model_dump(); score = data.pop('score', {}); preview = sanitize_html(data.pop('preview_html', ''))
@@ -345,7 +392,7 @@ def create_style(payload: StyleIn, db: Session = Depends(get_db), user=Depends(r
 
 
 @app.put('/api/styles/{style_id}')
-def update_style(style_id: str, payload: StyleIn, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin, Role.editor))):
+def update_style(style_id: str, payload: StyleIn, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
     s = db.scalar(select(Style).where(Style.id == style_id).with_for_update())
     if not s: raise HTTPException(404, 'Стиль не знайдено')
     if payload.is_default:
@@ -358,7 +405,7 @@ def update_style(style_id: str, payload: StyleIn, db: Session = Depends(get_db),
 
 
 @app.delete('/api/styles/{style_id}')
-def delete_style(style_id: str, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin, Role.editor))):
+def delete_style(style_id: str, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
     s = db.get(Style, style_id)
     if not s: raise HTTPException(404, 'Стиль не знайдено')
     if s.name in {spec['name'] for spec in MANAGED_STYLES}: raise HTTPException(400, f'Керований стиль «{s.name}» видалити не можна')
@@ -409,7 +456,7 @@ def style_preview(style_id: str, db: Session = Depends(get_db), user=Depends(cur
 
 
 @app.post('/api/styles/{style_id}/preview')
-def style_preview_generate(style_id: str, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin, Role.editor))):
+def style_preview_generate(style_id: str, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
     """Generate a real AI example page for this style from the demo product and save it."""
     from types import SimpleNamespace
     from app.pipeline import generate_html
@@ -430,7 +477,7 @@ def style_versions(style_id: str, db: Session = Depends(get_db), user=Depends(cu
 
 
 @app.post('/api/styles/analyze')
-def analyze_style(payload: StyleAnalyzeIn, user=Depends(require_roles(Role.admin, Role.editor))):
+def analyze_style(payload: StyleAnalyzeIn, user=Depends(require_perm('style.manage'))):
     text = ' '.join([payload.prompt, payload.hero_prompt, payload.feature_prompt, payload.negative_prompt]).strip()
     length = len(text)
     required = ['inline css', 'responsive', 'desktop', 'mobile', 'hero', 'section', 'product', 'facts']
@@ -458,7 +505,7 @@ def projects(db: Session = Depends(get_db), user=Depends(current)):
 
 
 @app.post('/api/projects')
-def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin, Role.editor))):
+def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
     style = db.get(Style, payload.style_id) if payload.style_id else db.scalar(select(Style).where(Style.is_default == True))
     if not style: raise HTTPException(400, 'Немає доступного стилю')
     langs = normalize_languages(payload.languages); vars = [x for x in payload.variants if x in {'desktop', 'mobile'}]
@@ -486,7 +533,7 @@ def project(project_id: str, db: Session = Depends(get_db), user=Depends(current
 
 
 @app.delete('/api/projects/{project_id}')
-def delete_project(project_id: str, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin, Role.editor))):
+def delete_project(project_id: str, db: Session = Depends(get_db), user=Depends(require_perm('project.delete'))):
     p = db.get(Project, project_id)
     if not p: raise HTTPException(404, 'Проєкт не знайдено')
     if p.status == Status.processing: raise HTTPException(409, 'Не можна видалити проєкт під час генерації. Спершу скасуйте його.')
@@ -605,7 +652,7 @@ manifest.json contains generation metadata.
 
 
 @app.post('/api/projects/{project_id}/run')
-def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin, Role.editor))):
+def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
     p = db.get(Project, project_id)
     if not p: raise HTTPException(404, 'Проєкт не знайдено')
     if p.status in {Status.processing, Status.queued}: raise HTTPException(409, 'Проєкт уже виконується або стоїть у черзі')
@@ -627,7 +674,7 @@ def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends
 
 
 @app.post('/api/projects/{project_id}/queue')
-def queue_control(project_id: str, payload: QueueIn, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin, Role.editor))):
+def queue_control(project_id: str, payload: QueueIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
     p = db.get(Project, project_id)
     if not p: raise HTTPException(404, 'Проєкт не знайдено')
     if payload.action in {'pause', 'cancel'}:
@@ -646,7 +693,7 @@ def queue_control(project_id: str, payload: QueueIn, db: Session = Depends(get_d
 
 
 @app.post('/api/projects/{project_id}/review')
-def review(project_id: str, payload: ReviewIn, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin, Role.editor, Role.reviewer))):
+def review(project_id: str, payload: ReviewIn, db: Session = Depends(get_db), user=Depends(require_perm('review.request_changes', 'review.approve'))):
     p = db.get(Project, project_id)
     if not p:
         raise HTTPException(404, 'Проєкт не знайдено')
@@ -654,8 +701,10 @@ def review(project_id: str, payload: ReviewIn, db: Session = Depends(get_db), us
         raise HTTPException(400, 'Неприпустиме рішення')
     if payload.decision == 'request_changes' and not payload.comment.strip():
         raise HTTPException(400, 'Коментар обов’язковий')
-    if payload.decision == 'approve' and user.role not in {Role.admin, Role.reviewer}:
-        raise HTTPException(403, 'Схвалювати результат може адміністратор або рев’юер')
+    if payload.decision == 'approve' and not has_perm(user, 'review.approve'):
+        raise HTTPException(403, 'Немає права схвалювати результат')
+    if payload.decision == 'request_changes' and not has_perm(user, 'review.request_changes'):
+        raise HTTPException(403, 'Немає права запитувати зміни')
     try:
         mapping = {'approve': Status.approved, 'request_changes': Status.changes_requested, 'submit': Status.review}
         new_status = mapping[payload.decision]
@@ -681,7 +730,7 @@ def events(project_id: str, db: Session = Depends(get_db), user=Depends(current)
 
 
 @app.post('/api/projects/{project_id}/critic')
-def run_critic(project_id: str, payload: CriticIn, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin, Role.editor, Role.reviewer))):
+def run_critic(project_id: str, payload: CriticIn, db: Session = Depends(get_db), user=Depends(require_perm('review.request_changes', 'project.create'))):
     from app.pipeline import critic_html
     p = db.get(Project, project_id)
     if not p: raise HTTPException(404, 'Проєкт не знайдено')
@@ -698,7 +747,7 @@ def run_critic(project_id: str, payload: CriticIn, db: Session = Depends(get_db)
 
 
 @app.put('/api/artifacts/{artifact_id}')
-def save_artifact(artifact_id: str, payload: HtmlIn, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin, Role.editor))):
+def save_artifact(artifact_id: str, payload: HtmlIn, db: Session = Depends(get_db), user=Depends(require_perm('project.edit_html'))):
     source = db.get(Artifact, artifact_id)
     if not source:
         raise HTTPException(404, 'Результат не знайдено')
@@ -763,7 +812,7 @@ Return strict JSON with keys description, style_prompt, hero_prompt, feature_pro
 
 
 @app.post('/api/styles/generate')
-def generate_style(payload: StyleGenerateIn, user=Depends(require_roles(Role.admin, Role.editor))):
+def generate_style(payload: StyleGenerateIn, user=Depends(require_perm('style.manage'))):
     model = payload.model or settings.openai_text_model
     fallback = {'description': 'Згенерований ARTLINE-стиль', 'style_prompt': DEFAULT_STYLE_PROMPT + '\n' + payload.brief, 'hero_prompt': DEFAULT_HERO_PROMPT, 'feature_prompt': DEFAULT_FEATURE_PROMPT, 'negative_prompt': DEFAULT_NEGATIVE_PROMPT, 'score': {'consistency': 96, 'readability': 97, 'brand_fit': 97}, 'preview_html': '<section style="padding:32px;border-radius:12px;background:#F7F8FA;border:1px solid #D0D7DE;color:#101010;font-family:Arial;box-sizing:border-box"><div style="font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#19BCC9">ARTLINE STYLE</div><h2 style="font-size:36px;line-height:1.1;margin:12px 0;color:#101010">Premium product presentation</h2><p style="max-width:620px;margin:0;color:#555555;line-height:1.6">Unified ARTLINE visual system preview.</p></section>', 'model': model}
     if not settings.openai_api_key: return fallback
@@ -784,7 +833,7 @@ def generate_style(payload: StyleGenerateIn, user=Depends(require_roles(Role.adm
 
 
 @app.post('/api/styles/{style_id}/improve')
-def improve_style(style_id: str, payload: StyleImproveIn, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin, Role.editor))):
+def improve_style(style_id: str, payload: StyleImproveIn, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
     s = db.get(Style, style_id)
     if not s: raise HTTPException(404, 'Стиль не знайдено')
     generated = generate_style(StyleGenerateIn(name=s.name, brief=(s.prompt + '\nImprovement request: ' + payload.instructions)[:12000], model=payload.model), user)
@@ -792,7 +841,7 @@ def improve_style(style_id: str, payload: StyleImproveIn, db: Session = Depends(
 
 
 @app.get('/api/system')
-def system_status(db: Session = Depends(get_db), user=Depends(current)):
+def system_status(db: Session = Depends(get_db), user=Depends(require_perm('settings.view'))):
     """Operational overview for the settings page: what is configured and healthy."""
     import shutil as _shutil
     redis_ok = False
@@ -846,7 +895,7 @@ def system_status(db: Session = Depends(get_db), user=Depends(current)):
 
 
 @app.get('/api/usage')
-def usage(db: Session = Depends(get_db), user=Depends(current)):
+def usage(db: Session = Depends(get_db), user=Depends(require_perm('usage.view'))):
     rows = db.scalars(select(Project)).all(); total = sum(x.estimated_cost for x in rows)
     # Quality signal: does the team trust the output? A project counts as
     # "approved clean" when its review history contains an approval and never a

@@ -43,6 +43,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String)
     role: Mapped[Role] = mapped_column(Enum(Role), default=Role.viewer)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    permissions_json: Mapped[str] = mapped_column(Text, default='{}')
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

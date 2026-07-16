@@ -66,7 +66,7 @@ checks = {
     'engineering style seeded as default': 'ENGINEERING_STYLE_PROMPT' in prompts and 'MANAGED_STYLES' in main and "'name': ENGINEERING_STYLE_NAME" in main,
     'engineering prompt keeps contracts': all(s in prompts.split('ENGINEERING_STYLE_PROMPT')[1] for s in ('NEVER DESCRIBE THE PAGE OR THE IMAGES', 'exactly six sections', 'Marketing adjectives are banned')),
     'copy works without secure context': 'function legacyCopy' in web and 'window.isSecureContext' in web,
-    'reviewer limited to quality control': 'ROLE_PAGES' in web and "reviewer:['projects']" in web and 'allowedTabs' in web,
+    'reviewer limited to quality control': 'Role.reviewer:' in security and "'review.request_changes'" in security and "'review.approve'" in security and "'project.create'" not in security.split('Role.reviewer:')[1].split('}')[0] and 'allowedTabs' in web,
     'dynamic review checklist + history': 'function reviewChecklist' in web and 'function reviewHistory' in web and "'reviewer': reviewers.get" in main,
     'delete reassigns projects': 'reassigned_projects' in main,
     'base prompt requires alt text': 'must include a concise descriptive alt attribute' in prompts,
@@ -112,6 +112,15 @@ checks = {
     'failure alerts wired': 'def send_alert' in tasks and 'send_alert(f' in tasks and 'telegram_bot_token' in (root / 'apps/api/app/config.py').read_text(encoding='utf-8'),
     'automated backups': 'backup_data:/backups' in (root / 'docker-compose.yml').read_text(encoding='utf-8') and 'pg_dump -Fc' in (root / 'docker-compose.yml').read_text(encoding='utf-8'),
     'user guide present': (root / 'USER_GUIDE.md').exists(),
+
+    # --- per-user access control ---
+    'permission catalog + overrides': 'def effective_perms' in security and 'ROLE_DEFAULTS' in security and 'def require_perm' in security and "permissions_json" in models,
+    'permission column migration': "('users', 'permissions_json')" in db,
+    'endpoints gated by permission': "require_perm('project.create')" in main and "require_perm('users.manage')" in main and "require_perm('style.manage')" in main and main.count('require_roles(') <= 1,
+    'permission api endpoints': "@app.get('/api/permissions')" in main and "@app.patch('/api/users/{user_id}/permissions')" in main and "'permissions': sorted(effective_perms" in main,
+    'ui driven by permissions': 'const can=p=>' in web and 'function allowedTabs' in web and 'ROLE_PAGES' not in web,
+    'permission editor ui': 'function openPerms' in web and 'function savePerms' in web and 'perm-default' in css,
+    'root admin protected': 'def is_root_admin' in main and 'Пароль головного адміністратора' in main and 'Головного адміністратора видалити не можна' in main and 'u.is_root' in web,
 
     # --- v12 foundation ---
     'single version source': '__version__ = "12.0"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
