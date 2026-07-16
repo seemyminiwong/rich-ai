@@ -22,7 +22,8 @@ from app.db import Base, SessionLocal, engine, ensure_schema, get_db
 from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Project, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
 from app.tasks import process_project
-from app.pipeline import is_public_http_url, sanitize_html, style_image_prompt
+from app.pipeline import is_public_http_url, sanitize_html, style_image_prompt, text_client
+from app.runtime import mask, runtime_config, set_runtime
 from app.version import __version__
 from app.prompts import (
     BASE_STYLE_NAME,
@@ -122,6 +123,11 @@ class RegisterIn(BaseModel): token: str; name: str = Field(min_length=2, max_len
 class InviteIn(BaseModel): email: str; role: Role = Role.viewer
 class UserUpdate(BaseModel): role: Role | None = None; active: bool | None = None; name: str | None = None
 class UserPasswordIn(BaseModel): password: str = Field(min_length=8, max_length=200)
+class SecretsIn(BaseModel):
+    llm_provider: str | None = None
+    openai_api_key: str | None = None
+    openrouter_api_key: str | None = None
+    openrouter_text_model: str | None = None
 class UserCreate(BaseModel):
     email: str
     name: str = Field(min_length=2, max_length=120)
@@ -877,7 +883,8 @@ def system_status(db: Session = Depends(get_db), user=Depends(require_perm('sett
         pass
     return {
         'version': APP_VERSION,
-        'openai_configured': bool(settings.openai_api_key),
+        'openai_configured': bool(runtime_config()['openai_api_key']),
+        'llm_provider': runtime_config()['llm_provider'],
         'default_text_model': settings.openai_text_model,
         'default_image_model': settings.openai_image_model,
         'reasoning_effort': settings.openai_reasoning_effort,
@@ -895,6 +902,71 @@ def system_status(db: Session = Depends(get_db), user=Depends(require_perm('sett
         'styles': db.scalar(select(func.count(Style.id))) or 0,
         'users': db.scalar(select(func.count(User.id))) or 0,
     }
+
+
+def require_root(user=Depends(current)):
+    """Provider keys are the one setting even a full admin cannot touch: they bill
+    real money and unlock every generation. Only the ADMIN_EMAIL account qualifies."""
+    if not is_root_admin(user):
+        raise HTTPException(403, 'Доступно лише головному адміністратору')
+    return user
+
+
+def _secrets_view():
+    cfg = runtime_config(force=True)
+    return {
+        'llm_provider': cfg['llm_provider'],
+        'openai_api_key': mask(cfg['openai_api_key']),
+        'openai_api_key_source': cfg['openai_api_key_source'],
+        'openrouter_api_key': mask(cfg['openrouter_api_key']),
+        'openrouter_api_key_source': cfg['openrouter_api_key_source'],
+        'openrouter_text_model': cfg['openrouter_text_model'],
+    }
+
+
+@app.get('/api/secrets')
+def get_secrets(user=Depends(require_root)):
+    """Masked only. A stored key is never returned to any client in full."""
+    return _secrets_view()
+
+
+@app.put('/api/secrets')
+def put_secrets(body: SecretsIn, db: Session = Depends(get_db), user=Depends(require_root)):
+    values = {}
+    if body.llm_provider in ('openai', 'openrouter'):
+        values['llm_provider'] = body.llm_provider
+    if body.openrouter_text_model is not None:
+        values['openrouter_text_model'] = body.openrouter_text_model.strip()[:120]
+    for field in ('openai_api_key', 'openrouter_api_key'):
+        raw = getattr(body, field)
+        if raw is None:
+            continue
+        raw = raw.strip()
+        # The UI shows a masked key; echoing it back must not overwrite the real one.
+        if '\u2022' in raw:
+            continue
+        values[field] = raw
+    if not values:
+        return _secrets_view()
+    set_runtime(values, by=user.email)
+    # Log which keys changed, never their values.
+    audit(db, user, 'secrets.update', entity_type='settings', metadata={'keys': sorted(values)})
+    db.commit()
+    return _secrets_view()
+
+
+@app.post('/api/secrets/test')
+def test_secrets(user=Depends(require_root)):
+    """Ask the configured provider to list models. Cheapest call that proves the
+    key is live, has quota and is reachable from this container."""
+    api, provider = text_client()
+    if api is None:
+        return {'ok': False, 'provider': provider, 'detail': 'Ключ не налаштовано'}
+    try:
+        names = [m.id for m in api.models.list()]
+    except Exception as exc:
+        return {'ok': False, 'provider': provider, 'detail': str(exc)[:300]}
+    return {'ok': True, 'provider': provider, 'models': len(names)}
 
 
 @app.get('/api/usage')

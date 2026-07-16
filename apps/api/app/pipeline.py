@@ -8,6 +8,7 @@ import socket
 import tempfile
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from io import BytesIO
 from urllib.parse import urljoin, urlparse
 import httpx
@@ -15,10 +16,64 @@ from bs4 import BeautifulSoup, Comment, NavigableString
 from openai import OpenAI
 from PIL import Image, ImageOps
 from app.config import settings
+from app.runtime import OPENROUTER_BASE_URL, runtime_config
 
 logger = logging.getLogger("richstudio.pipeline")
 
-client = OpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+_clients: dict = {}
+
+
+def _client_for(key: str, base_url: str = ''):
+    """Cache one OpenAI client per (key, base_url) so rotating a key builds a new
+    client instead of reusing a stale one, without leaking connection pools."""
+    if not key:
+        return None
+    slot = (key, base_url)
+    if slot not in _clients:
+        _clients[slot] = OpenAI(api_key=key, base_url=base_url) if base_url else OpenAI(api_key=key)
+    return _clients[slot]
+
+
+def text_client():
+    """Return (client, provider) for text generation.
+
+    OpenRouter speaks the OpenAI protocol but only for Chat Completions - it does
+    not implement the Responses API, so the provider is returned alongside and
+    _responses_create translates the call.
+    """
+    cfg = runtime_config()
+    if cfg['llm_provider'] == 'openrouter' and cfg['openrouter_api_key']:
+        return _client_for(cfg['openrouter_api_key'], OPENROUTER_BASE_URL), 'openrouter'
+    return _client_for(cfg['openai_api_key']), 'openai'
+
+
+def image_client():
+    """Images always go to OpenAI: the Images Edit API with input_fidelity=high
+    has no OpenRouter equivalent, so an OpenAI key stays required for artwork."""
+    return _client_for(runtime_config()['openai_api_key'])
+
+
+def text_ready() -> bool:
+    return text_client()[0] is not None
+
+
+def image_ready() -> bool:
+    return image_client() is not None
+
+
+class _TextResponse:
+    """A Responses-API-shaped view over a Chat Completions reply, so callers read
+    .output_text and .usage the same way regardless of provider."""
+
+    def __init__(self, completion):
+        choice = (getattr(completion, 'choices', None) or [None])[0]
+        message = getattr(choice, 'message', None) if choice else None
+        self.output_text = (getattr(message, 'content', '') or '') if message else ''
+        usage = getattr(completion, 'usage', None)
+        self.usage = SimpleNamespace(
+            input_tokens=getattr(usage, 'prompt_tokens', 0) or 0,
+            output_tokens=getattr(usage, 'completion_tokens', 0) or 0,
+        )
 
 
 def _is_reasoning_model(model: str) -> bool:
@@ -33,20 +88,36 @@ def _responses_create(model: str, prompt: str, max_output_tokens: int):
     normal budget can leave nothing for the visible answer (empty or truncated
     output). Give them more room and keep the thinking short for formatting work.
     """
+    api, provider = text_client()
+    if api is None:
+        raise RuntimeError('Text provider is not configured')
+    effort = (settings.openai_reasoning_effort or '').strip()
+    if provider == 'openrouter':
+        budget = max(max_output_tokens * 2, 32000) if _is_reasoning_model(model) else max_output_tokens
+        options = dict(model=model, messages=[{'role': 'user', 'content': prompt}], max_tokens=budget)
+        if _is_reasoning_model(model) and effort:
+            options['extra_body'] = {'reasoning': {'effort': effort}}
+        try:
+            return _TextResponse(_with_retry(lambda: api.chat.completions.create(**options)))
+        except Exception as exc:
+            if 'extra_body' in options and 'reasoning' in str(exc).lower():
+                logger.warning('OpenRouter model %s rejected the reasoning parameter, retrying without it', model)
+                options.pop('extra_body', None)
+                return _TextResponse(_with_retry(lambda: api.chat.completions.create(**options)))
+            raise
     options = dict(model=model, input=prompt, max_output_tokens=max_output_tokens, store=False)
     if _is_reasoning_model(model):
         options['max_output_tokens'] = max(max_output_tokens * 2, 32000)
-        effort = (settings.openai_reasoning_effort or '').strip()
         if effort:
             options['reasoning'] = {'effort': effort}
     try:
-        return _with_retry(lambda: client.responses.create(**options))
+        return _with_retry(lambda: api.responses.create(**options))
     except Exception as exc:
         # Some models reject the reasoning parameter or a larger budget; degrade safely.
         if 'reasoning' in options and 'reasoning' in str(exc).lower():
             logger.warning('Model %s rejected the reasoning parameter, retrying without it: %s', model, exc)
             options.pop('reasoning', None)
-            return _with_retry(lambda: client.responses.create(**options))
+            return _with_retry(lambda: api.responses.create(**options))
         raise
 
 
@@ -860,7 +931,7 @@ def extract_product(jsonld, title: str, clean_text: str, url: str, model: str, p
     if base.get('name') and len(base.get('specs') or []) >= 3 and str(base.get('category') or '').strip():
         return _ensure_category(base, page_category), 0, 0
 
-    if not client:
+    if not text_ready():
         data = dict(base) if base.get('name') else _fallback_extract(title, clean_text)
         data['specs'] = _merge_specs(data.get('specs') or [], page_specs)
         data['features'] = data.get('features') or page_features
@@ -918,7 +989,7 @@ def generate_image(
     reference_path: Path | None = None,
     size: str = '1536x1024',
 ):
-    if not client:
+    if not image_ready():
         return fallback, False, 'OpenAI API key is not configured'
     reference = reference_url or fallback
     temporary_reference = None
@@ -950,7 +1021,7 @@ def generate_image(
             # rejects an explicit parameter, so omit it there.
             if not model.startswith('gpt-image-2'):
                 edit_options['extra_body'] = {'input_fidelity': 'high'}
-            response = _with_retry(lambda: client.images.edit(**edit_options))
+            response = _with_retry(lambda: image_client().images.edit(**edit_options))
         item = response.data[0]
         folder = Path(settings.media_dir) / project_id
         folder.mkdir(parents=True, exist_ok=True)
@@ -1082,8 +1153,8 @@ def generate_html(product, style, language, variant, hero, feature, model: str):
     string so callers can record that a deterministic template was served instead.
     """
     fallback = _deterministic_html(product, style, language, variant, hero, feature)
-    if not client:
-        return fallback, 0, 0, 'OpenAI API key is not configured'
+    if not text_ready():
+        return fallback, 0, 0, 'Text provider is not configured'
     base_prompt = _prompt(product, style, language, variant, hero, feature)
     try:
         response = _responses_create(model, base_prompt, 16000)
@@ -1141,7 +1212,7 @@ def _translation_template(markup: str):
 
 def translate_html(source_html: str, language: str, model: str):
     """Translate copy only; layout, styles, media URLs and element order stay fixed."""
-    if not client:
+    if not text_ready():
         return None, 0, 0
     template, segments = _translation_template(source_html)
     if not segments:

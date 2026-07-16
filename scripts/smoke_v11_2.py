@@ -10,10 +10,11 @@ web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
 css = (root / 'apps/web/styles.css').read_text(encoding='utf-8')
 db = (root / 'apps/api/app/db.py').read_text(encoding='utf-8')
 prompts = (root / 'apps/api/app/prompts.py').read_text(encoding='utf-8')
+runtime = (root / 'apps/api/app/runtime.py').read_text(encoding='utf-8')
 
 checks = {
     # --- retained pipeline guarantees ---
-    'reference image edit': 'client.images.edit' in pipeline,
+    'reference image edit': 'image_client().images.edit' in pipeline,
     'no unconstrained image generate in generate_image': 'client.images.generate' not in pipeline[pipeline.index('def generate_image'):pipeline.index('def _html_only')],
     'reference selector': 'inspect_product_references(images, raw_primary)' in tasks,
     'no fragile 20KB cutoff': '20_000' not in pipeline,
@@ -131,7 +132,13 @@ checks = {
     'single version source': '__version__ = "12.0"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
     'no version in the product UI': all(s not in (root / 'apps/web/index.html').read_text(encoding='utf-8') for s in ('Studio v', 'v12')) and 'state.version' not in web and 'BASE_STYLE_VERSION' not in main,
     'cache busting kept': '?b=' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
-    'openai retries': 'def _with_retry' in pipeline and '_with_retry(lambda: client.responses.create' in pipeline and '_with_retry(lambda: client.images.edit' in pipeline,
+    'openai retries': 'def _with_retry' in pipeline and '_with_retry(lambda: api.responses.create' in pipeline and '_with_retry(lambda: image_client().images.edit' in pipeline,
+    'no module-level openai client': 'client = OpenAI(' not in pipeline,
+    'keys resolved at call time': 'def runtime_config' in runtime and 'from app.runtime import' in pipeline,
+    'keys are masked before leaving the api': "'openai_api_key': mask(" in main and 'def mask' in runtime,
+    'secrets panel is root-gated in the ui': "if(!state.me?.is_root)return ''" in web,
+    'key endpoints are root-only': "def require_root" in main and main.count('Depends(require_root)') >= 3,
+    'openrouter text only': 'OPENROUTER_BASE_URL' in runtime and 'def image_client' in pipeline,
     'ci workflow': (root / '.github/workflows/ci.yml').exists() and 'ghcr.io' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8'),
     'registry compose': (root / 'docker-compose.registry.yml').exists() and 'rich-ai-api' in (root / 'docker-compose.registry.yml').read_text(encoding='utf-8'),
     'deploy runbook': (root / 'DEPLOY.md').exists(),
