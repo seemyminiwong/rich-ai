@@ -93,6 +93,29 @@
 @media(max-width:1200px){.project-toolbar{grid-template-columns:1fr 1fr 1fr}.project-toolbar .view-switch{grid-column:1/-1;justify-self:start}}
 @media(max-width:760px){.project-toolbar{grid-template-columns:1fr}}
 
+/* v12: UI polish — boot screen, offline banner, toast stack, state-aware live card */
+.boot-screen{min-height:100vh;display:grid;place-items:center;align-content:center;justify-items:center;gap:18px}
+.boot-screen img{width:200px}
+.boot-screen p{margin:0;color:var(--muted)}
+.boot-spinner{width:28px;height:28px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--cyan);animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#offlineBanner{position:fixed;top:0;left:0;right:0;z-index:10000;background:var(--danger);color:#fff;text-align:center;padding:8px 14px;font-size:13px;font-weight:700}
+#toastStack{position:fixed;right:22px;bottom:22px;display:flex;flex-direction:column;align-items:flex-end;gap:8px;z-index:9999}
+#toastStack .toast{position:static}
+.badge.paused,.badge.draft{background:#FFF5E6;color:#9B681A}
+.live-card .pulse{animation:none}
+.live-card.run .pulse{animation:pulseA 1.6s ease-in-out infinite}
+@keyframes pulseA{50%{box-shadow:0 0 0 10px rgba(25,188,201,.04)}}
+.live-card.ok .pulse{background:var(--green);box-shadow:0 0 0 5px rgba(81,196,138,.15)}
+.live-card.bad .pulse{background:var(--danger);box-shadow:0 0 0 5px rgba(232,72,94,.15)}
+.live-card.warn .pulse{background:var(--warning);box-shadow:0 0 0 5px rgba(255,199,126,.25)}
+.error-island{margin-bottom:16px;padding:16px 18px;border-radius:var(--radius);background:#FDF3F4;border:1px solid #F1B4B4;border-left:4px solid var(--danger)}
+.error-island b{display:block;margin-bottom:6px;color:#B42D2D}
+.error-island p{margin:0 0 12px;font-size:13px;line-height:1.55;overflow-wrap:anywhere;color:#7a2a2a}
+.empty b{display:block;font-size:16px;color:var(--text);margin-bottom:6px}
+.empty p{margin:0 auto 14px;max-width:480px;line-height:1.6}
+button:focus-visible,a:focus-visible,select:focus-visible{outline:3px solid rgba(25,188,201,.3);outline-offset:2px}
+
 /* v12: quality metrics */
 .quality-panel{margin-top:18px}
 .quality-bad{color:var(--danger)}
