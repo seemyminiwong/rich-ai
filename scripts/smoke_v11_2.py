@@ -73,7 +73,10 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.7"' in prompts,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.9"' in prompts,
+    'desktop and mobile copy must match': prompts.count('Desktop and mobile must carry IDENTICAL copy') == 2,
+    'feature section is a single island': prompts.count('The Feature section is ONE island only') == 2,
+    'no nested feature islands left': 'padding:44px' not in prompts,
     'feature block lives in the main prompt': prompts.count('[FEATURE_IMAGE]') == 2 and prompts.count('[/FEATURE_IMAGE]') == 2,
     'feature image built from core feature text': 'def core_feature_text' in pipeline and 'core_feature_text(master_html)' in tasks and 'FEATURE DESCRIPTION FROM THE PAGE' in tasks,
     'art direction never leaks to text model': 'def strip_image_blocks' in pipeline and 'strip_image_blocks(style.prompt)' in pipeline,
@@ -84,6 +87,7 @@ checks = {
     'viewpoint locked in image prompts': prompts.count('VIEWPOINT LOCK') == 6 and 'working-angle' not in prompts and prompts.count('no substituted product variant') == 2,
     'image prompts ban redrawn logos': prompts.count('LOGOS, LABELS AND TEXT ON THE PRODUCT') == 6 and prompts.count('garbled') >= 6,
     'base prompt bans meta text': 'NEVER DESCRIBE THE PAGE OR THE IMAGES' in prompts and 'could not be pasted onto a different product' in prompts,
+    'hero canvas has rounded corners': prompts.count('The Hero section itself must carry border-radius:12px') == 2 and prompts.count('including the Hero background canvas') == 2 and 'border-radius:12px;background:{hero_css}' in pipeline,
 
     # --- v11.10: project UX + cost + category ---
     'text model is a select': "<select name=\"text_model\">" in web,
