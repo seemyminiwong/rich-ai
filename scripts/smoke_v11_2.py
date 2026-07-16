@@ -125,7 +125,8 @@ checks = {
 
     # --- v12 foundation ---
     'single version source': '__version__ = "12.0"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
-    'index version synced': 'v=12.0' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
+    'no version in the product UI': all(s not in (root / 'apps/web/index.html').read_text(encoding='utf-8') for s in ('Studio v', 'v12')) and 'state.version' not in web and 'BASE_STYLE_VERSION' not in main,
+    'cache busting kept': '?b=' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
     'openai retries': 'def _with_retry' in pipeline and '_with_retry(lambda: client.responses.create' in pipeline and '_with_retry(lambda: client.images.edit' in pipeline,
     'ci workflow': (root / '.github/workflows/ci.yml').exists() and 'ghcr.io' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8'),
     'registry compose': (root / 'docker-compose.registry.yml').exists() and 'rich-ai-api' in (root / 'docker-compose.registry.yml').read_text(encoding='utf-8'),
