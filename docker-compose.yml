@@ -92,7 +92,7 @@ services:
     restart: unless-stopped
     profiles: ["tls"]
     environment:
-      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?PUBLIC_DOMAIN потрібен для профілю tls}
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:-}
     ports:
       - "80:80"
       - "443:443"
