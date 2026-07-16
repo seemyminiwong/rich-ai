@@ -116,6 +116,14 @@
 .empty p{margin:0 auto 14px;max-width:480px;line-height:1.6}
 button:focus-visible,a:focus-visible,select:focus-visible{outline:3px solid rgba(25,188,201,.3);outline-offset:2px}
 
+/* v12: settings page */
+.settings-metrics{grid-template-columns:repeat(6,minmax(0,1fr))}
+.settings-metrics .badge{font-size:11px}
+.panel h2+.metrics{margin-top:12px}
+.panel .metrics+.metrics{margin-top:12px}
+@media(max-width:1200px){.settings-metrics{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:760px){.settings-metrics{grid-template-columns:1fr}}
+
 /* v12: quality metrics */
 .quality-panel{margin-top:18px}
 .quality-bad{color:var(--danger)}
