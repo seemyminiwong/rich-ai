@@ -22,7 +22,7 @@ from app.db import Base, SessionLocal, engine, ensure_schema, get_db
 from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Project, Review, Role, Status, Style, StyleVersion, User
 from app.security import current, hash_password, token, verify
 from app.tasks import process_project
-from app.pipeline import is_public_http_url, sanitize_html
+from app.pipeline import is_public_http_url, sanitize_html, style_image_prompt
 from app.version import __version__
 from app.prompts import (
     BASE_STYLE_NAME,
@@ -393,8 +393,12 @@ def analyze_style(payload: StyleAnalyzeIn, user=Depends(require_roles(Role.admin
     brand_fit = min(100, 50 + (18 if 'artline' in text.lower() else 0) + (12 if '#19bcc9' in text.lower() else 0) + (10 if '#101010' in text.lower() else 0) + min(10, length // 1800))
     issues = []
     if length < 1200: issues.append('Style Prompt надто короткий для стабільної генерації.')
-    if not payload.hero_prompt.strip(): issues.append('Генерацію Hero вимкнено, оскільки Hero Prompt порожній.')
-    if not payload.feature_prompt.strip(): issues.append('Генерацію Feature вимкнено, оскільки Feature Prompt порожній.')
+    # Image generation is enabled either by the dedicated prompt field or by a
+    # [HERO_IMAGE]/[FEATURE_IMAGE] block inside the main Style Prompt.
+    hero_enabled = bool(payload.hero_prompt.strip() or style_image_prompt(payload.prompt, 'HERO_IMAGE'))
+    feature_enabled = bool(payload.feature_prompt.strip() or style_image_prompt(payload.prompt, 'FEATURE_IMAGE'))
+    if not hero_enabled: issues.append('Генерацію Hero вимкнено: немає ні Hero Prompt, ні блоку [HERO_IMAGE] у Style Prompt.')
+    if not feature_enabled: issues.append('Генерацію Feature вимкнено: немає ні Feature Prompt, ні блоку [FEATURE_IMAGE] у Style Prompt.')
     if 'mobile' not in text.lower(): issues.append('Немає правил для мобільної версії.')
     if 'facts' not in text.lower() and 'invent' not in text.lower(): issues.append('Правила фактологічної безпеки слабкі або відсутні.')
     return {'score': {'consistency': consistency, 'readability': readability, 'brand_fit': brand_fit}, 'issues': issues, 'ready': min(consistency, readability, brand_fit) >= 70}
@@ -738,6 +742,60 @@ def improve_style(style_id: str, payload: StyleImproveIn, db: Session = Depends(
     if not s: raise HTTPException(404, 'Стиль не знайдено')
     generated = generate_style(StyleGenerateIn(name=s.name, brief=(s.prompt + '\nImprovement request: ' + payload.instructions)[:12000], model=payload.model), user)
     return generated
+
+
+@app.get('/api/system')
+def system_status(db: Session = Depends(get_db), user=Depends(current)):
+    """Operational overview for the settings page: what is configured and healthy."""
+    import shutil as _shutil
+    redis_ok = False
+    try:
+        import redis as redis_lib
+        redis_ok = bool(redis_lib.Redis.from_url(settings.redis_url, socket_connect_timeout=2).ping())
+    except Exception:
+        pass
+    worker_ok = False
+    try:
+        from app.celery_app import celery as celery_app
+        replies = celery_app.control.ping(timeout=2)
+        worker_ok = bool(replies)
+    except Exception:
+        pass
+    media_total, media_used, media_free = 0, 0, 0
+    try:
+        du = _shutil.disk_usage(settings.media_dir)
+        media_total, media_used, media_free = du.total, du.used, du.free
+    except Exception:
+        pass
+    media_files = 0
+    media_bytes = 0
+    try:
+        for f in Path(settings.media_dir).rglob('*'):
+            if f.is_file():
+                media_files += 1
+                media_bytes += f.stat().st_size
+    except Exception:
+        pass
+    return {
+        'version': APP_VERSION,
+        'openai_configured': bool(settings.openai_api_key),
+        'default_text_model': settings.openai_text_model,
+        'default_image_model': settings.openai_image_model,
+        'reasoning_effort': settings.openai_reasoning_effort,
+        'db_schema': settings.db_schema,
+        'redis_ok': redis_ok,
+        'worker_ok': worker_ok,
+        'watchdog_minutes': settings.stuck_project_minutes,
+        'alerts_telegram': bool(settings.telegram_bot_token and settings.telegram_chat_id),
+        'alerts_webhook': bool(settings.alert_webhook_url),
+        'media_files': media_files,
+        'media_bytes': media_bytes,
+        'disk_free_bytes': media_free,
+        'disk_total_bytes': media_total,
+        'projects': db.scalar(select(func.count(Project.id))) or 0,
+        'styles': db.scalar(select(func.count(Style.id))) or 0,
+        'users': db.scalar(select(func.count(User.id))) or 0,
+    }
 
 
 @app.get('/api/usage')
