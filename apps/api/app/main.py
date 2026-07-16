@@ -376,6 +376,53 @@ def delete_style(style_id: str, db: Session = Depends(get_db), user=Depends(requ
     return {'deleted': True, 'reassigned_projects': reassigned}
 
 
+# Fixed demo product so every style can be previewed without a real project.
+DEMO_PRODUCT = {
+    'name': '3D принтер Bambu Lab A1 Mini',
+    'brand': 'Bambu Lab',
+    'sku': 'PF002-M-EU',
+    'category': '3D принтер',
+    'description': 'Компактний FDM 3D-принтер для дому та майстерні: швидкість друку до 500 мм/с, автоматичне калібрування столу перед кожним друком і підтримка PLA, PETG та TPU.',
+    'features': ['Автоматичне калібрування столу перед кожним друком', 'Швидкість друку до 500 мм/с', 'Підтримка PLA, PETG, TPU'],
+    'specs': [
+        {'name': 'Технологія друку', 'value': 'FDM'},
+        {'name': 'Область друку', 'value': '180 × 180 × 180 мм'},
+        {'name': 'Швидкість друку', 'value': 'до 500 мм/с'},
+        {'name': 'Температура сопла', 'value': 'до 300 °C'},
+        {'name': 'Підключення', 'value': 'Wi-Fi, Bambu Handy'},
+        {'name': 'Вага', 'value': '5.5 кг'},
+    ],
+}
+
+
+@app.get('/api/styles/{style_id}/preview')
+def style_preview(style_id: str, db: Session = Depends(get_db), user=Depends(current)):
+    """Saved preview if the style has one, otherwise an instant offline demo."""
+    s = db.get(Style, style_id)
+    if not s: raise HTTPException(404, 'Стиль не знайдено')
+    if s.preview_html:
+        return {'html': s.preview_html, 'source': 'saved'}
+    from types import SimpleNamespace
+    from app.pipeline import _deterministic_html
+    demo = _deterministic_html(DEMO_PRODUCT, SimpleNamespace(prompt=s.prompt), 'ua', 'desktop', '', '')
+    return {'html': sanitize_html(demo), 'source': 'demo'}
+
+
+@app.post('/api/styles/{style_id}/preview')
+def style_preview_generate(style_id: str, db: Session = Depends(get_db), user=Depends(require_roles(Role.admin, Role.editor))):
+    """Generate a real AI example page for this style from the demo product and save it."""
+    from types import SimpleNamespace
+    from app.pipeline import generate_html
+    s = db.get(Style, style_id)
+    if not s: raise HTTPException(404, 'Стиль не знайдено')
+    style_ns = SimpleNamespace(prompt=s.prompt, hero_prompt=s.hero_prompt, feature_prompt=s.feature_prompt, negative_prompt=s.negative_prompt)
+    html, _i, _o, reason = generate_html(DEMO_PRODUCT, style_ns, 'ua', 'desktop', '', '', settings.openai_text_model)
+    s.preview_html = sanitize_html(html)
+    audit(db, user, 'style.preview', 'style', s.id, {'ai': not reason})
+    db.commit()
+    return {'html': s.preview_html, 'source': 'demo' if reason else 'generated', 'note': reason or ''}
+
+
 @app.get('/api/styles/{style_id}/versions')
 def style_versions(style_id: str, db: Session = Depends(get_db), user=Depends(current)):
     rows = db.scalars(select(StyleVersion).where(StyleVersion.style_id == style_id).order_by(StyleVersion.version.desc())).all()
