@@ -83,6 +83,13 @@ def seed():
         user = db.scalar(select(User).where(User.email == settings.admin_email))
         if not user:
             db.add(User(email=settings.admin_email, name='Адміністратор', password_hash=hash_password(settings.admin_password), role=Role.admin))
+        elif not verify(settings.admin_password, user.password_hash):
+            # The UI refuses to change this password precisely because .env owns it,
+            # so .env must actually win on every start - otherwise rotating it is a
+            # no-op and the message in the UI is a lie.
+            user.password_hash = hash_password(settings.admin_password)
+            user.active = True
+            logger.info('Root admin password synced from ADMIN_PASSWORD')
         for spec in MANAGED_STYLES:
             values = spec['values']
             style = db.scalar(select(Style).where(Style.name == spec['name']))
@@ -109,8 +116,26 @@ def seed():
         db.commit()
 
 
+def check_secrets():
+    """Refuse to serve with secrets that are published in this repository."""
+    for warning in settings.warn_secrets():
+        logger.warning('SECURITY: %s', warning)
+    problems = settings.insecure_secrets()
+    if problems:
+        listed = '\n  - '.join(problems)
+        raise RuntimeError(
+            'Відмова стартувати з незміненими секретами:\n  - ' + listed +
+            '\n\nЦі значення лежать у публічному репозиторії: з ними будь-хто підпише собі токен '
+            'адміністратора. Згенеруйте нові у .env на сервері:\n'
+            '  JWT_SECRET=$(openssl rand -base64 48)\n'
+            '  ADMIN_PASSWORD=$(openssl rand -base64 18)\n'
+            'і перезапустіть: docker compose up -d --force-recreate'
+        )
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    check_secrets()
     ensure_schema()
     Base.metadata.create_all(engine)
     seed()
@@ -187,6 +212,21 @@ class QueueIn(BaseModel):
 
 
 LANGUAGE_CODE_RE = re.compile(r'^[A-Za-z]{2,3}(?:-[A-Za-z]{2})?$')
+
+_CLIENT_ERROR_WINDOW_SECONDS = 300
+_CLIENT_ERROR_MAX = 5
+_client_error_hits: dict[str, list[float]] = defaultdict(list)
+
+
+def rate_limit_client_error(identifier: str) -> bool:
+    now = time.time()
+    hits = [t for t in _client_error_hits[identifier] if now - t < _CLIENT_ERROR_WINDOW_SECONDS]
+    _client_error_hits[identifier] = hits
+    if len(hits) >= _CLIENT_ERROR_MAX:
+        return False
+    hits.append(now)
+    return True
+
 
 # Simple in-memory login throttle: max attempts per identifier inside the window.
 _LOGIN_WINDOW_SECONDS = 300
@@ -1009,11 +1049,14 @@ def test_secrets(user=Depends(require_root)):
 def client_error(body: ClientErrorIn, db: Session = Depends(get_db), user=Depends(current)):
     """A frontend crash the operator would otherwise never report.
 
-    The browser sends this at most once a minute, so it cannot be used to flood the
-    alert channel. Recorded in the audit log either way; alerting is best-effort.
+    The browser self-throttles, but a client cannot be trusted to throttle anything,
+    so the cap is enforced here too: past it the report is logged and acknowledged
+    but no alert is raised. Alerting is best-effort and never breaks the response.
     """
     detail = body.text.strip()[:1000]
     logger.warning('Frontend error from %s at %s: %s', user.email, body.url[:200], detail)
+    if not rate_limit_client_error(user.id):
+        return {'ok': True, 'throttled': True}
     audit(db, user, 'client.error', entity_type='frontend', metadata={'url': body.url[:200], 'text': detail})
     db.commit()
     try:
