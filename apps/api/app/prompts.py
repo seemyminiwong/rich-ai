@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.7"
+BASE_STYLE_VERSION = "12.9"
 BASE_STYLE_NAME = "ARTLINE Base"
 ENGINEERING_STYLE_NAME = "ARTLINE Engineering"
 
@@ -65,6 +65,7 @@ HTML CONTRACT
 - Add the required HTML comment before every major section.
 - Close every element and use box-sizing:border-box wherever dimensions or layout are set.
 - Do not use media queries. Desktop and mobile are separate outputs.
+- Desktop and mobile must carry IDENTICAL copy. The mobile output is a re-layout of the desktop output, never a second draft: same section order, same headings, same Core Feature, same specification values, same sentences, same numbers. Only layout values may differ (widths, column counts, paddings, font sizes and the dedicated mobile Hero asset). Both outputs are published on the same product page, so any wording that differs between them makes one page contradict itself.
 
 ROOT
 Desktop:
@@ -91,7 +92,7 @@ ARTLINE DESIGN SYSTEM
 - Never sample arbitrary colors from product photography.
 - Default dark gradient: linear-gradient(135deg,#1A2128 0%,#252525 58%,#35393F 100%).
 - Default light gradient: linear-gradient(145deg,#FFFFFF 0%,#F7F8FA 100%).
-- Main section and card radius: 12px. Badge/tag radius: 8px. Never use pill radius 999px.
+- Main section and card radius: 12px, including the Hero background canvas (border-radius:12px; overflow:hidden). Badge/tag radius: 8px. Never use pill radius 999px.
 - Prefer borders and whitespace over shadows. Never apply heavy shadows to every card.
 - Keep spacing systematic: desktop section gap 22px, card gap 14-16px, card padding 22-24px, large-section padding 42-48px; mobile section gap 14px, card gap 12px, card padding 18-20px, section padding 22-24px 16px.
 
@@ -132,6 +133,7 @@ Do not add a trust strip, system banner, project metadata, generation status, te
 1. HERO — PRODUCT IN A REAL USE ENVIRONMENT
 - Use the dedicated generated Hero asset as the full CSS background of the complete first section.
 - The Hero image is the section canvas, not a separate content element.
+- The Hero section itself must carry border-radius:12px and overflow:hidden so the background image is clipped to the same rounded corners as every other block. This applies to desktop and mobile equally: square Hero corners next to 12px cards look broken. Never let the background image bleed past the rounded edge.
 - Never insert the Hero asset as an <img>, separate column, card or right-side panel.
 - Never use grid-template-columns inside Hero and never split Hero into an image column and a text column.
 - Use one continuous overlay gradient over the full background image.
@@ -158,9 +160,11 @@ Do not add a trust strip, system banner, project metadata, generation status, te
 3. CORE FEATURE — THE STRONGEST DIFFERENTIATOR
 - Select the single strongest confirmed feature that meaningfully separates the product or defines its main customer value.
 - Use the generated Feature asset exactly once.
-- Use one balanced secondary soft outer island: background:#F7F8FA; border:1px solid #D0D7DE; border-radius:12px; padding:44px.
-- Desktop uses a two-column layout with two coordinated inner islands: one white text island and one white image island. Mobile stacks the same islands with text first and image second.
-- Text island: background:#FFFFFF; border:1px solid #D0D7DE; border-radius:12px; padding:28px. Image island uses the same surface language and padding:20-24px.
+- The Feature section is ONE island only. Never nest a card inside a card inside a card: a soft outer island wrapping a white text card wrapping a separately framed image reads as stacked boxes and looks broken, especially on mobile.
+- Feature island: background:#FFFFFF; border:1px solid #D0D7DE; border-radius:12px; box-sizing:border-box; padding:32px on desktop and 20px on mobile.
+- Desktop layout inside that single island: display:grid; grid-template-columns:1fr 1fr; gap:28px; align-items:center. Left column is text, right column is the image. Equal columns keep the two halves aligned instead of drifting to uneven heights.
+- Mobile layout inside the same single island: display:flex; flex-direction:column; gap:18px. Text first, image second.
+- The Feature image sits directly in its column with no wrapper card and no extra padded frame: display:block; width:100%; height:auto; border-radius:8px; border:1px solid #D0D7DE. On desktop it may use height:100%; object-fit:cover so the image column matches the text column height.
 - The text of this section is about the FEATURE OF THE PRODUCT, never about the picture. Explain: what the feature is, how it works at a buyer-understandable level and what practical result it provides.
 - The heading of this section names the feature or its benefit (for example "Automatic filament change" or "Prints a full plate unattended") — never "Detailed product sample", "Product close-up" or any caption about the image.
 - Never comment on the image, its framing or its purpose, and never state what the image is or is not.
@@ -197,6 +201,9 @@ Never show internal or technical labels such as:
 HTML comments are allowed but must never become visible copy.
 
 FINAL SELF-CHECK
+- the Hero section has border-radius:12px and overflow:hidden on both desktop and mobile;
+- the mobile copy is word-for-word the desktop copy and both name the same Core Feature;
+- the Feature section is a single island with no card-inside-a-card nesting and the image carries no extra frame;
 - no sentence mentions, describes or explains an image; the copy reads correctly with every image removed;
 - no sentence narrates the page, a section or these instructions; no heading names a page element;
 - every sentence is specific to this exact product and could not be pasted onto a different product unchanged;
@@ -357,6 +364,7 @@ HTML CONTRACT
 - Add the required HTML comment before every major section.
 - Close every element and use box-sizing:border-box wherever dimensions or layout are set.
 - Do not use media queries. Desktop and mobile are separate outputs.
+- Desktop and mobile must carry IDENTICAL copy. The mobile output is a re-layout of the desktop output, never a second draft: same section order, same headings, same Core Feature, same specification values, same sentences, same numbers. Only layout values may differ (widths, column counts, paddings, font sizes and the dedicated mobile Hero asset). Both outputs are published on the same product page, so any wording that differs between them makes one page contradict itself.
 
 ROOT
 Desktop:
@@ -382,7 +390,7 @@ ARTLINE DESIGN SYSTEM
 - Never color long headings, subtitles or paragraphs turquoise, green, blue, purple or orange.
 - Never sample arbitrary colors from product photography.
 - Default dark gradient: linear-gradient(135deg,#1A2128 0%,#252525 58%,#35393F 100%).
-- Main section and card radius: 12px. Badge/tag radius: 8px. Never use pill radius 999px.
+- Main section and card radius: 12px, including the Hero background canvas (border-radius:12px; overflow:hidden). Badge/tag radius: 8px. Never use pill radius 999px.
 - Prefer borders and whitespace over shadows. Never apply heavy shadows to every card.
 - Keep spacing systematic: desktop section gap 22px, card gap 14-16px, card padding 22-24px, large-section padding 42-48px; mobile section gap 14px, card gap 12px, card padding 18-20px, section padding 22-24px 16px.
 - Numeric values may use a tighter tabular presentation (font-variant-numeric:tabular-nums) so specifications align across cards.
@@ -417,6 +425,7 @@ Do not add a trust strip, banner, metadata, status, raw specification dump, fake
 
 1. HERO — WHAT IT IS AND WHAT DEFINES IT
 - Use the dedicated generated Hero asset as the full CSS background of the complete first section. The Hero image is the section canvas, not a separate element.
+- The Hero section itself must carry border-radius:12px and overflow:hidden so the background image is clipped to the same rounded corners as every other block. This applies to desktop and mobile equally: square Hero corners next to 12px cards look broken. Never let the background image bleed past the rounded edge.
 - Never insert the Hero asset as an <img>, separate column, card or side panel. Never split Hero into image and text columns. Use one continuous overlay gradient over the full background image.
 - Place all Hero copy inside one compact translucent dark content island in the protected text-safe area.
 - Hero copy island desktop: max-width:610px; padding:28px 30px; border-radius:12px; background:rgba(16,16,16,.74); border:1px solid rgba(255,255,255,.14); box-shadow:0 16px 34px rgba(0,0,0,.18).
@@ -440,8 +449,12 @@ Do not add a trust strip, banner, metadata, status, raw specification dump, fake
 - The text of this section is about the SOLUTION IN THE PRODUCT, never about the picture. Never comment on the image, its framing or its purpose, and never state what the image is or is not.
 - The heading names the solution or its measurable effect (for example "Automatic bed levelling before each job" or "Direct drive extruder for flexible filaments") — never a caption about the image.
 - If the Product JSON confirms the characteristic but not the mechanism, describe the characteristic and its effect precisely, and say nothing about how it is built internally. Do not guess at kinematics, algorithms, materials or components.
-- Use the generated Feature asset exactly once. Outer secondary soft island: background:#F7F8FA; border:1px solid #D0D7DE; border-radius:12px; padding:44px. Desktop uses two columns with two coordinated inner islands: one white text island and one white image island. Mobile stacks the same islands with text first and image second.
-- Text island: background:#FFFFFF; border:1px solid #D0D7DE; border-radius:12px; padding:28px. Image island uses the same surface language and padding:20-24px.
+- Use the generated Feature asset exactly once.
+- The Feature section is ONE island only. Never nest a card inside a card inside a card: a soft outer island wrapping a white text card wrapping a separately framed image reads as stacked boxes and looks broken, especially on mobile.
+- Feature island: background:#FFFFFF; border:1px solid #D0D7DE; border-radius:12px; box-sizing:border-box; padding:32px on desktop and 20px on mobile.
+- Desktop layout inside that single island: display:grid; grid-template-columns:1fr 1fr; gap:28px; align-items:center. Left column is text, right column is the image. Equal columns keep the two halves aligned instead of drifting to uneven heights.
+- Mobile layout inside the same single island: display:flex; flex-direction:column; gap:18px. Text first, image second.
+- The Feature image sits directly in its column with no wrapper card and no extra padded frame: display:block; width:100%; height:auto; border-radius:8px; border:1px solid #D0D7DE. On desktop it may use height:100%; object-fit:cover so the image column matches the text column height.
 - The Feature image must support this exact solution, not merely repeat the Hero composition. This is an art-direction rule for the image only — it must never appear as text.
 
 4. APPLICATIONS AND WORKLOADS — WHAT IT IS SUITABLE FOR
@@ -475,6 +488,9 @@ FINAL SELF-CHECK
 - every number, unit and designation matches the Product JSON exactly; nothing is rounded, converted or invented;
 - no mechanism, component or internal detail is described that the data does not confirm;
 - no marketing adjective or superlative appears anywhere;
+- the Hero section has border-radius:12px and overflow:hidden on both desktop and mobile;
+- the mobile copy is word-for-word the desktop copy and both name the same Core Feature;
+- the Feature section is a single island with no card-inside-a-card nesting and the image carries no extra frame;
 - no sentence mentions, describes or explains an image; the copy reads correctly with every image removed;
 - no sentence narrates the page, a section or these instructions; no heading names a page element;
 - every sentence is specific to this exact product and could not be pasted onto a different product unchanged;
