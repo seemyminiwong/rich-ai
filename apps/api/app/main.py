@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field, HttpUrl
 from sqlalchemy import delete as sa_delete, func, select
 from sqlalchemy.orm import Session
 from app.config import settings
-from app.db import Base, SessionLocal, engine, ensure_schema, get_db
+from app.db import Base, SessionLocal, engine, ensure_schema, get_db, run_migrations
 from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Project, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
 from app.tasks import process_project
@@ -137,6 +137,10 @@ def check_secrets():
 async def lifespan(_app: FastAPI):
     check_secrets()
     ensure_schema()
+    # Alembic owns the table layout from here on. create_all stays as a safety net
+    # for tables that exist in models but predate the migration chain - it never
+    # alters existing tables, so the two cannot fight.
+    run_migrations()
     Base.metadata.create_all(engine)
     seed()
     yield
