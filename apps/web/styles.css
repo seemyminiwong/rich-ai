@@ -209,3 +209,8 @@ optgroup{font-weight:800}
 .project-grid:not(.list-view) .project{display:flex;flex-direction:column}
 .project-grid:not(.list-view) .project-meta{margin-top:auto;padding-top:12px;border-top:1px solid #EEF1F3}
 .project-grid:not(.list-view) .project-style{margin-bottom:2px}
+
+/* Card view is a grid of rows read horizontally, so every band must start at the
+   same y. Titles run one to four lines, so clamp them to two and reserve the space
+   whether or not the second line is used. Full name stays available via title=. */
+.project-grid:not(.list-view) .project h3{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.3;min-height:calc(2 * 1.3em);margin:16px 0 6px}
