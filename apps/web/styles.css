@@ -202,3 +202,10 @@ optgroup{font-weight:800}
 .preset em{margin-top:auto;font-style:normal;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--gray-3);line-height:1.5;overflow-wrap:anywhere}
 .est-line{display:flex;align-items:center;gap:6px;margin:0;color:var(--muted);font-size:13px}
 .est-line b{color:var(--text);font-size:15px}
+
+/* Card view: the footer sat in normal flow, so a two-line title and a three-line
+   title pushed it to different heights across one row of cards. Pinning it to the
+   bottom of a flex column lines every footer up and absorbs the slack above it. */
+.project-grid:not(.list-view) .project{display:flex;flex-direction:column}
+.project-grid:not(.list-view) .project-meta{margin-top:auto;padding-top:12px;border-top:1px solid #EEF1F3}
+.project-grid:not(.list-view) .project-style{margin-bottom:2px}
