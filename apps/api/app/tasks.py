@@ -103,14 +103,24 @@ def _aborted(db, project) -> bool:
     return project.status in (Status.paused, Status.cancelled)
 
 
+def _existing_images(db, project) -> dict:
+    """Label -> url of images already produced for this project."""
+    rows = db.scalars(select(Asset).where(Asset.project_id == project.id, Asset.kind == 'image')).all()
+    return {a.label: a.url for a in rows if a.url}
+
+
 @celery.task(bind=True, max_retries=0)
-def process_project(self, project_id):
+def process_project(self, project_id, reuse_images=False):
     started = time.time()
     with SessionLocal() as db:
         project = db.get(Project, project_id)
         if not project:
             return
         try:
+            # Reuse keeps the previous shots and regenerates only the copy: no image
+            # cost and no waiting for the image model.
+            existing_images = _existing_images(db, project) if reuse_images else {}
+            reused = any(k.startswith(('hero-', 'feature-')) for k in existing_images)
             project.status = Status.processing
             project.started_at = now()
             project.finished_at = None
@@ -126,7 +136,8 @@ def process_project(self, project_id):
             project.estimated_cost = 0
             project.cost_breakdown_json = '{}'
             extract_in = extract_out = content_in = content_out = 0
-            db.execute(delete(Asset).where(Asset.project_id == project.id))
+            if not reused:
+                db.execute(delete(Asset).where(Asset.project_id == project.id))
             db.execute(delete(CriticReport).where(CriticReport.project_id == project.id))
             db.commit()
 
@@ -168,127 +179,149 @@ def process_project(self, project_id):
                 # come only from this page until documents have an explicit product link.
                 prompt=style_row.prompt
             )
-            raw_primary = images[0] if images else ''
-            ranked_references = inspect_product_references(images, raw_primary)
-            selected_reference = ranked_references[0] if ranked_references else None
-            original_reference_url = selected_reference['url'] if selected_reference else ''
-            source_url, reference_path, reference_metadata = materialize_product_reference(
-                original_reference_url, project.id
-            ) if original_reference_url else ('', None, {})
-            fallback = source_url or original_reference_url
-            product_name = product.get('name') or 'product'
-            if fallback:
-                reference_metadata.update({
-                    'source': 'product-page',
-                    'selected_candidate': selected_reference or {},
-                    'candidate_count': len(ranked_references),
-                })
-                db.add(Asset(
-                    project_id=project.id,
-                    kind='image',
-                    label='product-reference',
-                    url=fallback,
-                    prompt='',
-                    model='source',
-                    width=reference_metadata.get('width') or selected_reference.get('width'),
-                    height=reference_metadata.get('height') or selected_reference.get('height'),
-                    metadata_json=json.dumps(reference_metadata, ensure_ascii=False),
-                ))
-                log(db, project, 'images', 'Головне фото товару перевірено та збережено як референс', 20)
-            else:
-                log(db, project, 'images', 'На сторінці не знайдено придатного фото товару — AI-зображення буде пропущено', 20, 'warning')
-                db.commit()
-
-            style_hero = style_image_prompt(style.prompt, 'HERO_IMAGE') or style.hero_prompt.strip()
-            style_feature = style_image_prompt(style.prompt, 'FEATURE_IMAGE') or style.feature_prompt.strip()
-            negative = getattr(style, 'negative_prompt', '').strip()
-            facts = json.dumps(product, ensure_ascii=False)[:5000]
-            requested_variants = [value for value in project.variants.split(',') if value]
-            hero_by_variant = {}
-
-            if project.custom_hero_url:
-                hero_by_variant = {variant: project.custom_hero_url for variant in requested_variants}
-                db.add(Asset(project_id=project.id,kind='image',label='hero-custom',url=project.custom_hero_url,prompt='',model='custom',metadata_json=json.dumps({'source':'custom','variants':requested_variants},ensure_ascii=False)))
-                log(db, project, 'images', 'Використовується власне Hero-зображення', 25)
-            elif style_hero:
-                hero_specs = {
-                    'desktop': ('1536x1024', 1536, 1024, 'wide desktop composition; product on the right; protected text-safe space on the left'),
-                    'mobile': ('1024x1536', 1024, 1536, 'portrait mobile composition; complete product in the upper area; protected text-safe space below it'),
+            if reused:
+                requested_variants = [value for value in project.variants.split(',') if value]
+                fallback = existing_images.get('product-reference', '')
+                hero_by_variant = {
+                    v: existing_images.get(f'hero-{v}-generated') or existing_images.get('hero-custom')
+                       or existing_images.get('hero-source') or fallback
+                    for v in requested_variants
                 }
-                for offset, variant in enumerate(requested_variants):
-                    size, width, height, composition = hero_specs.get(variant, hero_specs['desktop'])
-                    log(db, project, 'images', f'Створення Hero {variant} · {project.image_model}', 24 + offset * 5)
-                    hero_prompt = (
-                        f"{style_hero}\nCanvas requirement: {composition}. "
-                        f"Render specifically at {size}; do not crop important product parts.\n"
-                        f"Negative requirements: {negative}\nProduct: {product_name}. Verified product facts: {facts}"
-                    )
-                    hero, hero_generated, hero_error = generate_image(
-                        hero_prompt, project.id, f'hero-{variant}', project.image_model,
-                        project.image_quality, fallback, reference_url=original_reference_url,
-                        reference_path=reference_path, size=size,
-                    )
-                    hero_by_variant[variant] = hero
-                    if reference_path:
-                        project.image_request_count += 1
-                    if hero_generated:
-                        project.image_count += 1
-                        db.add(Asset(
-                            project_id=project.id, kind='image', label=f'hero-{variant}-generated',
-                            url=hero, prompt=hero_prompt, model=project.image_model, width=width,
-                            height=height, cost=image_rate(project.image_model,project.image_quality),
-                            metadata_json=json.dumps({'source':'generated','variant':variant,'reference_url':original_reference_url,'reference_asset_url':fallback},ensure_ascii=False),
-                        ))
-                    elif hero_error:
-                        log(db, project, 'images', f'Hero {variant} не згенеровано; використовується реальне фото товару. Причина: {hero_error}', 30 + offset * 5, 'warning')
+                feature = (existing_images.get('feature-generated') or existing_images.get('feature-custom')
+                           or existing_images.get('feature-source') or fallback)
+                feature_mode = 'reused'
+                planned_feature_url = ''
+                style_feature = ''
+                negative = ''
+                original_reference_url = ''
+                reference_path = None
+                feature_photo_fallback = ''
+                log(db, project, 'images', f'Зображення взято з попередньої генерації ({len(existing_images)} шт.) — нові не створювались', 35)
+                recalculate_cost(project)
+                project.cost_breakdown_json = json.dumps(cost_breakdown(project, extract_in, extract_out, content_in, content_out), ensure_ascii=False)
+                db.commit()
             else:
-                hero_by_variant = {variant: fallback for variant in requested_variants}
+                raw_primary = images[0] if images else ''
+                ranked_references = inspect_product_references(images, raw_primary)
+                selected_reference = ranked_references[0] if ranked_references else None
+                original_reference_url = selected_reference['url'] if selected_reference else ''
+                source_url, reference_path, reference_metadata = materialize_product_reference(
+                    original_reference_url, project.id
+                ) if original_reference_url else ('', None, {})
+                fallback = source_url or original_reference_url
+                product_name = product.get('name') or 'product'
                 if fallback:
-                    db.add(Asset(project_id=project.id,kind='image',label='hero-source',url=fallback,prompt='',model='source',metadata_json=json.dumps({'source':'product-page','variants':requested_variants},ensure_ascii=False)))
-                log(db, project, 'images', 'Hero-генерацію вимкнено — використовується фото товару', 25)
-            recalculate_cost(project); db.commit()
-
-            # The Feature image is generated AFTER the text, from the finished Core
-            # Feature section, so the shot always matches what the page actually says.
-            # Its URL is deterministic, so the copy can reference it in advance.
-            planned_feature_url = f'/media/{project.id}/feature.webp'
-            feature_mode = 'photo'
-            feature_photo_fallback = ''
-            if project.custom_feature_url:
-                feature = project.custom_feature_url
-                feature_mode = 'custom'
-                db.add(Asset(project_id=project.id,kind='image',label='feature-custom',url=feature,prompt='',model='custom',metadata_json=json.dumps({'source':'custom'},ensure_ascii=False)))
-                log(db, project, 'images', 'Використовується власне додаткове зображення', 35)
-            elif style_feature and reference_path:
-                feature = planned_feature_url
-                feature_mode = 'generate'
-                feature_choice = select_feature_photo(ranked_references, selected_reference)
-                feature_photo_fallback = feature_choice.get('url') if feature_choice else fallback
-                log(db, project, 'images', 'Feature буде створено після тексту — за описом секції Core Feature', 35)
-            else:
-                # Show a real gallery frame instead of generating one: an edited Feature
-                # image kept drifting into a different product. Prefer a frame that is
-                # not the one already used for Hero.
-                feature_choice = select_feature_photo(ranked_references, selected_reference)
-                feature = ''
-                if feature_choice:
-                    feature_url, _feature_path, feature_meta = materialize_product_reference(feature_choice['url'], project.id, 'feature-photo.png')
-                    feature = feature_url or feature_choice['url']
+                    reference_metadata.update({
+                        'source': 'product-page',
+                        'selected_candidate': selected_reference or {},
+                        'candidate_count': len(ranked_references),
+                    })
                     db.add(Asset(
-                        project_id=project.id, kind='image', label='feature-source', url=feature, prompt='', model='source',
-                        width=feature_meta.get('width') or feature_choice.get('width'),
-                        height=feature_meta.get('height') or feature_choice.get('height'),
-                        metadata_json=json.dumps({'source': 'product-page', 'reason': 'distinct gallery frame', 'selected_candidate': feature_choice}, ensure_ascii=False),
+                        project_id=project.id,
+                        kind='image',
+                        label='product-reference',
+                        url=fallback,
+                        prompt='',
+                        model='source',
+                        width=reference_metadata.get('width') or selected_reference.get('width'),
+                        height=reference_metadata.get('height') or selected_reference.get('height'),
+                        metadata_json=json.dumps(reference_metadata, ensure_ascii=False),
                     ))
-                    log(db, project, 'images', 'Feature: використано окреме реальне фото товару з галереї', 35)
+                    log(db, project, 'images', 'Головне фото товару перевірено та збережено як референс', 20)
                 else:
-                    feature = fallback
-                    if feature:
-                        db.add(Asset(project_id=project.id,kind='image',label='feature-source',url=feature,prompt='',model='source',metadata_json=json.dumps({'source':'product-page','reason':'no distinct gallery frame'},ensure_ascii=False)))
-                    log(db, project, 'images', 'Feature: окремого кадру в галереї немає — використано головне фото товару', 35)
-            recalculate_cost(project)
-            project.cost_breakdown_json = json.dumps(cost_breakdown(project, extract_in, extract_out, content_in, content_out), ensure_ascii=False)
-            db.commit()
+                    log(db, project, 'images', 'На сторінці не знайдено придатного фото товару — AI-зображення буде пропущено', 20, 'warning')
+                    db.commit()
+
+                style_hero = style_image_prompt(style.prompt, 'HERO_IMAGE') or style.hero_prompt.strip()
+                style_feature = style_image_prompt(style.prompt, 'FEATURE_IMAGE') or style.feature_prompt.strip()
+                negative = getattr(style, 'negative_prompt', '').strip()
+                facts = json.dumps(product, ensure_ascii=False)[:5000]
+                requested_variants = [value for value in project.variants.split(',') if value]
+                hero_by_variant = {}
+
+                if project.custom_hero_url:
+                    hero_by_variant = {variant: project.custom_hero_url for variant in requested_variants}
+                    db.add(Asset(project_id=project.id,kind='image',label='hero-custom',url=project.custom_hero_url,prompt='',model='custom',metadata_json=json.dumps({'source':'custom','variants':requested_variants},ensure_ascii=False)))
+                    log(db, project, 'images', 'Використовується власне Hero-зображення', 25)
+                elif style_hero:
+                    hero_specs = {
+                        'desktop': ('1536x1024', 1536, 1024, 'wide desktop composition; product on the right; protected text-safe space on the left'),
+                        'mobile': ('1024x1536', 1024, 1536, 'portrait mobile composition; complete product in the upper area; protected text-safe space below it'),
+                    }
+                    for offset, variant in enumerate(requested_variants):
+                        size, width, height, composition = hero_specs.get(variant, hero_specs['desktop'])
+                        log(db, project, 'images', f'Створення Hero {variant} · {project.image_model}', 24 + offset * 5)
+                        hero_prompt = (
+                            f"{style_hero}\nCanvas requirement: {composition}. "
+                            f"Render specifically at {size}; do not crop important product parts.\n"
+                            f"Negative requirements: {negative}\nProduct: {product_name}. Verified product facts: {facts}"
+                        )
+                        hero, hero_generated, hero_error = generate_image(
+                            hero_prompt, project.id, f'hero-{variant}', project.image_model,
+                            project.image_quality, fallback, reference_url=original_reference_url,
+                            reference_path=reference_path, size=size,
+                        )
+                        hero_by_variant[variant] = hero
+                        if reference_path:
+                            project.image_request_count += 1
+                        if hero_generated:
+                            project.image_count += 1
+                            db.add(Asset(
+                                project_id=project.id, kind='image', label=f'hero-{variant}-generated',
+                                url=hero, prompt=hero_prompt, model=project.image_model, width=width,
+                                height=height, cost=image_rate(project.image_model,project.image_quality),
+                                metadata_json=json.dumps({'source':'generated','variant':variant,'reference_url':original_reference_url,'reference_asset_url':fallback},ensure_ascii=False),
+                            ))
+                        elif hero_error:
+                            log(db, project, 'images', f'Hero {variant} не згенеровано; використовується реальне фото товару. Причина: {hero_error}', 30 + offset * 5, 'warning')
+                else:
+                    hero_by_variant = {variant: fallback for variant in requested_variants}
+                    if fallback:
+                        db.add(Asset(project_id=project.id,kind='image',label='hero-source',url=fallback,prompt='',model='source',metadata_json=json.dumps({'source':'product-page','variants':requested_variants},ensure_ascii=False)))
+                    log(db, project, 'images', 'Hero-генерацію вимкнено — використовується фото товару', 25)
+                recalculate_cost(project); db.commit()
+
+                # The Feature image is generated AFTER the text, from the finished Core
+                # Feature section, so the shot always matches what the page actually says.
+                # Its URL is deterministic, so the copy can reference it in advance.
+                planned_feature_url = f'/media/{project.id}/feature.webp'
+                feature_mode = 'photo'
+                feature_photo_fallback = ''
+                if project.custom_feature_url:
+                    feature = project.custom_feature_url
+                    feature_mode = 'custom'
+                    db.add(Asset(project_id=project.id,kind='image',label='feature-custom',url=feature,prompt='',model='custom',metadata_json=json.dumps({'source':'custom'},ensure_ascii=False)))
+                    log(db, project, 'images', 'Використовується власне додаткове зображення', 35)
+                elif style_feature and reference_path:
+                    feature = planned_feature_url
+                    feature_mode = 'generate'
+                    feature_choice = select_feature_photo(ranked_references, selected_reference)
+                    feature_photo_fallback = feature_choice.get('url') if feature_choice else fallback
+                    log(db, project, 'images', 'Feature буде створено після тексту — за описом секції Core Feature', 35)
+                else:
+                    # Show a real gallery frame instead of generating one: an edited Feature
+                    # image kept drifting into a different product. Prefer a frame that is
+                    # not the one already used for Hero.
+                    feature_choice = select_feature_photo(ranked_references, selected_reference)
+                    feature = ''
+                    if feature_choice:
+                        feature_url, _feature_path, feature_meta = materialize_product_reference(feature_choice['url'], project.id, 'feature-photo.png')
+                        feature = feature_url or feature_choice['url']
+                        db.add(Asset(
+                            project_id=project.id, kind='image', label='feature-source', url=feature, prompt='', model='source',
+                            width=feature_meta.get('width') or feature_choice.get('width'),
+                            height=feature_meta.get('height') or feature_choice.get('height'),
+                            metadata_json=json.dumps({'source': 'product-page', 'reason': 'distinct gallery frame', 'selected_candidate': feature_choice}, ensure_ascii=False),
+                        ))
+                        log(db, project, 'images', 'Feature: використано окреме реальне фото товару з галереї', 35)
+                    else:
+                        feature = fallback
+                        if feature:
+                            db.add(Asset(project_id=project.id,kind='image',label='feature-source',url=feature,prompt='',model='source',metadata_json=json.dumps({'source':'product-page','reason':'no distinct gallery frame'},ensure_ascii=False)))
+                        log(db, project, 'images', 'Feature: окремого кадру в галереї немає — використано головне фото товару', 35)
+                recalculate_cost(project)
+                project.cost_breakdown_json = json.dumps(cost_breakdown(project, extract_in, extract_out, content_in, content_out), ensure_ascii=False)
+                db.commit()
 
             if _aborted(db, project):
                 db.add(Event(project_id=project.id, stage=project.stage, level='warning', message='Виконання зупинено користувачем перед створенням контенту')); db.commit()

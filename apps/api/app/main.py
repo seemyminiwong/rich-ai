@@ -166,6 +166,7 @@ class RerunIn(BaseModel):
     style_id: str | None = None
     languages: list[str] | None = None
     variants: list[str] | None = None
+    reuse_images: bool = False
 class CriticIn(BaseModel):
     auto_fix: bool = False
 class QueueIn(BaseModel):
@@ -670,7 +671,10 @@ def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends
         if not variants: raise HTTPException(400, 'Оберіть щонайменше один формат')
         p.variants = ','.join(variants)
     p.status = Status.queued; p.stage = 'queued'; p.progress = 0; p.error = ''; p.input_tokens = 0; p.output_tokens = 0; p.image_count = 0; p.text_request_count = 0; p.image_request_count = 0; p.text_cost = 0; p.image_cost = 0; p.estimated_cost = 0
-    audit(db, user, 'project.rerun', 'project', p.id, {'style_id': p.style_id, 'languages': p.languages, 'variants': p.variants}); db.commit(); process_project.delay(p.id); return {'queued': True, 'style_id': p.style_id, 'languages': p.languages.split(','), 'variants': p.variants.split(',')}
+    reuse = bool(payload and payload.reuse_images)
+    audit(db, user, 'project.rerun', 'project', p.id, {'style_id': p.style_id, 'languages': p.languages, 'variants': p.variants, 'reuse_images': reuse}); db.commit()
+    process_project.delay(p.id, reuse_images=reuse)
+    return {'queued': True, 'style_id': p.style_id, 'languages': p.languages.split(','), 'variants': p.variants.split(','), 'reuse_images': reuse}
 
 
 @app.post('/api/projects/{project_id}/queue')
