@@ -26,7 +26,6 @@ from app.pipeline import is_public_http_url, sanitize_html, style_image_prompt
 from app.version import __version__
 from app.prompts import (
     BASE_STYLE_NAME,
-    BASE_STYLE_VERSION,
     DEFAULT_FEATURE_PROMPT,
     DEFAULT_HERO_PROMPT,
     DEFAULT_NEGATIVE_PROMPT,
@@ -48,7 +47,7 @@ MANAGED_STYLES = [
         'name': BASE_STYLE_NAME,
         'default': False,
         'values': {
-            'description': f'Керований базовий стиль ARTLINE v{BASE_STYLE_VERSION}: цілісний дизайн, корисний SEO/GEO-текст і правдиві product-first зображення',
+            'description': 'Керований базовий стиль ARTLINE: цілісний дизайн, корисний SEO/GEO-текст і правдиві product-first зображення',
             'prompt': DEFAULT_STYLE_PROMPT,
             'hero_prompt': DEFAULT_HERO_PROMPT,
             # Empty on purpose: the Feature image is a real gallery photo, not a
@@ -62,7 +61,7 @@ MANAGED_STYLES = [
         'name': ENGINEERING_STYLE_NAME,
         'default': True,
         'values': {
-            'description': f'Керований інженерний стиль ARTLINE v{BASE_STYLE_VERSION} для технічних категорій: цифри з одиницями, підтверджені конструктивні рішення та реальні межі застосування',
+            'description': 'Керований інженерний стиль ARTLINE для технічних категорій: цифри з одиницями, підтверджені конструктивні рішення та реальні межі застосування',
             'prompt': ENGINEERING_STYLE_PROMPT,
             'hero_prompt': ENGINEERING_HERO_PROMPT,
             # Empty on purpose: the Feature image is a real gallery photo, not a
