@@ -11,6 +11,7 @@ css = (root / 'apps/web/styles.css').read_text(encoding='utf-8')
 db = (root / 'apps/api/app/db.py').read_text(encoding='utf-8')
 prompts = (root / 'apps/api/app/prompts.py').read_text(encoding='utf-8')
 runtime = (root / 'apps/api/app/runtime.py').read_text(encoding='utf-8')
+config = (root / 'apps/api/app/config.py').read_text(encoding='utf-8')
 
 checks = {
     # --- retained pipeline guarantees ---
@@ -117,7 +118,7 @@ checks = {
     'watchdog task scheduled': 'def watchdog_stuck_projects' in tasks and 'watchdog-stuck-projects' in (root / 'apps/api/app/celery_app.py').read_text(encoding='utf-8') and '"-B"' in (root / 'docker-compose.yml').read_text(encoding='utf-8'),
     'failure alerts wired': 'def send_alert' in tasks and 'send_alert(f' in tasks and 'telegram_bot_token' in (root / 'apps/api/app/config.py').read_text(encoding='utf-8'),
     'automated backups': 'backup_data:/backups' in (root / 'docker-compose.yml').read_text(encoding='utf-8') and 'pg_dump -Fc' in (root / 'docker-compose.yml').read_text(encoding='utf-8'),
-    'user guide present': (root / 'USER_GUIDE.md').exists(),
+    'user guide present': (root / 'docs/USER_GUIDE.md').exists(),
 
     # --- per-user access control ---
     'permission catalog + overrides': 'def effective_perms' in security and 'ROLE_DEFAULTS' in security and 'def require_perm' in security and "permissions_json" in models,
@@ -139,9 +140,14 @@ checks = {
     'secrets panel is root-gated in the ui': "if(!state.me?.is_root)return ''" in web,
     'key endpoints are root-only': "def require_root" in main and main.count('Depends(require_root)') >= 3,
     'openrouter text only': 'OPENROUTER_BASE_URL' in runtime and 'def image_client' in pipeline,
+    'gemini image provider': 'GEMINI_BASE_URL' in runtime and 'def _gemini_edit' in pipeline,
+    'image provider routed by model name': "return 'gemini' if (model or '').startswith('gemini-')" in pipeline,
+    'gemini output normalised to webp': "Image.open(BytesIO(raw)).convert('RGB').save(path, 'WEBP'" in pipeline,
+    'gemini models gated on the key': "if cfg['gemini_api_key']:" in main,
+    'gemini pricing known': 'gemini-2.5-flash-image' in config and 'gemini-3-pro-image-preview' in config,
     'ci workflow': (root / '.github/workflows/ci.yml').exists() and 'ghcr.io' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8'),
     'registry compose': (root / 'docker-compose.registry.yml').exists() and 'rich-ai-api' in (root / 'docker-compose.registry.yml').read_text(encoding='utf-8'),
-    'deploy runbook': (root / 'DEPLOY.md').exists(),
+    'deploy runbook': (root / 'docs/DEPLOY.md').exists(),
     'alembic scaffold': (root / 'apps/api/alembic/env.py').exists() and (root / 'apps/api/alembic/versions/0001_baseline.py').exists() and 'alembic==' in (root / 'apps/api/requirements.txt').read_text(encoding='utf-8'),
     'license present': (root / 'LICENSE').exists() and 'PolyForm Noncommercial License 1.0.0' in (root / 'LICENSE').read_text(encoding='utf-8'),
     'critic css': 'v11.8' in css,

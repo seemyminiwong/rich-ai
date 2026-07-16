@@ -14,6 +14,12 @@ DEFAULT_TEXT_PRICING = {
 DEFAULT_IMAGE_PRICING = {
     "gpt-image-1": {"low": 0.02, "medium": 0.07, "high": 0.19},
     "gpt-image-1-mini": {"low": 0.005, "medium": 0.015, "high": 0.04},
+    # Gemini image models bill a flat rate per image: they have no quality tiers,
+    # so every tier resolves to the same figure.
+    "gemini-2.5-flash-image": {"low": 0.039, "medium": 0.039, "high": 0.039},
+    "gemini-3.1-flash-image-preview": {"low": 0.045, "medium": 0.045, "high": 0.045},
+    "gemini-3.1-flash-lite-image": {"low": 0.02, "medium": 0.02, "high": 0.02},
+    "gemini-3-pro-image-preview": {"low": 0.134, "medium": 0.134, "high": 0.134},
 }
 
 
@@ -31,6 +37,7 @@ class Settings(BaseSettings):
     admin_email: str = 'admin@example.com'
     admin_password: str = 'change-this-admin-password'
     openai_api_key: str = ''
+    gemini_api_key: str = ''
     openai_text_model: str = 'gpt-5-mini'
     # Reasoning models spend part of max_output_tokens on hidden reasoning tokens.
     # Keep the thinking short for formatting-style work; set empty to not send it.
@@ -38,6 +45,7 @@ class Settings(BaseSettings):
     openai_image_model: str = 'gpt-image-1'
     openai_text_models: str = 'gpt-5-mini,gpt-5,gpt-4.1-mini,gpt-4.1,gpt-4o-mini,gpt-4o'
     openai_image_models: str = 'gpt-image-2,gpt-image-1,gpt-image-1-mini'
+    gemini_image_models: str = 'gemini-3.1-flash-image-preview,gemini-2.5-flash-image,gemini-3-pro-image-preview'
     text_pricing_json: str = json.dumps(DEFAULT_TEXT_PRICING)
     image_pricing_json: str = json.dumps(DEFAULT_IMAGE_PRICING)
     media_dir: str = '/app/media'
@@ -57,6 +65,10 @@ class Settings(BaseSettings):
     @property
     def image_models(self):
         return [x.strip() for x in self.openai_image_models.split(',') if x.strip()]
+
+    @property
+    def gemini_models(self):
+        return [x.strip() for x in self.gemini_image_models.split(',') if x.strip()]
 
     @property
     def text_pricing(self):
