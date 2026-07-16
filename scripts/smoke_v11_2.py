@@ -16,6 +16,7 @@ nginx = (root / 'apps/web/nginx.conf').read_text(encoding='utf-8')
 compose = (root / 'docker-compose.yml').read_text(encoding='utf-8')
 envex = (root / '.env.example').read_text(encoding='utf-8')
 caddyfile = (root / 'Caddyfile').read_text(encoding='utf-8')
+rev0002 = (root / 'apps/api/alembic/versions/0002_runtime_settings.py').read_text(encoding='utf-8')
 
 checks = {
     # --- retained pipeline guarantees ---
@@ -100,7 +101,7 @@ checks = {
     'languages quick set': "QUICK_LANGS=['ua','ru','pl']" in web and "languagePicker(['ua','ru'])" in web,
     'live render only on change': 'function liveSignature' in web and 'if(sig===liveSig)return' in web,
     'cost breakdown backend': 'def cost_breakdown' in tasks and 'cost_breakdown_json' in models,
-    'cost breakdown migration': 'ADD COLUMN IF NOT EXISTS' in db,
+    'cost breakdown migration': 'cost_breakdown_json' in rev0002 and 'IF NOT EXISTS' in rev0002,
     'cost breakdown api': "'cost_breakdown': breakdown" in main,
     'cost breakdown ui': 'function costPanel' in web,
     'live project timer': 'function startProjectTimer' in web and 'id="liveTimer"' in web,
@@ -126,7 +127,7 @@ checks = {
 
     # --- per-user access control ---
     'permission catalog + overrides': 'def effective_perms' in security and 'ROLE_DEFAULTS' in security and 'def require_perm' in security and "permissions_json" in models,
-    'permission column migration': "('users', 'permissions_json')" in db,
+    'permission column migration': 'permissions_json' in rev0002,
     'endpoints gated by permission': "require_perm('project.create')" in main and "require_perm('users.manage')" in main and "require_perm('style.manage')" in main and main.count('require_roles(') <= 1,
     'permission api endpoints': "@app.get('/api/permissions')" in main and "@app.patch('/api/users/{user_id}/permissions')" in main and "'permissions': sorted(effective_perms" in main,
     'ui driven by permissions': 'const can=p=>' in web and 'function allowedTabs' in web and 'ROLE_PAGES' not in web,
@@ -181,7 +182,10 @@ checks = {
     'ci workflow': (root / '.github/workflows/ci.yml').exists() and 'ghcr.io' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8'),
     'registry compose': (root / 'docker-compose.registry.yml').exists() and 'rich-ai-api' in (root / 'docker-compose.registry.yml').read_text(encoding='utf-8'),
     'deploy runbook': (root / 'docs/DEPLOY.md').exists(),
-    'alembic scaffold': (root / 'apps/api/alembic/env.py').exists() and (root / 'apps/api/alembic/versions/0001_baseline.py').exists() and 'alembic==' in (root / 'apps/api/requirements.txt').read_text(encoding='utf-8'),
+    'alembic enabled, not just scaffolded': 'COPY alembic ./alembic' in (root / 'apps/api/Dockerfile').read_text(encoding='utf-8') and 'run_migrations()' in main,
+    'pre-alembic databases are stamped then upgraded': "command.stamp(cfg, '0001_baseline')" in db and "command.upgrade(cfg, 'head')" in db,
+    'post-baseline changes captured in a revision': (root / 'apps/api/alembic/versions/0002_runtime_settings.py').exists(),
+    'hand-rolled column adds are gone': 'column_migrations' not in db,
     'license present': (root / 'LICENSE').exists() and 'PolyForm Noncommercial License 1.0.0' in (root / 'LICENSE').read_text(encoding='utf-8'),
     'critic css': 'v11.8' in css,
 }
