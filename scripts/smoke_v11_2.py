@@ -80,6 +80,7 @@ checks = {
     'feature url planned before text': 'planned_feature_url' in tasks and "f'/media/{project.id}/feature.webp'" in tasks,
     'feature falls back to real photo': 'def select_feature_photo' in pipeline and 'feature generation failed' in tasks,
     'key feature fallback kept': 'def select_key_feature' in pipeline and 'select_key_feature(product)' in tasks,
+    'rerun can reuse existing images': 'def process_project(self, project_id, reuse_images=False)' in tasks and "feature_mode = 'reused'" in tasks and 'reuse_images: bool = False' in main and 'process_project.delay(p.id, reuse_images=reuse)' in main and 'function reuseImagesField' in web,
     'viewpoint locked in image prompts': prompts.count('VIEWPOINT LOCK') == 6 and 'working-angle' not in prompts and prompts.count('no substituted product variant') == 2,
     'image prompts ban redrawn logos': prompts.count('LOGOS, LABELS AND TEXT ON THE PRODUCT') == 6 and prompts.count('garbled') >= 6,
     'base prompt bans meta text': 'NEVER DESCRIBE THE PAGE OR THE IMAGES' in prompts and 'could not be pasted onto a different product' in prompts,
