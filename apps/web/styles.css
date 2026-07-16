@@ -119,6 +119,12 @@ button:focus-visible,a:focus-visible,select:focus-visible{outline:3px solid rgba
 /* v12: style demo preview */
 .style-demo{height:62vh}
 
+/* v12: permissions editor */
+.perm-list{display:grid;gap:10px;margin:4px 0 4px}
+.perm-row{align-items:flex-start;gap:10px}
+.perm-row span{display:flex;flex-direction:column;gap:2px;font-weight:600}
+.perm-default{font-style:normal;font-size:10px;font-weight:800;color:#157985;background:#EAF9FB;border:1px solid #B8E8ED;border-radius:6px;padding:1px 6px;width:max-content;text-transform:uppercase;letter-spacing:.03em}
+
 /* v12: settings page */
 .settings-metrics{grid-template-columns:repeat(6,minmax(0,1fr))}
 .settings-metrics .badge{font-size:11px}
