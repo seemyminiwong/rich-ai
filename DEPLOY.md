@@ -91,16 +91,37 @@ Data (Postgres, media) lives in named volumes `rich-ai_postgres_data` and
 
 ## 5. Backup & restore
 
-Database:
+**Automatic:** the `backup` compose service dumps the database daily (custom
+format) into the `rich-ai_backup_data` volume and prunes dumps older than
+`BACKUP_KEEP_DAYS` (default 14). List and restore:
+
+```bash
+docker compose exec backup ls -lh /backups
+docker compose exec backup sh -c 'pg_restore --clean --if-exists -d "$PGDATABASE" /backups/richstudio-YYYY-MM-DD-HHMM.dump'
+```
+
+Manual one-off dump:
 
 ```bash
 docker compose exec -T postgres pg_dump -U richstudio richstudio > backup-$(date +%F).sql
-# restore:
-cat backup-YYYY-MM-DD.sql | docker compose exec -T postgres psql -U richstudio richstudio
 ```
 
 Media (generated images) lives in the `rich-ai_media_data` volume — snapshot it
 with the rest of the `Data` pool via TrueNAS snapshots.
+
+## 5b. Failure alerts & watchdog
+
+The worker runs a beat schedule: every 5 minutes a watchdog fails projects stuck
+in `processing`/`queued` longer than `STUCK_PROJECT_MINUTES` (default 45) and
+posts an alert. Alerts also fire on every project error.
+
+Configure any of these in `.env` (empty = disabled):
+
+```env
+TELEGRAM_BOT_TOKEN=...   # @BotFather token
+TELEGRAM_CHAT_ID=...     # your chat/channel id
+ALERT_WEBHOOK_URL=...    # any endpoint accepting JSON POST {"text": ...}
+```
 
 ---
 

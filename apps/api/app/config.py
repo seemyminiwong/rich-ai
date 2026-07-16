@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     image_pricing_json: str = json.dumps(DEFAULT_IMAGE_PRICING)
     media_dir: str = '/app/media'
     request_timeout_seconds: int = 75
+    # Watchdog: a project stuck in processing/queued longer than this is failed.
+    stuck_project_minutes: int = 45
+    # Optional failure alerts. Telegram: token + chat id. Webhook: any URL that
+    # accepts a JSON POST {"text": ...}. Empty values disable alerts silently.
+    telegram_bot_token: str = ''
+    telegram_chat_id: str = ''
+    alert_webhook_url: str = ''
 
     @property
     def text_models(self):
