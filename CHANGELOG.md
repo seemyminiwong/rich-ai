@@ -6,7 +6,7 @@
 
 - Єдине джерело версії — `apps/api/app/version.py`; health-ендпоінт і теги образів беруться звідти.
 - CI + реєстр образів (GHCR): GitHub Actions на кожен push у `main` проганяє перевірки й pytest, збирає та пушить образи `rich-ai-api` і `rich-ai-web`.
-- Деплой через `pull` (`docker-compose.registry.yml`) без збирання на сервері — див. [DEPLOY.md](DEPLOY.md).
+- Деплой через `pull` (`docker-compose.registry.yml`) без збирання на сервері — див. [docs/DEPLOY.md](docs/DEPLOY.md).
 - Стійкість пайплайна: виклики OpenAI обгорнуто ретраями з експоненційним backoff.
 - Адаптація до reasoning-моделей: більший бюджет виводу і керований `reasoning.effort`, бо приховані reasoning-токени списуються з `max_output_tokens`.
 - Покращено витягування характеристик: парсинг таблиць, `<dl>` і spec-блоків прямо з HTML + злиття з JSON-LD.

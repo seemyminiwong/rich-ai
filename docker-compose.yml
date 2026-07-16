@@ -91,7 +91,7 @@ services:
       - backup_data:/backups
     entrypoint: ["/bin/sh", "-c"]
     # Daily dump at container-local 03:00 plus one right at startup; old dumps
-    # beyond BACKUP_KEEP_DAYS are pruned. Restore: see DEPLOY.md section 5.
+    # beyond BACKUP_KEEP_DAYS are pruned. Restore: see docs/DEPLOY.md section 5.
     command:
       - |
         while true; do

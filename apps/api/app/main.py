@@ -126,6 +126,7 @@ class UserPasswordIn(BaseModel): password: str = Field(min_length=8, max_length=
 class SecretsIn(BaseModel):
     llm_provider: str | None = None
     openai_api_key: str | None = None
+    gemini_api_key: str | None = None
     openrouter_api_key: str | None = None
     openrouter_text_model: str | None = None
 class UserCreate(BaseModel):
@@ -777,11 +778,12 @@ def save_artifact(artifact_id: str, payload: HtmlIn, db: Session = Depends(get_d
 
 @app.get('/api/models')
 def available_models(user=Depends(current)):
+    cfg = runtime_config()
     text_models = list(settings.text_models); image_models = list(settings.image_models); reasoning_models = []; source = 'configuration'
-    if settings.openai_api_key:
+    if cfg['openai_api_key']:
         try:
             from openai import OpenAI
-            rows = OpenAI(api_key=settings.openai_api_key).models.list().data
+            rows = OpenAI(api_key=cfg['openai_api_key']).models.list().data
             ids = sorted({x.id for x in rows})
             excluded = ('audio', 'realtime', 'transcribe', 'tts', 'embedding', 'moderation', 'whisper', 'dall-e')
             discovered_image = [x for x in ids if ('image' in x or x.startswith('dall-e'))]
@@ -790,6 +792,11 @@ def available_models(user=Depends(current)):
             text_models = sorted(dict.fromkeys(discovered_text + text_models)); image_models = sorted(dict.fromkeys(discovered_image + image_models)); source = 'openai+configuration'
         except Exception:
             pass
+    # Gemini image models are offered only when a Gemini key exists: picking one
+    # without a key would fail at generation time instead of here.
+    if cfg['gemini_api_key']:
+        image_models = list(dict.fromkeys(list(settings.gemini_models) + image_models))
+        source = f'{source}+gemini'
     return {'text_models': text_models, 'image_models': image_models, 'reasoning_models': reasoning_models, 'source': source, 'default_text_model': settings.openai_text_model, 'default_image_model': settings.openai_image_model}
 
 
@@ -884,6 +891,7 @@ def system_status(db: Session = Depends(get_db), user=Depends(require_perm('sett
     return {
         'version': APP_VERSION,
         'openai_configured': bool(runtime_config()['openai_api_key']),
+        'gemini_configured': bool(runtime_config()['gemini_api_key']),
         'llm_provider': runtime_config()['llm_provider'],
         'default_text_model': settings.openai_text_model,
         'default_image_model': settings.openai_image_model,
@@ -918,6 +926,8 @@ def _secrets_view():
         'llm_provider': cfg['llm_provider'],
         'openai_api_key': mask(cfg['openai_api_key']),
         'openai_api_key_source': cfg['openai_api_key_source'],
+        'gemini_api_key': mask(cfg['gemini_api_key']),
+        'gemini_api_key_source': cfg['gemini_api_key_source'],
         'openrouter_api_key': mask(cfg['openrouter_api_key']),
         'openrouter_api_key_source': cfg['openrouter_api_key_source'],
         'openrouter_text_model': cfg['openrouter_text_model'],
@@ -937,7 +947,7 @@ def put_secrets(body: SecretsIn, db: Session = Depends(get_db), user=Depends(req
         values['llm_provider'] = body.llm_provider
     if body.openrouter_text_model is not None:
         values['openrouter_text_model'] = body.openrouter_text_model.strip()[:120]
-    for field in ('openai_api_key', 'openrouter_api_key'):
+    for field in ('openai_api_key', 'gemini_api_key', 'openrouter_api_key'):
         raw = getattr(body, field)
         if raw is None:
             continue

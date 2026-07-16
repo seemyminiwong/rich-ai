@@ -7,7 +7,7 @@ from PIL import Image
 
 from types import SimpleNamespace
 
-from app.pipeline import _deterministic_html, _gallery_identity, _html_only, _translation_template, generate_image, inspect_product_references, language_rule, parse_page, translate_html
+from app.pipeline import _aspect_ratio, _deterministic_html, _gallery_identity, _html_only, _translation_template, generate_image, inspect_product_references, language_rule, parse_page, translate_html
 from app.prompts import DEFAULT_FEATURE_PROMPT, DEFAULT_HERO_PROMPT, DEFAULT_STYLE_PROMPT
 
 
@@ -131,7 +131,7 @@ def test_language_translation_preserves_dom_styles_and_image_urls():
             )
 
     fake_client = SimpleNamespace(responses=FakeResponses())
-    with patch('app.pipeline.client', fake_client):
+    with patch('app.pipeline.text_client', lambda: (fake_client, 'openai')):
         translated, input_tokens, output_tokens = translate_html(source, 'ua', 'test-model')
 
     source_tags = [(tag.name, dict(tag.attrs)) for tag in BeautifulSoup(source, 'html.parser').find_all(True)]
@@ -190,7 +190,7 @@ def test_gpt_image_2_omits_unsupported_input_fidelity(tmp_path):
     reference.write_bytes(image_bytes((512, 512)))
     fake_client = SimpleNamespace(images=FakeImages())
 
-    with patch('app.pipeline.client', fake_client), patch('app.pipeline.settings.media_dir', str(tmp_path)):
+    with patch('app.pipeline.image_client', lambda: fake_client), patch('app.pipeline.settings.media_dir', str(tmp_path)):
         _, generated, error = generate_image(
             'Create a scene around the exact product', 'project', 'hero-mobile',
             'gpt-image-2-2026-04-21', 'medium', '/media/reference.png',
@@ -214,7 +214,7 @@ def test_gpt_image_1_requests_high_reference_fidelity(tmp_path):
     reference.write_bytes(image_bytes((512, 512)))
     fake_client = SimpleNamespace(images=FakeImages())
 
-    with patch('app.pipeline.client', fake_client), patch('app.pipeline.settings.media_dir', str(tmp_path)):
+    with patch('app.pipeline.image_client', lambda: fake_client), patch('app.pipeline.settings.media_dir', str(tmp_path)):
         _, generated, error = generate_image(
             'Create a scene around the exact product', 'project', 'hero-desktop',
             'gpt-image-1', 'medium', '/media/reference.png',
@@ -224,3 +224,61 @@ def test_gpt_image_1_requests_high_reference_fidelity(tmp_path):
     assert generated is True
     assert error == ''
     assert calls[0]['extra_body'] == {'input_fidelity': 'high'}
+
+
+def test_gemini_model_routes_to_gemini_and_never_calls_openai(tmp_path):
+    """Picking a gemini-* image model must switch provider without any other setting."""
+    calls = []
+
+    def fake_edit(model, prompt, reference, mime, size):
+        calls.append({'model': model, 'prompt': prompt, 'mime': mime, 'size': size})
+        return image_bytes((256, 256))
+
+    def boom():
+        raise AssertionError('OpenAI must not be called for a gemini-* model')
+
+    reference = tmp_path / 'reference.png'
+    reference.write_bytes(image_bytes((512, 512)))
+
+    with patch('app.pipeline._gemini_edit', fake_edit), patch('app.pipeline.image_client', boom), \
+         patch('app.pipeline.runtime_config', lambda force=False: {'gemini_api_key': 'test-key'}), \
+         patch('app.pipeline.settings.media_dir', str(tmp_path)):
+        url, generated, error = generate_image(
+            'Create a scene around the exact product', 'project', 'feature',
+            'gemini-2.5-flash-image', 'high', '/media/reference.png',
+            reference_path=reference, size='1536x1024',
+        )
+
+    assert generated is True, error
+    assert url == '/media/project/feature.webp'
+    assert calls[0]['model'] == 'gemini-2.5-flash-image'
+    assert 'STRICT REFERENCE-IMAGE EDIT' in calls[0]['prompt']
+    # Gemini answers in PNG; the page contract is webp like the OpenAI path.
+    written = Image.open(tmp_path / 'project' / 'feature.webp')
+    assert written.format == 'WEBP'
+
+
+def test_gemini_maps_pixel_size_to_the_nearest_aspect_ratio():
+    assert _aspect_ratio('1536x1024') == '3:2'
+    assert _aspect_ratio('1024x1536') == '2:3'
+    assert _aspect_ratio('1024x1024') == '1:1'
+    assert _aspect_ratio('nonsense') == '1:1'
+
+
+def test_openai_image_model_never_reaches_the_gemini_path(tmp_path):
+    def boom(*_a, **_k):
+        raise AssertionError('Gemini must not be called for an OpenAI model')
+
+    class FakeImages:
+        def edit(self, **_kwargs):
+            return SimpleNamespace(data=[SimpleNamespace(b64_json=base64.b64encode(image_bytes((64, 64))).decode(), url=None)])
+
+    reference = tmp_path / 'reference.png'
+    reference.write_bytes(image_bytes((512, 512)))
+    with patch('app.pipeline._gemini_edit', boom), patch('app.pipeline.image_client', lambda: SimpleNamespace(images=FakeImages())), \
+         patch('app.pipeline.settings.media_dir', str(tmp_path)):
+        _, generated, error = generate_image(
+            'Scene', 'project', 'hero-desktop', 'gpt-image-1', 'medium',
+            '/media/reference.png', reference_path=reference, size='1536x1024',
+        )
+    assert generated is True, error

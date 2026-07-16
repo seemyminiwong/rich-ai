@@ -20,10 +20,12 @@ from app.models import AppSetting
 CACHE_TTL = 15
 
 OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
+GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
 
 # runtime key -> attribute on Settings holding the .env fallback (None = no fallback)
 RUNTIME_KEYS = {
     'openai_api_key': 'openai_api_key',
+    'gemini_api_key': 'gemini_api_key',
     'openrouter_api_key': None,
     'openrouter_text_model': None,
     'llm_provider': None,

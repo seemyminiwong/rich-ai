@@ -16,7 +16,7 @@ from bs4 import BeautifulSoup, Comment, NavigableString
 from openai import OpenAI
 from PIL import Image, ImageOps
 from app.config import settings
-from app.runtime import OPENROUTER_BASE_URL, runtime_config
+from app.runtime import GEMINI_BASE_URL, OPENROUTER_BASE_URL, runtime_config
 
 logger = logging.getLogger("richstudio.pipeline")
 
@@ -48,17 +48,82 @@ def text_client():
 
 
 def image_client():
-    """Images always go to OpenAI: the Images Edit API with input_fidelity=high
-    has no OpenRouter equivalent, so an OpenAI key stays required for artwork."""
+    """OpenAI client for artwork. OpenRouter is never used here: it has no
+    equivalent of the Images Edit API with input_fidelity."""
     return _client_for(runtime_config()['openai_api_key'])
+
+
+def image_provider(model: str) -> str:
+    """Route by model name rather than a separate provider switch, so picking a
+    model in the New Project dialog is all it takes to A/B two providers."""
+    return 'gemini' if (model or '').startswith('gemini-') else 'openai'
 
 
 def text_ready() -> bool:
     return text_client()[0] is not None
 
 
-def image_ready() -> bool:
+def image_ready(model: str = '') -> bool:
+    if image_provider(model) == 'gemini':
+        return bool(runtime_config()['gemini_api_key'])
     return image_client() is not None
+
+
+def _aspect_ratio(size: str) -> str:
+    """Gemini takes an aspect ratio, not a pixel size. Map to the nearest supported one."""
+    try:
+        width, height = (int(v) for v in str(size).lower().split('x'))
+        target = width / height
+    except Exception:
+        return '1:1'
+    options = {'1:1': 1.0, '3:2': 1.5, '2:3': 0.667, '4:3': 1.333, '3:4': 0.75, '16:9': 1.778, '9:16': 0.563}
+    return min(options, key=lambda k: abs(options[k] - target))
+
+
+def _gemini_edit(model: str, prompt: str, reference: bytes, mime: str, size: str) -> bytes:
+    """Edit a reference photo with a Gemini image model.
+
+    Plain REST via httpx: Gemini is not OpenAI-protocol-compatible for images, and
+    this keeps the dependency list unchanged.
+    """
+    key = runtime_config()['gemini_api_key']
+    if not key:
+        raise RuntimeError('Gemini API key is not configured')
+    payload = {
+        'contents': [{'parts': [
+            {'text': prompt},
+            {'inline_data': {'mime_type': mime, 'data': base64.b64encode(reference).decode()}},
+        ]}],
+        'generationConfig': {'responseModalities': ['IMAGE'], 'imageConfig': {'aspectRatio': _aspect_ratio(size)}},
+    }
+
+    def call(body):
+        with httpx.Client(timeout=180) as http:
+            reply = http.post(
+                f'{GEMINI_BASE_URL}/models/{model}:generateContent',
+                headers={'x-goog-api-key': key, 'Content-Type': 'application/json'},
+                json=body,
+            )
+            if reply.status_code >= 400:
+                raise RuntimeError(f'Gemini {reply.status_code}: {reply.text[:300]}')
+            return reply.json()
+
+    try:
+        data = _with_retry(lambda: call(payload))
+    except Exception as exc:
+        # Older image models reject imageConfig; drop it rather than fail the project.
+        if 'imageConfig' in str(exc) or 'aspectRatio' in str(exc):
+            logger.warning('Gemini model %s rejected imageConfig, retrying without it', model)
+            payload['generationConfig'].pop('imageConfig', None)
+            data = _with_retry(lambda: call(payload))
+        else:
+            raise
+    for candidate in data.get('candidates') or []:
+        for part in (candidate.get('content') or {}).get('parts') or []:
+            blob = part.get('inline_data') or part.get('inlineData') or {}
+            if blob.get('data'):
+                return base64.b64decode(blob['data'])
+    raise RuntimeError('Gemini returned no image data')
 
 
 class _TextResponse:
@@ -978,6 +1043,11 @@ def extract_product(jsonld, title: str, clean_text: str, url: str, model: str, p
         return _ensure_category(data, page_category), 0, 0
 
 
+def _mime_for(path: Path) -> str:
+    suffix = path.suffix.lower()
+    return {'.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif'}.get(suffix, 'image/jpeg')
+
+
 def generate_image(
     prompt: str,
     project_id: str,
@@ -989,8 +1059,9 @@ def generate_image(
     reference_path: Path | None = None,
     size: str = '1536x1024',
 ):
-    if not image_ready():
-        return fallback, False, 'OpenAI API key is not configured'
+    provider = image_provider(model)
+    if not image_ready(model):
+        return fallback, False, f'{provider.title()} API key is not configured'
     reference = reference_url or fallback
     temporary_reference = None
     if reference_path:
@@ -1003,15 +1074,24 @@ def generate_image(
         # If no usable reference exists, keep the source photo instead of inventing a new product.
         if not reference_path:
             return fallback, False, 'No verified product reference image is available'
+        edit_prompt = (
+            'STRICT REFERENCE-IMAGE EDIT. The uploaded image contains the exact real product. '
+            'Preserve its identity, geometry, proportions, materials, controls, openings, labels and logo placement. '
+            'Do not redesign, substitute or hallucinate the product. Build the requested scene around this exact product. ' + prompt
+        )
+        folder = Path(settings.media_dir) / project_id
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f'{label}.webp'
+        if provider == 'gemini':
+            raw = _gemini_edit(model, edit_prompt, reference_path.read_bytes(), _mime_for(reference_path), size)
+            # Gemini answers in PNG/JPEG; the page expects webp like the OpenAI path.
+            Image.open(BytesIO(raw)).convert('RGB').save(path, 'WEBP', quality=90)
+            return f'/media/{project_id}/{label}.webp', True, ''
         with reference_path.open('rb') as image_file:
             edit_options = dict(
                 model=model,
                 image=image_file,
-                prompt=(
-                    'STRICT REFERENCE-IMAGE EDIT. The uploaded image contains the exact real product. '
-                    'Preserve its identity, geometry, proportions, materials, controls, openings, labels and logo placement. '
-                    'Do not redesign, substitute or hallucinate the product. Build the requested scene around this exact product. ' + prompt
-                ),
+                prompt=edit_prompt,
                 size=size,
                 quality=quality,
                 output_format='webp',
@@ -1023,9 +1103,6 @@ def generate_image(
                 edit_options['extra_body'] = {'input_fidelity': 'high'}
             response = _with_retry(lambda: image_client().images.edit(**edit_options))
         item = response.data[0]
-        folder = Path(settings.media_dir) / project_id
-        folder.mkdir(parents=True, exist_ok=True)
-        path = folder / f'{label}.webp'
         if getattr(item, 'b64_json', None):
             path.write_bytes(base64.b64decode(item.b64_json))
         elif getattr(item, 'url', None):
