@@ -196,3 +196,16 @@ class CriticReport(Base):
     suggestions_json: Mapped[str] = mapped_column(Text, default='[]')
     auto_fixed: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class AppSetting(Base):
+    """Runtime configuration the root admin edits from the UI (API keys, provider).
+
+    Values override the matching .env entries. Read through app.runtime, never
+    directly, so the API and the worker share one resolution path and one cache.
+    """
+    __tablename__ = 'app_settings'
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default='')
+    updated_by: Mapped[str] = mapped_column(String, default='')
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
