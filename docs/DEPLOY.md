@@ -156,3 +156,32 @@ carefully, after testing on a database copy:
 
 Test steps 3–4 against a `pg_dump` restore in a scratch database before running
 them on production.
+
+## HTTPS (Caddy + Let's Encrypt)
+
+Профіль `tls` вимкнено за замовчуванням — без домену все працює як раніше, через порт 3000 у локальній мережі.
+
+Передумови:
+
+1. Домен (наприклад `studio.example.com`) з A-записом на публічну IP-адресу сервера.
+2. Порти **80 і 443** прокинуті з роутера на сервер. Порт 80 обов'язковий — на нього приходить ACME-виклик Let's Encrypt.
+3. На TrueNAS SCALE веб-інтерфейс сам слухає 80/443. Звільніть їх: **System Settings → General → GUI**, змініть Web Interface HTTP/HTTPS Port на 880/8443, збережіть.
+
+Увімкнення:
+
+```bash
+cd /mnt/Data/Apps/rich-studio/rich-ai
+echo 'PUBLIC_DOMAIN=studio.example.com' >> .env
+docker compose --profile tls up -d
+docker compose logs -f caddy
+```
+
+У лозі Caddy має з'явитися `certificate obtained successfully`. Далі студія доступна на `https://studio.example.com`, сертифікат оновлюється автоматично.
+
+Вимкнути HTTPS: `docker compose --profile tls down caddy` (решта сервісів не зачіпається).
+
+Зауваження:
+
+- Заголовки безпеки й кеш живуть у nginx; Caddy додає лише HSTS (тиждень для початку — підніміть до року, коли HTTPS постабілізується).
+- `PUBLIC_DOMAIN` порожній → профіль tls відмовиться стартувати з зрозумілою помилкою; сервіси без профілю не постраждають.
+- Порт 3000 лишається як локальний вхід. Якщо він не потрібен зовні, не прокидайте його з роутера.

@@ -15,6 +15,7 @@ config = (root / 'apps/api/app/config.py').read_text(encoding='utf-8')
 nginx = (root / 'apps/web/nginx.conf').read_text(encoding='utf-8')
 compose = (root / 'docker-compose.yml').read_text(encoding='utf-8')
 envex = (root / '.env.example').read_text(encoding='utf-8')
+caddyfile = (root / 'Caddyfile').read_text(encoding='utf-8')
 
 checks = {
     # --- retained pipeline guarantees ---
@@ -172,6 +173,10 @@ checks = {
     'api port is loopback only': '"127.0.0.1:8000:8000"' in compose and '"8000:8000"' not in compose.replace('"127.0.0.1:8000:8000"', ''),
     'env example ships no working secrets': 'JWT_SECRET=\n' in envex and 'replace-with-a-long-random-secret' not in envex,
     'client error reports are throttled server side': 'def rate_limit_client_error' in main,
+    'tls profile exists and is opt-in': 'profiles: ["tls"]' in compose and '"443:443"' in compose,
+    'caddyfile terminates tls only': 'reverse_proxy web:80' in caddyfile and 'Strict-Transport-Security' in caddyfile,
+    'tls profile refuses to start without a domain': 'PUBLIC_DOMAIN:?' in compose,
+    'tls runbook documented': '## HTTPS' in (root / 'docs/DEPLOY.md').read_text(encoding='utf-8'),
     'ci workflow': (root / '.github/workflows/ci.yml').exists() and 'ghcr.io' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8'),
     'registry compose': (root / 'docker-compose.registry.yml').exists() and 'rich-ai-api' in (root / 'docker-compose.registry.yml').read_text(encoding='utf-8'),
     'deploy runbook': (root / 'docs/DEPLOY.md').exists(),

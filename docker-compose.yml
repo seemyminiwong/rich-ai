@@ -78,10 +78,31 @@ services:
     build: ./apps/web
     restart: unless-stopped
     ports:
+      # The LAN entry point. With the tls profile active, the public entry point is
+      # Caddy on 80/443; this port stays for the local network and for a fallback.
       - "3000:80"
     depends_on:
       api:
         condition: service_healthy
+
+  # TLS: started only with `docker compose --profile tls up -d`, so a deployment
+  # without a domain keeps working over the LAN port untouched.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: ["tls"]
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?PUBLIC_DOMAIN потрібен для профілю tls}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_started
 
   backup:
     image: postgres:16-alpine
@@ -113,3 +134,5 @@ volumes:
   postgres_data:
   media_data:
   backup_data:
+  caddy_data:
+  caddy_config:
