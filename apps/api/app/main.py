@@ -797,7 +797,9 @@ def available_models(user=Depends(current)):
     if cfg['gemini_api_key']:
         image_models = list(dict.fromkeys(list(settings.gemini_models) + image_models))
         source = f'{source}+gemini'
-    return {'text_models': text_models, 'image_models': image_models, 'reasoning_models': reasoning_models, 'source': source, 'default_text_model': settings.openai_text_model, 'default_image_model': settings.openai_image_model}
+    # Pricing travels with the model list so the New Project dialog can price a run
+    # before it starts, using the same figures the worker bills against.
+    return {'text_models': text_models, 'image_models': image_models, 'reasoning_models': reasoning_models, 'source': source, 'default_text_model': settings.openai_text_model, 'default_image_model': settings.openai_image_model, 'text_pricing': settings.text_pricing, 'image_pricing': settings.image_pricing}
 
 
 @app.get('/api/assets')
