@@ -366,7 +366,11 @@ def process_project(self, project_id, reuse_images=False):
                             # image. The style block below it is only art direction.
                             feature_prompt = (
                                 "FEATURE DESCRIPTION FROM THE PAGE — this is the finished Core Feature section of the page "
-                                "this image will sit next to. The image must make THIS description visible and nothing else:\n"
+                                "this image will sit next to. The image must make THIS description visible IN THE PHYSICAL SCENE and nothing else. "
+                                "Express it only through objects, cropping, environment and lighting - NEVER by rendering words: "
+                                "the description already sits beside the image as page text, so any caption, title, label, arrow "
+                                "or infographic overlay painted into the image is a defect. The only readable characters allowed "
+                                "are those physically present on the real product:\n"
                                 f"\"{core_text}\"\n\n"
                                 "HOW TO SHOW IT: the product itself cannot be altered, so express the described feature through "
                                 "(a) cropping to the product area most relevant to the description, and "
