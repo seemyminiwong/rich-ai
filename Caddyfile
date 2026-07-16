@@ -5,10 +5,14 @@
 # in .env and ports 80+443 reaching this host from the internet (80 is required:
 # the ACME HTTP-01 challenge arrives there).
 #
+# With PUBLIC_DOMAIN unset the site name falls back to invalid.localhost, so a
+# mistakenly started caddy serves nothing and touches no ACME endpoint, while the
+# rest of the stack is unaffected either way.
+#
 # Everything else (security headers, caching, API proxying) stays in nginx, which
 # already does it; Caddy's only job here is TLS.
 
-{$PUBLIC_DOMAIN} {
+{$PUBLIC_DOMAIN:invalid.localhost} {
 	encode gzip
 
 	# nginx sends X-Content-Type-Options / X-Frame-Options / Referrer-Policy.
