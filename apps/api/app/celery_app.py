@@ -8,4 +8,11 @@ celery.conf.update(
     worker_prefetch_multiplier=1,
     task_time_limit=2400,
     task_soft_time_limit=2300,
+    # The worker runs beat inline (-B), so no separate scheduler container is needed.
+    beat_schedule={
+        "watchdog-stuck-projects": {
+            "task": "app.tasks.watchdog_stuck_projects",
+            "schedule": 300.0,
+        },
+    },
 )

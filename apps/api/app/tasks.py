@@ -1,8 +1,9 @@
 import html
 import json
+import logging
 import time
 from types import SimpleNamespace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, func, select
 from app.celery_app import celery
 from app.config import DEFAULT_IMAGE_PRICING, DEFAULT_TEXT_PRICING, settings
@@ -25,8 +26,34 @@ from app.pipeline import (
 )
 
 
+logger = logging.getLogger('richstudio.tasks')
+
+
 def now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def send_alert(text: str):
+    """Push an operational alert to Telegram and/or a webhook. Never raises.
+
+    Alerts are best-effort: a broken alert channel must not break the pipeline.
+    """
+    import httpx
+    payload_text = f'ARTLINE Rich Studio\n{text}'
+    try:
+        if settings.telegram_bot_token and settings.telegram_chat_id:
+            httpx.post(
+                f'https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage',
+                json={'chat_id': settings.telegram_chat_id, 'text': payload_text},
+                timeout=10,
+            )
+    except Exception as exc:
+        logger.warning('Telegram alert failed: %s', exc)
+    try:
+        if settings.alert_webhook_url:
+            httpx.post(settings.alert_webhook_url, json={'text': payload_text}, timeout=10)
+    except Exception as exc:
+        logger.warning('Webhook alert failed: %s', exc)
 
 
 def log(db, project, stage, message, progress=None, level='info'):
@@ -405,3 +432,33 @@ def process_project(self, project_id):
             project.duration_seconds = time.time() - started
             db.add(Event(project_id=project.id, stage='error', level='error', message=str(exc)))
             db.commit()
+            send_alert(f'Проєкт впав з помилкою\n{project.name}\n{exc}')
+
+
+@celery.task
+def watchdog_stuck_projects():
+    """Fail projects stuck in processing/queued beyond the limit and alert about them.
+
+    A dead worker or a hung API call otherwise leaves a project spinning forever
+    and nobody notices until they look. Runs on a beat schedule.
+    """
+    limit = timedelta(minutes=max(10, settings.stuck_project_minutes))
+    cutoff = now() - limit
+    with SessionLocal() as db:
+        stuck = db.scalars(select(Project).where(
+            Project.status.in_((Status.processing, Status.queued)),
+        )).all()
+        flagged = []
+        for project in stuck:
+            reference = project.started_at or project.created_at
+            if reference and reference < cutoff:
+                project.status = Status.error
+                project.stage = 'error'
+                project.error = f'Watchdog: проєкт завис довше {settings.stuck_project_minutes} хв і був зупинений'
+                project.finished_at = now()
+                db.add(Event(project_id=project.id, stage='error', level='error', message=project.error))
+                flagged.append(project.name)
+        if flagged:
+            db.commit()
+            send_alert('Watchdog зупинив завислі проєкти:\n' + '\n'.join(f'• {name}' for name in flagged))
+        return {'flagged': len(flagged)}

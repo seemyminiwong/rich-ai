@@ -93,6 +93,10 @@
 @media(max-width:1200px){.project-toolbar{grid-template-columns:1fr 1fr 1fr}.project-toolbar .view-switch{grid-column:1/-1;justify-self:start}}
 @media(max-width:760px){.project-toolbar{grid-template-columns:1fr}}
 
+/* v12: quality metrics */
+.quality-panel{margin-top:18px}
+.quality-bad{color:var(--danger)}
+
 /* v12: review history */
 .review-log{display:grid;gap:10px}
 .review-entry{padding:14px 16px;border-radius:12px;background:var(--surface-soft);border:1px solid var(--border);border-left:4px solid var(--border)}

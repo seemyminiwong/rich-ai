@@ -106,6 +106,13 @@ checks = {
     'no early return on bare description': "if data['name'] and (data['description'] or data['specs'])" not in pipeline,
     'specs merged into prompt': 'SPECIFICATIONS FOUND IN THE PAGE MARKUP' in pipeline,
 
+    # --- internal-tool maturity: quality metric, watchdog, alerts, backups ---
+    'quality metrics in usage': "'approve_rate'" in main and 'manual_html_edits' in main and 'quality-panel' in web,
+    'watchdog task scheduled': 'def watchdog_stuck_projects' in tasks and 'watchdog-stuck-projects' in (root / 'apps/api/app/celery_app.py').read_text(encoding='utf-8') and '"-B"' in (root / 'docker-compose.yml').read_text(encoding='utf-8'),
+    'failure alerts wired': 'def send_alert' in tasks and 'send_alert(f' in tasks and 'telegram_bot_token' in (root / 'apps/api/app/config.py').read_text(encoding='utf-8'),
+    'automated backups': 'backup_data:/backups' in (root / 'docker-compose.yml').read_text(encoding='utf-8') and 'pg_dump -Fc' in (root / 'docker-compose.yml').read_text(encoding='utf-8'),
+    'user guide present': (root / 'USER_GUIDE.md').exists(),
+
     # --- v12 foundation ---
     'single version source': '__version__ = "12.0"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
     'index version synced': 'v=12.0' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),

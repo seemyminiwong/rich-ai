@@ -743,5 +743,27 @@ def improve_style(style_id: str, payload: StyleImproveIn, db: Session = Depends(
 @app.get('/api/usage')
 def usage(db: Session = Depends(get_db), user=Depends(current)):
     rows = db.scalars(select(Project)).all(); total = sum(x.estimated_cost for x in rows)
+    # Quality signal: does the team trust the output? A project counts as
+    # "approved clean" when its review history contains an approval and never a
+    # change request; manual HTML edits are artifact versions above v1.
+    reviews = db.scalars(select(Review)).all()
+    decisions = defaultdict(set)
+    for r in reviews:
+        decisions[r.project_id].add(r.decision)
+    reviewed = [p for p in rows if decisions.get(p.id)]
+    approved = [p for p in reviewed if 'approve' in decisions[p.id]]
+    approved_clean = [p for p in approved if 'request_changes' not in decisions[p.id]]
+    manual_edits = db.scalar(select(func.count(Artifact.id)).where(Artifact.version > 1, Artifact.created_by.isnot(None))) or 0
+    finished = [p for p in rows if p.status in (Status.review, Status.approved, Status.done, Status.changes_requested)]
+    quality = {
+        'reviewed_projects': len(reviewed),
+        'approved_projects': len(approved),
+        'approved_without_changes': len(approved_clean),
+        'approve_rate': round(len(approved) / len(reviewed) * 100) if reviewed else None,
+        'clean_approve_rate': round(len(approved_clean) / len(reviewed) * 100) if reviewed else None,
+        'manual_html_edits': manual_edits,
+        'generated_pages': sum(len([a for a in p.artifacts if a.version == 1]) for p in finished),
+    }
     return {'total_cost': total, 'projects': len(rows), 'input_tokens': sum(x.input_tokens for x in rows), 'output_tokens': sum(x.output_tokens for x in rows), 'images': sum(x.image_count for x in rows), 'average_cost': total / len(rows) if rows else 0,
+            'quality': quality,
             'by_project': [{'id': x.id, 'name': x.name, 'cost': x.estimated_cost, 'created_at': x.created_at} for x in sorted(rows, key=lambda x: x.created_at, reverse=True)[:20]]}
