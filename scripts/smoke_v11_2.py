@@ -13,6 +13,8 @@ prompts = (root / 'apps/api/app/prompts.py').read_text(encoding='utf-8')
 runtime = (root / 'apps/api/app/runtime.py').read_text(encoding='utf-8')
 config = (root / 'apps/api/app/config.py').read_text(encoding='utf-8')
 nginx = (root / 'apps/web/nginx.conf').read_text(encoding='utf-8')
+compose = (root / 'docker-compose.yml').read_text(encoding='utf-8')
+envex = (root / '.env.example').read_text(encoding='utf-8')
 
 checks = {
     # --- retained pipeline guarantees ---
@@ -163,6 +165,13 @@ checks = {
     'security headers repeated where add_header breaks inheritance': nginx.count('X-Content-Type-Options') == 3,
     'frontend crashes reach the alert channel': "addEventListener('error'" in web and "@app.post('/api/client-error')" in main,
     'close buttons are labelled': web.count('aria-label="Закрити"') == 7,
+    'refuses to boot on shipped secrets': 'def check_secrets' in main and 'check_secrets()' in main and 'SHIPPED_DEFAULTS' in config,
+    'jwt secret has a length floor': "len(self.jwt_secret) < 32" in config,
+    'postgres password warns but never blocks': 'def warn_secrets' in config and 'postgres_password' not in config.split('def insecure_secrets')[1].split('def warn_secrets')[0],
+    'root admin password really comes from env': 'verify(settings.admin_password, user.password_hash)' in main,
+    'api port is loopback only': '"127.0.0.1:8000:8000"' in compose and '"8000:8000"' not in compose.replace('"127.0.0.1:8000:8000"', ''),
+    'env example ships no working secrets': 'JWT_SECRET=\n' in envex and 'replace-with-a-long-random-secret' not in envex,
+    'client error reports are throttled server side': 'def rate_limit_client_error' in main,
     'ci workflow': (root / '.github/workflows/ci.yml').exists() and 'ghcr.io' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8'),
     'registry compose': (root / 'docker-compose.registry.yml').exists() and 'rich-ai-api' in (root / 'docker-compose.registry.yml').read_text(encoding='utf-8'),
     'deploy runbook': (root / 'docs/DEPLOY.md').exists(),

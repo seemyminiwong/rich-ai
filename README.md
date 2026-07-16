@@ -81,10 +81,14 @@
 
 ```bash
 cp .env.example .env
+printf 'JWT_SECRET=%s\nADMIN_PASSWORD=%s\nPOSTGRES_PASSWORD=%s\n' \
+  "$(openssl rand -base64 48)" "$(openssl rand -base64 18)" "$(openssl rand -base64 24)" >> .env
 nano .env
 chmod +x deploy-truenas.sh
 ./deploy-truenas.sh
 ```
+
+API відмовиться стартувати, поки `JWT_SECRET` і `ADMIN_PASSWORD` не задані власними значеннями: ті, що були в репозиторії раніше, публічні, і з ними будь-хто підписав би собі токен адміністратора.
 
 - WebUI: `http://SERVER_IP:3000`
 - API-доки: `http://SERVER_IP:8000/docs`
@@ -100,9 +104,9 @@ POSTGRES_USER=richstudio
 POSTGRES_PASSWORD=replace-me
 DB_SCHEMA=richstudio_v11_2
 REDIS_URL=redis://redis:6379/0
-JWT_SECRET=replace-with-long-random-secret
+JWT_SECRET=          # обов'язково, від 32 символів
 ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=replace-me
+ADMIN_PASSWORD=      # обов'язково, від 12 символів
 OPENAI_API_KEY=
 GEMINI_API_KEY=
 ```

@@ -23,6 +23,16 @@ DEFAULT_IMAGE_PRICING = {
 }
 
 
+# Values shipped in the repo. Anyone can read them on GitHub, so a deployment that
+# still carries one is not protected by it at all - a default JWT_SECRET lets a
+# stranger sign themselves an admin token. Checked at startup, see check_secrets().
+SHIPPED_DEFAULTS = {
+    'jwt_secret': 'replace-with-a-long-random-secret',
+    'admin_password': 'change-this-admin-password',
+    'postgres_password': 'change-this-db-password',
+}
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
     database_url: str = ''
@@ -57,6 +67,30 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ''
     telegram_chat_id: str = ''
     alert_webhook_url: str = ''
+
+    def insecure_secrets(self) -> list[str]:
+        """Secrets that must be fixed before the API may serve anyone.
+
+        POSTGRES_PASSWORD is deliberately not fatal: Postgres only reads it when the
+        data volume is first initialised, so editing .env on an existing deployment
+        does not change it and refusing to boot would strand the operator. It is
+        warned about instead - see warn_secrets().
+        """
+        problems = []
+        if self.jwt_secret == SHIPPED_DEFAULTS['jwt_secret']:
+            problems.append('JWT_SECRET все ще має значення з репозиторію')
+        elif len(self.jwt_secret) < 32:
+            problems.append('JWT_SECRET коротший за 32 символи')
+        if self.admin_password == SHIPPED_DEFAULTS['admin_password']:
+            problems.append('ADMIN_PASSWORD все ще має значення з репозиторію')
+        elif len(self.admin_password) < 12:
+            problems.append('ADMIN_PASSWORD коротший за 12 символів')
+        return problems
+
+    def warn_secrets(self) -> list[str]:
+        if self.postgres_password == SHIPPED_DEFAULTS['postgres_password']:
+            return ['POSTGRES_PASSWORD має значення з репозиторію. Postgres читає його лише під час першої ініціалізації тому, щоб змінити пароль на наявній базі, потрібен ALTER USER, а не правка .env']
+        return []
 
     @property
     def text_models(self):

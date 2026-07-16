@@ -37,7 +37,12 @@ services:
     volumes:
       - media_data:/app/media
     ports:
-      - "8000:8000"
+      # Loopback only: nginx reaches the API over the compose network, so publishing
+      # this port to the world only offered a way around nginx - its security headers,
+      # its rate limits and any TLS terminator placed in front of it. /docs and
+      # /openapi.json are not proxied by nginx, so this also takes them off the internet
+      # while keeping `curl 127.0.0.1:8000/health` working on the server itself.
+      - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
