@@ -1,0 +1,21 @@
+# TLS terminator in front of the web container (enabled by: --profile tls).
+#
+# Caddy obtains and renews the Let's Encrypt certificate on its own; there is no
+# certbot, no cron and nothing to renew by hand. The only inputs are PUBLIC_DOMAIN
+# in .env and ports 80+443 reaching this host from the internet (80 is required:
+# the ACME HTTP-01 challenge arrives there).
+#
+# Everything else (security headers, caching, API proxying) stays in nginx, which
+# already does it; Caddy's only job here is TLS.
+
+{$PUBLIC_DOMAIN} {
+	encode gzip
+
+	# nginx sends X-Content-Type-Options / X-Frame-Options / Referrer-Policy.
+	# HSTS belongs to the TLS terminator: only meaningful over HTTPS, and it must
+	# not leak onto the plain-HTTP LAN port. A modest max-age first; raise it once
+	# HTTPS has been stable for a while.
+	header Strict-Transport-Security "max-age=604800"
+
+	reverse_proxy web:80
+}
