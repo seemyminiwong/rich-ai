@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.6"
+BASE_STYLE_VERSION = "12.7"
 BASE_STYLE_NAME = "ARTLINE Base"
 ENGINEERING_STYLE_NAME = "ARTLINE Engineering"
 
@@ -218,20 +218,23 @@ FINAL SELF-CHECK
 
 
 [FEATURE_IMAGE]
-INTENDED USE
-Create a photorealistic ARTLINE Feature image by editing the supplied real product photograph. The image must illustrate exactly the feature described in "FEATURE DESCRIPTION FROM THE PAGE" supplied with this request — that text is the finished Core Feature section of this specific product page, so the shot and the copy must match. Never illustrate a different capability, and never repeat the Hero scene.
+ROLE
+You are given "FEATURE DESCRIPTION FROM THE PAGE" at the top of the request — the finished Core Feature section of this exact product page. Your single job is to make that description visible. The reader will see this image beside that text: if the image does not obviously match the description, the image is wrong. Never illustrate any other capability and never repeat the Hero scene.
+
+HOW TO EXPRESS THE FEATURE
+The product is edited from a real photograph and cannot be altered, so the feature is expressed in exactly two ways: (a) crop to the product area the description talks about, and (b) build the surrounding environment to show the credible OUTCOME of the feature — finished printed parts for speed, calibration or quality features; the relevant filament or material for material-support features; connected devices for connectivity features; a realistic workload for performance features. The environment must stay believable and must not add unverified accessories or installations.
 
 SUBJECT PRESERVATION
 Preserve the exact real product: geometry, proportions, perspective, materials, colors, branding, labels, ports, controls, vents and every visible detail. Change only framing, surrounding environment, lighting and contact shadows. Never create a similar product, a different variant, or an imaginary internal cutaway.
 
 VIEWPOINT LOCK — THE CAMERA IS FIXED
-The supplied photograph defines the camera. Do not rotate, turn, tilt, re-pose, re-angle, re-shoot or re-render the product from any viewpoint other than the exact one in the supplied photograph. You may crop, scale and reposition the existing product pixels inside the canvas, and change what is behind and around them — nothing else. A close-up means cropping into the supplied photograph, never photographing the product again from closer or from another side. You have no information about surfaces that are not visible in the source frame, so any new viewpoint would be invention: if the described feature cannot be shown without changing the viewpoint, keep the viewpoint and change only environment, framing and lighting.
+The supplied photograph defines the camera. Do not rotate, turn, tilt, re-pose, re-angle, re-shoot or re-render the product from any other viewpoint. You may crop, scale and reposition the existing product pixels inside the canvas, and change what is behind and around them — nothing else. A close-up means cropping into the supplied photograph. If the described feature cannot be shown without changing the viewpoint, keep the viewpoint and express the feature through the environment instead.
 
 LOGOS, LABELS AND TEXT ON THE PRODUCT
-Never re-draw, re-render, re-letter, sharpen or complete any logo, brand mark, model name, sticker, printed marking or screen content. Treat them as pixels to preserve from the source photograph, not content to regenerate. Do not synthesize letterforms anywhere in the image. If a marking cannot be reproduced faithfully, keep it out of focus or outside the frame — unreadable is acceptable, fake or garbled is not.
+Never re-draw, re-render, re-letter, sharpen or complete any logo, brand mark, model name, sticker, printed marking or screen content. Treat them as pixels to preserve, not content to regenerate. Do not synthesize letterforms anywhere in the image. Unreadable because of focus is acceptable; fake or garbled is not.
 
 COMPOSITION
-Clean premium composition distinct from the Hero. The product or the relevant visible area occupies about 60-75% of the frame, stays sharp and fully readable, with controlled negative space and even lighting. Prefer bright neutral ARTLINE surfaces (#FFFFFF, #F7F8FA, #EAEEF2) unless the described feature requires a darker credible setting.
+Clean premium composition distinct from the Hero. The relevant product area occupies about 60-75% of the frame, sharp and fully readable, with controlled negative space and even lighting. Prefer bright neutral ARTLINE surfaces (#FFFFFF, #F7F8FA, #EAEEF2) unless the described feature requires a darker credible setting.
 
 CONSTRAINTS
 Photorealistic professional product photography. No text, letters, captions, labels added by the model, arrows, dimension lines, callouts, diagrams, schematics, UI, redrawn or garbled logos, invented lettering, fabricated screen content, people, hands, duplicate products, invented accessories, unverified installations, fake internals, glow, smoke, particles, cheap snapshot look or watermark.
@@ -483,20 +486,23 @@ FINAL SELF-CHECK
 
 
 [FEATURE_IMAGE]
-INTENDED USE
-Create a photorealistic ARTLINE Feature image by editing the supplied real product photograph. The image must illustrate exactly the feature described in "FEATURE DESCRIPTION FROM THE PAGE" supplied with this request — that text is the finished Core Feature section of this specific product page, so the shot and the copy must match. Never illustrate a different capability, and never repeat the Hero scene.
+ROLE
+You are given "FEATURE DESCRIPTION FROM THE PAGE" at the top of the request — the finished Core Feature section of this exact product page. Your single job is to make that description visible. The reader will see this image beside that text: if the image does not obviously match the description, the image is wrong. Never illustrate any other capability and never repeat the Hero scene.
+
+HOW TO EXPRESS THE FEATURE
+The product is edited from a real photograph and cannot be altered, so the feature is expressed in exactly two ways: (a) crop to the product area the description talks about, and (b) build the surrounding environment to show the credible OUTCOME of the feature — finished printed parts for speed, calibration or quality features; the relevant filament or material for material-support features; connected devices for connectivity features; a realistic workload for performance features. The environment must stay believable and must not add unverified accessories or installations.
 
 SUBJECT PRESERVATION
 Preserve the exact real product: geometry, proportions, perspective, materials, colors, branding, labels, ports, controls, vents and every visible detail. Change only framing, surrounding environment, lighting and contact shadows. Never create a similar product, a different variant, or an imaginary internal cutaway.
 
 VIEWPOINT LOCK — THE CAMERA IS FIXED
-The supplied photograph defines the camera. Do not rotate, turn, tilt, re-pose, re-angle, re-shoot or re-render the product from any viewpoint other than the exact one in the supplied photograph. You may crop, scale and reposition the existing product pixels inside the canvas, and change what is behind and around them — nothing else. A close-up means cropping into the supplied photograph, never photographing the product again from closer or from another side. You have no information about surfaces that are not visible in the source frame, so any new viewpoint would be invention: if the described feature cannot be shown without changing the viewpoint, keep the viewpoint and change only environment, framing and lighting.
+The supplied photograph defines the camera. Do not rotate, turn, tilt, re-pose, re-angle, re-shoot or re-render the product from any other viewpoint. You may crop, scale and reposition the existing product pixels inside the canvas, and change what is behind and around them — nothing else. A close-up means cropping into the supplied photograph. If the described feature cannot be shown without changing the viewpoint, keep the viewpoint and express the feature through the environment instead.
 
 LOGOS, LABELS AND TEXT ON THE PRODUCT
-Never re-draw, re-render, re-letter, sharpen or complete any logo, brand mark, model name, sticker, printed marking or screen content. Treat them as pixels to preserve from the source photograph, not content to regenerate. Do not synthesize letterforms anywhere in the image. If a marking cannot be reproduced faithfully, keep it out of focus or outside the frame — unreadable is acceptable, fake or garbled is not.
+Never re-draw, re-render, re-letter, sharpen or complete any logo, brand mark, model name, sticker, printed marking or screen content. Treat them as pixels to preserve, not content to regenerate. Do not synthesize letterforms anywhere in the image. Unreadable because of focus is acceptable; fake or garbled is not.
 
 COMPOSITION
-Clean premium composition distinct from the Hero. The product or the relevant visible area occupies about 60-75% of the frame, stays sharp and fully readable, with controlled negative space and even lighting. Prefer bright neutral ARTLINE surfaces (#FFFFFF, #F7F8FA, #EAEEF2) unless the described feature requires a darker credible setting.
+Clean premium composition distinct from the Hero. The relevant product area occupies about 60-75% of the frame, sharp and fully readable, with controlled negative space and even lighting. Prefer bright neutral ARTLINE surfaces (#FFFFFF, #F7F8FA, #EAEEF2) unless the described feature requires a darker credible setting.
 
 CONSTRAINTS
 Photorealistic professional product photography. No text, letters, captions, labels added by the model, arrows, dimension lines, callouts, diagrams, schematics, UI, redrawn or garbled logos, invented lettering, fabricated screen content, people, hands, duplicate products, invented accessories, unverified installations, fake internals, glow, smoke, particles, cheap snapshot look or watermark.

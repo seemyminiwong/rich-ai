@@ -329,9 +329,19 @@ def process_project(self, project_id):
                             feature_done = True
                             core_text = core_feature_text(master_html) or select_key_feature(product) or product_name
                             log(db, project, 'images', f'Створення Feature за описом секції: {core_text[:90]}', progress)
+                            # The section description comes FIRST: it is the subject of the
+                            # image. The style block below it is only art direction.
                             feature_prompt = (
-                                f"{style_feature}\n"
-                                f"FEATURE DESCRIPTION FROM THE PAGE (illustrate exactly this and nothing else):\n{core_text}\n"
+                                "FEATURE DESCRIPTION FROM THE PAGE — this is the finished Core Feature section of the page "
+                                "this image will sit next to. The image must make THIS description visible and nothing else:\n"
+                                f"\"{core_text}\"\n\n"
+                                "HOW TO SHOW IT: the product itself cannot be altered, so express the described feature through "
+                                "(a) cropping to the product area most relevant to the description, and "
+                                "(b) the surrounding environment showing the OUTCOME of the feature in a credible way "
+                                "(for example: finished printed parts for speed or calibration features, connected equipment "
+                                "for connectivity features, the relevant material for material-support features). "
+                                "Someone who reads the description and then looks at the image must see the connection immediately.\n\n"
+                                f"ART DIRECTION:\n{style_feature}\n"
                                 f"Negative requirements: {negative}\nProduct: {product_name}."
                             )
                             generated_url, feature_generated, feature_error = generate_image(
@@ -356,7 +366,9 @@ def process_project(self, project_id):
                                     db.add(Asset(project_id=project.id, kind='image', label='feature-source', url=real_feature, prompt='', model='source',
                                                  metadata_json=json.dumps({'source': 'product-page', 'reason': 'feature generation failed'}, ensure_ascii=False)))
                                 feature = real_feature
-                                master_html = master_html.replace(planned_feature_url, real_feature) if real_feature else master_html
+                                if real_feature:
+                                    master_html = master_html.replace(planned_feature_url, real_feature)
+                                    rich_html = master_html  # the master artifact must not keep the dead URL
                             recalculate_cost(project)
                     else:
                         log(db, project, 'content', f'Переклад макета {language.upper()} / {variant} без зміни дизайну', progress)
