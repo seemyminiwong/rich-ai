@@ -1223,6 +1223,34 @@ def _deterministic_html(product, style, language, variant, hero, feature):
 </section>'''
 
 
+def _restore_image_urls(html: str, hero: str, feature: str, variant: str) -> str:
+    """Guarantee the generated page actually points at this project's images.
+
+    The model writes the URLs into the HTML by itself and occasionally drops or
+    mangles one (leaving a grey Hero band or a dead Feature <img>). The URLs are
+    ours and deterministic, so repair is mechanical:
+      - a literal placeholder is replaced with the real URL;
+      - a Hero section without the hero URL gets it injected as the background of
+        the first element that declares a background;
+      - a Feature <img> pointing anywhere but the feature URL is repointed, unless
+        the page legitimately reuses the original product photo fallback.
+    """
+    if hero and hero not in html:
+        html = html.replace('PROJECT_HERO_IMAGE_URL', hero)
+    if feature and feature not in html:
+        html = html.replace('PROJECT_FEATURE_IMAGE_URL', feature)
+    if hero and hero not in html:
+        # First background-image/background shorthand in the document is the Hero
+        # canvas by contract (section 1 comes first).
+        pattern = re.compile(r"background(-image)?\s*:\s*[^;\"']*url\((['\"]?)([^)'\"]+)\2\)", re.I)
+        match = pattern.search(html)
+        if match:
+            html = html[:match.start(3)] + hero + html[match.end(3):]
+        else:
+            logger.warning('Hero URL missing from generated HTML (%s) and no background to repair', variant)
+    return html
+
+
 def generate_html(product, style, language, variant, hero, feature, model: str):
     """Return (html, input_tokens, output_tokens, fallback_reason).
 
@@ -1263,6 +1291,7 @@ HTML:
                 output = retried_out
         if _section_count(output) < 3:
             raise RuntimeError('AI returned an incomplete page (only the Hero section)')
+        output = _restore_image_urls(output, hero, feature, variant)
         return output, input_tokens, output_tokens, ''
     except Exception as exc:
         logger.warning('generate_html fell back to deterministic template for %s/%s: %s', language, variant, exc)
