@@ -365,3 +365,44 @@ def test_provider_keys_encrypt_roundtrip_and_survive_rotation(monkeypatch):
     assert runtime_mod._decrypt(stored) == 'sk-proj-VALUE'
     monkeypatch.setattr(runtime_mod.settings, 'jwt_secret', 'secret-B-rotated')
     assert runtime_mod._decrypt(stored) == ''
+
+
+def test_pinned_transport_pins_public_ip_and_blocks_private_dns(monkeypatch):
+    import httpx
+    import pytest
+    from app import pipeline
+
+    captured = {}
+
+    def fake_handle(self, request):
+        captured['url'] = str(request.url)
+        captured['sni'] = request.extensions.get('sni_hostname')
+        return httpx.Response(200)
+
+    monkeypatch.setattr(httpx.HTTPTransport, 'handle_request', fake_handle)
+    transport = pipeline._PinnedTransport()
+
+    monkeypatch.setattr(pipeline.socket, 'getaddrinfo', lambda *a, **k: [(2, 1, 6, '', ('93.184.216.34', 443))])
+    transport.handle_request(httpx.Request('GET', 'https://shop.example/product'))
+    assert '93.184.216.34' in captured['url']
+    assert captured['sni'] == 'shop.example'
+
+    # A rebinding DNS answer (private IP) must abort before any connection.
+    monkeypatch.setattr(pipeline.socket, 'getaddrinfo', lambda *a, **k: [(2, 1, 6, '', ('10.0.0.5', 443))])
+    with pytest.raises(RuntimeError, match='non-public'):
+        transport.handle_request(httpx.Request('GET', 'https://evil.example/'))
+
+    # Literal private IPs are refused outright.
+    with pytest.raises(RuntimeError, match='non-public'):
+        transport.handle_request(httpx.Request('GET', 'http://127.0.0.1:8000/api/system'))
+
+
+def test_fallback_reason_never_leaks_raw_exception_text():
+    from app.pipeline import public_fallback_reason
+
+    leaky = RuntimeError('Error code: 401 - {"error": {"message": "Incorrect API key provided: sk-proj-SECRET123"}}')
+    reason = public_fallback_reason(leaky)
+    assert 'sk-proj' not in reason and 'SECRET123' not in reason
+    assert 'ключ' in reason
+    assert public_fallback_reason(RuntimeError('Generated content did not pass language validation for ru')) == 'згенерований текст не пройшов мовну перевірку'
+    assert 'RuntimeError' in public_fallback_reason(RuntimeError('some totally novel failure'))

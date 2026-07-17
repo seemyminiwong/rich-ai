@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     # 'transitional' serves unsigned /media URLs with a warning (old artifacts keep
     # working); 'strict' refuses them. Flip to strict once logs run quiet.
     media_signing: str = 'transitional'
+    # 'shared' (усі редагують усе) або 'owner' (змінює лише власник або admin).
+    project_ownership: str = 'shared'
     request_timeout_seconds: int = 75
     # Watchdog: a project stuck in processing/queued longer than this is failed.
     stuck_project_minutes: int = 45

@@ -204,6 +204,10 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'fallback reason is classified, not raw exception text': 'def public_fallback_reason' in pipeline and 'public_fallback_reason(exc)' in pipeline and 'used built-in template: {exc}' not in pipeline,
+    'external downloads are stream-capped': 'def fetch_bytes_capped' in pipeline and pipeline.count('fetch_bytes_capped(') >= 4 and 'fetch_bytes_capped(http, asset.url)' in main and 'total_archive_bytes' in main,
+    'optional project ownership mode': 'def require_project_edit' in main and main.count('require_project_edit(') >= 6 and 'project_ownership' in config,
+    'dns rebinding closed by pinning the vetted ip': 'class _PinnedTransport' in pipeline and "request.extensions['sni_hostname'] = host" in pipeline and "kwargs.setdefault('transport', _PinnedTransport())" in pipeline,
     'media urls are signed at every creation point': 'def media_url' in media and 'media_url(project_id, filename)' in pipeline and "media_url(project_id, f'{label}.webp')" in pipeline and "media_url(project.id, 'feature.webp')" in tasks,
     'media served through a verifying endpoint, not a static mount': "app.mount('/media'" not in main and 'verify_media_token(path, t)' in main and "media_signing == 'strict'" in main,
     'provider keys encrypted at rest with transparent migration': "_ENC_PREFIX = 'enc:v1:'" in runtime_src and 'def migrate_plaintext_secrets' in runtime_src and 'migrate_plaintext_secrets()' in main,

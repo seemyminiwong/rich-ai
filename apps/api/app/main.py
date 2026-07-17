@@ -25,7 +25,7 @@ from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, h
 from app.tasks import process_project, translate_project
 from app.limits import check_action, check_budget, check_login, client_ip, today_spend
 from app.media import media_url, strip_media_query, verify_media_token
-from app.pipeline import _is_reasoning_model, fetch_html, gallery_urls, is_public_http_url, parse_page, safe_client, sanitize_html, style_image_prompt, text_client
+from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, is_public_http_url, parse_page, safe_client, sanitize_html, style_image_prompt, text_client
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.version import __version__
 
@@ -638,6 +638,7 @@ def add_language(project_id: str, body: TranslateIn, db: Session = Depends(get_d
     project = db.get(Project, project_id)
     if not project:
         raise HTTPException(404, 'Проєкт не знайдено')
+    require_project_edit(project, user)
     normalized = normalize_languages([body.language])
     if not normalized:
         raise HTTPException(400, 'Невідомий код мови')
@@ -775,10 +776,24 @@ def project(project_id: str, db: Session = Depends(get_db), user=Depends(current
     return r
 
 
+def require_project_edit(project, user):
+    """PROJECT_OWNERSHIP=owner: змінювати проєкт може лише власник або admin.
+
+    Перегляд, рев'ю та критик не обмежуються - рев'юєр мусить працювати з чужими
+    проєктами. Проєкти без власника (створені до появи поля) лишаються спільними.
+    """
+    if settings.project_ownership != 'owner':
+        return
+    if not project or user.role == Role.admin or not project.owner_id or project.owner_id == user.id:
+        return
+    raise HTTPException(403, 'Проєкт належить іншому користувачеві. У режимі PROJECT_OWNERSHIP=owner зміни вносить лише власник або адміністратор')
+
+
 @app.delete('/api/projects/{project_id}')
 def delete_project(project_id: str, db: Session = Depends(get_db), user=Depends(require_perm('project.delete'))):
     p = db.get(Project, project_id)
     if not p: raise HTTPException(404, 'Проєкт не знайдено')
+    require_project_edit(p, user)
     if p.status == Status.processing: raise HTTPException(409, 'Не можна видалити проєкт під час генерації. Спершу скасуйте його.')
     name = p.name
     for model in (Asset, CriticReport, Review, Event, Artifact):
@@ -810,6 +825,7 @@ def project_archive(project_id: str, db: Session = Depends(get_db), user=Depends
     stream = io.BytesIO()
     image_paths = {}
     skipped = []
+    total_archive_bytes = 0
     media_root = Path(settings.media_dir).resolve()
     with zipfile.ZipFile(stream, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         with safe_client(timeout=20) as http:
@@ -829,15 +845,11 @@ def project_archive(project_id: str, db: Session = Depends(get_db), user=Depends
                     elif asset.url.startswith(('http://', 'https://')):
                         if not is_public_http_url(asset.url):
                             raise ValueError('non-public image url blocked')
-                        response = http.get(asset.url)
-                        response.raise_for_status()
-                        data = response.content
-                        content_type = response.headers.get('content-type', '').lower()
-                        if 'png' in content_type: suffix = '.png'
-                        elif 'jpeg' in content_type: suffix = '.jpg'
-                        elif 'webp' in content_type: suffix = '.webp'
+                        data = fetch_bytes_capped(http, asset.url)
                     if not data:
                         raise ValueError('empty image')
+                    if total_archive_bytes + len(data) > 200 * 1024 * 1024:
+                        raise ValueError('archive ceiling 200 MB reached, image skipped')
                     if data.startswith(b'\x89PNG\r\n\x1a\n'):
                         suffix = '.png'
                     elif data.startswith(b'\xff\xd8\xff'):
@@ -847,6 +859,7 @@ def project_archive(project_id: str, db: Session = Depends(get_db), user=Depends
                     filename = f"{_archive_name(asset.label, 'image')}-{asset.id[:8]}{suffix}"
                     target = f'images/{filename}'
                     archive.writestr(target, data)
+                    total_archive_bytes += len(data)
                     image_paths[asset.url] = target
                 except Exception as exc:
                     skipped.append({'url': asset.url, 'label': asset.label, 'reason': str(exc)})
@@ -899,6 +912,7 @@ def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends
     check_action(user.id, 'rerun', 6); check_budget()
     p = db.get(Project, project_id)
     if not p: raise HTTPException(404, 'Проєкт не знайдено')
+    require_project_edit(p, user)
     if p.status in {Status.processing, Status.queued}: raise HTTPException(409, 'Проєкт уже виконується або стоїть у черзі')
     if payload and payload.style_id:
         style = db.get(Style, payload.style_id)
@@ -924,6 +938,7 @@ def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends
 def queue_control(project_id: str, payload: QueueIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
     p = db.get(Project, project_id)
     if not p: raise HTTPException(404, 'Проєкт не знайдено')
+    require_project_edit(p, user)
     if payload.action in {'pause', 'cancel'}:
         # The running worker checks project.status between stages and stops cleanly.
         p.status = Status.paused if payload.action == 'pause' else Status.cancelled
@@ -998,6 +1013,7 @@ def save_artifact(artifact_id: str, payload: HtmlIn, db: Session = Depends(get_d
     source = db.get(Artifact, artifact_id)
     if not source:
         raise HTTPException(404, 'Результат не знайдено')
+    require_project_edit(db.get(Project, source.project_id), user)
     clean = sanitize_html(payload.html)
     if '<section' not in clean:
         raise HTTPException(400, 'HTML має містити принаймні один <section> блок')
