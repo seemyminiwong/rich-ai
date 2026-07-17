@@ -85,7 +85,16 @@ jobs:
         run: pytest -q tests/e2e
       - name: Server log on failure
         if: failure()
-        run: cat /tmp/e2e-server.log
+        run: cat /tmp/e2e-server.log; echo '--- browser console ---'; cat /tmp/e2e-console.log || true
+      - name: Upload last page state on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-last-state
+          path: |
+            /tmp/e2e-last-state.png
+            /tmp/e2e-console.log
+          if-no-files-found: ignore
 
   build-and-push:
     needs: [checks, e2e]
