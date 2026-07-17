@@ -383,6 +383,7 @@ def process_project(self, project_id, reuse_images=False):
             completed_outputs = 0
             feature_done = False
             used_page_images = set()
+            fallback_hits = []
             # Desktop first: the mobile master is derived from the finished desktop
             # page by a layout-only transform, so the two variants cannot drift.
             variants = sorted(variants, key=lambda v: 0 if v == 'desktop' else 1)
@@ -422,7 +423,11 @@ def process_project(self, project_id, reuse_images=False):
                             added_input += generated_in
                             added_output += generated_out
                         if fallback_reason and settings.openai_api_key:
-                            log(db, project, 'content', f'{master_language.upper()} / {variant}: {fallback_reason}', progress, 'warning')
+                            # Serving the generic template while the operator believes
+                            # they are looking at their chosen style wasted a whole day
+                            # once. Make it loud: error level, alert, project flag.
+                            fallback_hits.append(f'{master_language.upper()}/{variant}: {fallback_reason}')
+                            log(db, project, 'content', f'AI-генерацію не вдалося виконати ({master_language.upper()} / {variant}) — сторінку зібрано аварійним шаблоном, а не обраним стилем. Причина: {fallback_reason}', progress, 'error')
                         master_html = rich_html
                         if variant == 'desktop':
                             desktop_master_html = master_html
@@ -487,7 +492,8 @@ def process_project(self, project_id, reuse_images=False):
                                 product, style, language, variant, hero, feature, project.text_model, gallery=page_gallery
                             )
                             if fallback_reason and settings.openai_api_key:
-                                log(db, project, 'content', f'{language.upper()} / {variant}: {fallback_reason}', progress, 'warning')
+                                fallback_hits.append(f'{language.upper()}/{variant}: {fallback_reason}')
+                                log(db, project, 'content', f'AI-генерацію не вдалося виконати ({language.upper()} / {variant}) — аварійний шаблон. Причина: {fallback_reason}', progress, 'error')
                         else:
                             rich_html, added_input, added_output = translated
                     project.input_tokens += added_input
@@ -511,6 +517,7 @@ def process_project(self, project_id, reuse_images=False):
                         variant=variant,
                         html=marker + rich_html,
                         version=latest_version + 1,
+                        fallback_reason=fallback_reason or '',
                     ))
                     db.commit()
                     completed_outputs += 1
@@ -534,6 +541,14 @@ def process_project(self, project_id, reuse_images=False):
             if page_extra:
                 db.commit()
                 log(db, project, 'images', f'До медіатеки додано всі зображення сторінки ({len(page_extra)} поза базовим набором)')
+            if fallback_hits:
+                # The run finished, but not with the content that was asked for.
+                # Say so in the project error field, in the log and in Telegram.
+                summary = '; '.join(fallback_hits[:4])
+                project.error = ('AI-генерацію не виконано, використано аварійний шаблон замість обраного стилю. '
+                                 f'Перегенеруйте проєкт. Деталі: {summary}')
+                log(db, project, 'review', 'Увага: частина сторінок — аварійний шаблон, а не обраний стиль. Перед публікацією перегенеруйте.', level='error')
+                send_alert(f'Rich Studio: аварійний шаблон замість стилю\nПроєкт: {project.name}\n{summary}')
             project.status = Status.review
             project.stage = 'review'
             project.progress = 100

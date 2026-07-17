@@ -122,6 +122,8 @@ class Artifact(Base):
     variant: Mapped[str] = mapped_column(String)
     html: Mapped[str] = mapped_column(Text)
     version: Mapped[int] = mapped_column(Integer, default=1)
+    # Non-empty when this page is the emergency template, not AI output.
+    fallback_reason: Mapped[str] = mapped_column(Text, default='')
     created_by: Mapped[str | None] = mapped_column(ForeignKey(f'{settings.db_schema}.users.id'), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     project: Mapped[Project] = relationship(back_populates='artifacts')
