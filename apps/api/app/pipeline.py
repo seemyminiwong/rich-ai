@@ -1257,7 +1257,7 @@ def _deterministic_html(product, style, language, variant, hero, feature):
 </section>'''
 
 
-def _restore_image_urls(html: str, hero: str, feature: str, variant: str) -> str:
+def _restore_image_urls(html: str, hero: str, feature: str, variant: str, img_hero: bool = False) -> str:
     """Guarantee the generated page actually points at this project's images.
 
     The model writes the URLs into the HTML by itself and occasionally drops or
@@ -1280,8 +1280,19 @@ def _restore_image_urls(html: str, hero: str, feature: str, variant: str) -> str
         match = pattern.search(html)
         if match:
             html = html[:match.start(3)] + hero + html[match.end(3):]
+    if hero and hero not in html and img_hero:
+        # Image-led styles carry the hero as a positioned <img> inside the first
+        # position:relative wrapper. If the model dropped it, put it back as the
+        # wrapper's first child - exactly where the style contract expects it.
+        wrapper = re.search(r"<div[^>]*style=\"[^\"]*position:\s*relative[^\"]*\"[^>]*>", html, re.I)
+        if wrapper:
+            tag = (f'<img src="{hero}" alt="" loading="eager" '
+                   'style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;opacity:.64">')
+            html = html[:wrapper.end()] + tag + html[wrapper.end():]
         else:
-            logger.warning('Hero URL missing from generated HTML (%s) and no background to repair', variant)
+            logger.warning('Hero URL missing from generated HTML (%s) and no wrapper to repair', variant)
+    elif hero and hero not in html:
+        logger.warning('Hero URL missing from generated HTML (%s) and no background to repair', variant)
     return html
 
 
@@ -1325,7 +1336,7 @@ HTML:
                 output = retried_out
         if _section_count(output) < 3:
             raise RuntimeError('AI returned an incomplete page (only the Hero section)')
-        output = _restore_image_urls(output, hero, feature, variant)
+        output = _restore_image_urls(output, hero, feature, variant, img_hero='GALLERY_IMAGES' in (style.prompt or ''))
         return output, input_tokens, output_tokens, ''
     except Exception as exc:
         logger.warning('generate_html fell back to deterministic template for %s/%s: %s', language, variant, exc)

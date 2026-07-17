@@ -601,24 +601,23 @@ SHOWCASE DESIGN SYSTEM
 - Radii: outer sections 28-32px, inner cards 16-22px, chips and badges 999px (pills are part of this style).
 - Weights are heavy: h2 900-950, numeric values 950, chips 850-900. Section gap 18px, big-section padding 40-48px desktop / 22-26px mobile.
 - Rhythm rule: strictly alternate section canvases - dark, light, dark, light. Two same-tone sections may never touch.
-- Roughly half of the page area is photography. When GALLERY_IMAGES offers fewer frames, keep the structure and reuse none - drop the extra photo slots instead of repeating an image.
+- Photography works only next to copy: every frame sits in a split or a card with text. When GALLERY_IMAGES offers fewer frames, drop photo slots instead of repeating an image.
 
 SECTION SET, IN ORDER
 1. HERO - dark, full-bleed photograph
 - Wrapper: position:relative;overflow:hidden;border-radius:32px;background:#050505;border:1px solid #1f2428.
-- The hero asset is an <img style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;opacity:.64"> - an IMG element, never a CSS background (background images do not survive the artline editor).
+- THE FIRST CHILD of the wrapper is the hero asset as <img style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;opacity:.64"> - an IMG element, never a CSS background (background images do not survive the artline editor). A Hero without this img is an invalid page.
 - Above it one overlay div: position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.94),rgba(0,0,0,.70) 48%,rgba(0,0,0,.18)). Mobile: vertical gradient (180deg) with the dense end at the bottom, text below the product silhouette.
 - Content layer: position:relative;z-index:1;min-height:585px (mobile ~600px);padding:78px 46px 54px (mobile 300px 18px 26px);display:flex;align-items:center.
 - Inside, max-width:720px: a pill badge with the exact brand/model (rgba gold background + gold border), one h2 60-64px/950 line-height .94 (mobile 34-38px), one bold subtitle 24-27px in #fff1c8, one paragraph 16-17px #d8dde2, then a chip row of 3 white pills with the three strongest confirmed values.
 2. SPEC STRIP - four value cards
 - Grid repeat(4,1fr) desktop / 1fr mobile, gap 14px. Each card: radius 22px, padding 24px; value first at 34px/950 in the accent, then h3 19px, then one short line.
 - Exactly one card is dark (#0b0f14, border #1f2428, gold value) - the single most decision-critical number; the rest are white with #a56a00 values.
-3. FULL-WIDTH PHOTO BAND - one gallery frame as a standalone image section: radius 30px, dark background, <img style="display:block;width:100%;height:auto">.
-4. LIGHT FEATURE SPLIT - #F5F7FA, radius 30px, padding 44px; grid .92fr/1.08fr (mobile stacked): left - gold uppercase eyebrow 13px/900, h2 40-42px/950, paragraph, chip row of dark pills (#071017) with confirmed materials/facts; right - one gallery frame in a white 28px-radius card.
-5. DARK FEATURE SPLIT - grid 1fr/1fr (mobile stacked): left panel #071017 radius 30px padding 40px with gold eyebrow, white h2 36-38px, paragraph #d0d7de and a 2x2 mini-grid of stat tiles (rgba(255,255,255,.08), 24px/950 gold value + 14px label); right - one gallery frame, radius 30px, object-fit:cover.
-6. CAPABILITY TRIO - three white/soft cards (radius 28px): gallery frame on top (height:250px;object-fit:cover, mobile height:210px), then padding 22px with h3 20px and one line. If fewer frames remain, two cards are acceptable - never a repeated photo.
-7. TRUST SPLIT - left dark panel (#071017, radius 28px, padding 36px) with h2 34-36px and one supportive paragraph about choosing/completing the build with artline - no invented services or warranties beyond Product JSON; right - 2x2 grid of soft cards, each h3 19px + one short line built from confirmed facts.
-8. FINAL RECAP - centered dark section, radius 28px, padding 48px 28px, background linear-gradient(135deg,#071017,#3b321f): pill badge with brand/model, h2 40-42px white, one summary paragraph #d0d7de max-width 700px, chip row of 3 white pills with exact confirmed values (dimensions, key spec, capacity).
+3. LIGHT FEATURE SPLIT - #F5F7FA, radius 30px, padding 44px; grid .92fr/1.08fr (mobile stacked): left - gold uppercase eyebrow 13px/900, h2 40-42px/950, paragraph, chip row of dark pills (#071017) with confirmed materials/facts; right - one gallery frame in a white 28px-radius card.
+4. DARK FEATURE SPLIT - grid 1fr/1fr (mobile stacked): left panel #071017 radius 30px padding 40px with gold eyebrow, white h2 36-38px, paragraph #d0d7de and a 2x2 mini-grid of stat tiles (rgba(255,255,255,.08), 24px/950 gold value + 14px label); right - one gallery frame, radius 30px, object-fit:cover.
+5. CAPABILITY TRIO - three white/soft cards (radius 28px): gallery frame on top (height:250px;object-fit:cover, mobile height:210px), then padding 22px with h3 20px and one line. If fewer frames remain, two cards are acceptable - never a repeated photo. Never add a standalone photo-only section: every image sits next to copy that earns its place.
+6. TRUST SPLIT - left dark panel (#071017, radius 28px, padding 36px) with h2 34-36px and one supportive paragraph about choosing/completing the setup with artline - no invented services or warranties beyond Product JSON; right - 2x2 grid of soft cards. Each tile answers a real buyer decision from Product JSON: what it pairs with (battery voltage/type, communication, parallel operation), an operating limit (temperature, IP rating, mounting), a capacity boundary, or a confirmed warranty term. REGISTRY DATA IS BANNED HERE: never SKU, article number, internal code, EAN/barcode or country of origin - a buyer decides nothing with those.
+7. FINAL RECAP - centered dark section, radius 28px, padding 48px 28px, background linear-gradient(135deg,#071017,#3b321f): pill badge with brand/model, h2 40-42px white, one summary paragraph #d0d7de max-width 700px, chip row of 3 white pills with exact confirmed values (dimensions, key spec, capacity).
 
 FACTS AND TONE
 - Numbers with units everywhere a number exists. Every chip, tile and value card states a confirmed fact from Product JSON - no marketing superlatives without a number behind them.
@@ -626,7 +625,8 @@ FACTS AND TONE
 - SEO: natural category wording in h2/h3; no keyword stuffing.
 
 FINAL SELF-CHECK
-- hero is a positioned <img>, not a CSS background; overlay above it; text above the overlay;
+- the FIRST CHILD of the Hero wrapper is the hero <img> (position:absolute;inset:0), never a CSS background; overlay above it; text above the overlay;
+- no photo-only sections; the trust tiles contain zero registry data (SKU, codes, EAN, country);
 - dark and light sections strictly alternate; pills only where specified; gold only for eyebrows, values and badge borders;
 - every gallery URL used at most once; no invented image URLs; alt on every img; loading="lazy" beyond the Hero;
 - desktop and mobile copy is word-for-word identical; mobile is single-column with the same section order;

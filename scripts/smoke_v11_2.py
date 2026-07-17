@@ -85,7 +85,7 @@ checks = {
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
     'ui shows balance or own spend, never a guess': 'function balanceStrip' in web and 'витрачено студією за 30 днів' in web,
-    'model-dropped image urls are repaired': 'def _restore_image_urls' in pipeline and '_restore_image_urls(output, hero, feature, variant)' in pipeline,
+    'model-dropped image urls are repaired': 'def _restore_image_urls' in pipeline and '_restore_image_urls(output, hero, feature, variant,' in pipeline,
     'desktop and mobile copy must match': prompts.count('Desktop and mobile must carry IDENTICAL copy') == 3,
     'feature section is a single island': prompts.count('The Feature section is ONE island only') == 2,
     'no nested feature islands left': 'padding:44px' not in prompts,
