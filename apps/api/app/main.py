@@ -917,9 +917,12 @@ def available_models(user=Depends(current)):
             from openai import OpenAI
             live = {x.id for x in OpenAI(api_key=cfg['openai_api_key']).models.list()}
             is_gemini = lambda name: name.startswith('gemini-')
-            unavailable = [x for x in text_models + image_models if not is_gemini(x) and x not in live]
-            kept_text = [x for x in text_models if x in live]
-            kept_image = [x for x in image_models if is_gemini(x) or x in live]
+            # The key's listing may expose only dated snapshots (gpt-image-2-2026-04-21)
+            # while the API accepts the bare alias; treat the alias as available.
+            has = lambda name: name in live or any(x.startswith(name + '-') for x in live)
+            unavailable = [x for x in text_models + image_models if not is_gemini(x) and not has(x)]
+            kept_text = [x for x in text_models if has(x)]
+            kept_image = [x for x in image_models if is_gemini(x) or has(x)]
             # Only trust the filter when the key can see something; an empty result
             # means the listing failed us, not that every model vanished.
             if kept_text:
