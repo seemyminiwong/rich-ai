@@ -201,6 +201,9 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'progress bar tweens through a memo, not a dead transition': 'PROGRESS_MEMO' in web and 'function animateProgressBars' in web and web.count('animateProgressBars()') >= 3,
+    'only active runs animate': "['processing','queued'].includes(p.status)" in web and '.progress.run i::after' in css,
+    'progress respects reduced motion': '.progress.run i::after,.progress .phead{animation:none}' in css,
     'podium style derived with import-time sanity': "PODIUM_STYLE_NAME = 'ARTLINE Podium'" in prompts and 'PODIUM style derivation failed' in prompts,
     'podium generates zero ai images': "'name': PODIUM_STYLE_NAME" in main and main.split("'name': PODIUM_STYLE_NAME")[1][:600].count("'hero_prompt': ''") == 1,
     'abs-img hero repair gated by contract phrase, not gallery': "img_hero='THE FIRST CHILD of the wrapper' in (style.prompt or '')" in pipeline,
