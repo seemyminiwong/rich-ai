@@ -4,7 +4,7 @@ const STATUS={draft:'Чернетка',queued:'У черзі',processing:'Ген
 const STAGE={queued:'Очікування запуску',scrape:'Читання сторінки',extract:'Аналіз товару',images:'Підготовка зображень',content:'Створення rich-контенту',review:'Готово до перевірки',approved:'Схвалено',changes_requested:'Потрібні зміни',error:'Помилка',paused:'Призупинено',cancelled:'Скасовано'};
 const ROLE_LABEL={admin:'Адміністратор',editor:'Редактор',reviewer:'Рев’юер',viewer:'Перегляд'};
 const CRITIC_LABEL={html:'HTML-структура',facts:'Фактологія',accessibility:'Доступність',marketing:'Маркетинг'};
-const MANAGED_STYLE_NAMES=['ARTLINE Base','ARTLINE Engineering','ARTLINE Showcase'];
+const MANAGED_STYLE_NAMES=['ARTLINE Base','ARTLINE Engineering','ARTLINE Showcase','ARTLINE Podium'];
 const LANG={ru:'Російська',ua:'Українська',uk:'Українська (uk)',pl:'Польська',en:'Англійська',de:'Німецька',fr:'Французька',es:'Іспанська',it:'Італійська',cs:'Чеська',sk:'Словацька',ro:'Румунська',hu:'Угорська',nl:'Нідерландська',pt:'Португальська',bg:'Болгарська',lt:'Литовська',lv:'Латвійська',et:'Естонська'}, VARIANT={desktop:'Десктоп',mobile:'Мобільна'};
 const LANGUAGE_OPTIONS=['ru','ua','pl','en','de','fr','es','it','cs','sk','ro','hu','nl','pt'];
 const ASSET_LABEL={

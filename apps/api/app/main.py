@@ -30,6 +30,9 @@ from app.version import __version__
 logger = logging.getLogger(__name__)
 from app.prompts import (
     BASE_STYLE_NAME,
+    PODIUM_NEGATIVE_PROMPT,
+    PODIUM_STYLE_NAME,
+    PODIUM_STYLE_PROMPT,
     SHOWCASE_FEATURE_PROMPT,
     SHOWCASE_HERO_PROMPT,
     SHOWCASE_NEGATIVE_PROMPT,
@@ -89,6 +92,19 @@ MANAGED_STYLES = [
             'hero_prompt': SHOWCASE_HERO_PROMPT,
             'feature_prompt': SHOWCASE_FEATURE_PROMPT,
             'negative_prompt': SHOWCASE_NEGATIVE_PROMPT,
+        },
+    },
+    {
+        'name': PODIUM_STYLE_NAME,
+        'default': False,
+        'values': {
+            'description': 'Showcase без темного Hero: світла «сцена» з великим неушкодженим рендером товару і м\'якою тінню. Не генерує AI-зображень — найдешевший преміальний стиль.',
+            'prompt': PODIUM_STYLE_PROMPT,
+            # No AI imagery at all: the stage uses the real product render, the
+            # feature slot uses a real gallery frame. Image cost is zero.
+            'hero_prompt': '',
+            'feature_prompt': '',
+            'negative_prompt': PODIUM_NEGATIVE_PROMPT,
         },
     },
 ]

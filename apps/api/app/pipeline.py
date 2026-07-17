@@ -1555,7 +1555,7 @@ HTML:
                 output = retried_out
         if _section_count(output) < 3:
             raise RuntimeError('AI returned an incomplete page (only the Hero section)')
-        output = _restore_image_urls(output, hero, feature, variant, img_hero='GALLERY_IMAGES' in (style.prompt or ''))
+        output = _restore_image_urls(output, hero, feature, variant, img_hero='THE FIRST CHILD of the wrapper' in (style.prompt or ''))
         output = _enforce_image_whitelist(output, [hero, feature] + list(gallery or []), spares=list(gallery or []))
         return output, input_tokens, output_tokens, ''
     except Exception as exc:
