@@ -14,7 +14,11 @@ import app.models  # noqa: F401  (import so every table is registered on Base.me
 config = context.config
 if config.config_file_name:
     try:
-        fileConfig(config.config_file_name)
+        # disable_existing_loggers=False: міграції запускаються всередині
+        # живого API (lifespan). Дефолтний fileConfig ВИМИКАЄ всі вже створені
+        # логери — після міграцій uvicorn замовкав назавжди: ні "startup
+        # complete", ні access-логу. Це коштувало години діагностики e2e.
+        fileConfig(config.config_file_name, disable_existing_loggers=False)
     except Exception:
         pass
 

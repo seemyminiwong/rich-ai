@@ -34,11 +34,15 @@ def browser_page():
         console = []
         page.on('console', lambda msg: console.append(f'[{msg.type}] {msg.text}'))
 
-        def note_failed_response(response):
+        def note_api_response(response):
+            if '/api/' not in response.url:
+                return
+            line = f'[http {response.status}] {response.request.method} {response.url}'
             if response.status >= 400:
-                console.append(f'[http {response.status}] {response.request.method} {response.url}')
+                line += f' body={response.request.post_data!r}'
+            console.append(line)
 
-        page.on('response', note_failed_response)
+        page.on('response', note_api_response)
         yield page, errors
         # Post-mortem for CI: whatever the page looked like when the test ended.
         try:
