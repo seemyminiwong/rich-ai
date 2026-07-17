@@ -199,6 +199,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'simple mode lets the operator pick a style': 'select name="style_id"' in web.split('function simpleFields')[1].split('function presetInfoTpl')[0] and "KEEP_FIELDS=['source_url','style_id'" in web,
     'image models carry human notes and stars': 'IMAGE_MODEL_NOTES' in web and 'RECOMMENDED_IMAGE_MODELS' in web,
     'gemini models advertised even without a key': 'потрібен ключ (Налаштування)' in web and "'gemini_available'" in main,
     'preset stops show price, card speaks human': 'preset-facts' in web and 'estimateCost(r.text_model' in web,
