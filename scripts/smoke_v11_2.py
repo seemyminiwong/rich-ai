@@ -80,7 +80,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.10"' in prompts,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.17"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 2 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -200,6 +200,11 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'preview audits its own media files': 'function auditPreviewMedia' in web and 'mediaAudit' in web and 'проблема у сховищі медіа' in web,
+    'showcase is the managed default': "'name': SHOWCASE_STYLE_NAME,\n        'default': True," in main and "'name': ENGINEERING_STYLE_NAME,\n        'default': False," in main,
+    'managed default flips only between managed styles': 'current_default.name in managed_names' in main,
+    'hero scene chosen server-side, no category menu in prompts': 'def hero_environment' in pipeline and 'ENVIRONMENT: {hero_environment(product)}' in tasks and 'workshop or maker workspace for a 3D printer' not in prompts,
+    'foreign-category equipment banned in negatives': 'equipment of a different product category' in prompts,
     'prior images aggregated across sibling runs': "found[asset.label] = {'label': asset.label" in main and 'adopt_images' in main and 'by_source' in main,
     'artifacts carry a build marker': 'ARTLINE Rich Studio · стиль v' in tasks,
     'media lists every image the page references': 'used_page_images' in tasks and "page-image-" in tasks and 'Зображення сторінки' in web,
