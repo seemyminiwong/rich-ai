@@ -376,7 +376,7 @@ def project_dict(p, full=False, style_name=''):
 
 
 @app.get('/health')
-def health(): return {'status': 'ok', 'version': APP_VERSION}
+def health(): return {'status': 'ok'}  # версія лише в /api/system: анонім не мусить знати білд
 
 
 @app.post('/api/auth/login')

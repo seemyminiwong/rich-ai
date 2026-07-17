@@ -26,8 +26,69 @@ jobs:
       - name: Pytest
         run: PYTHONPATH=apps/api pytest -q tests
 
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: richstudio
+          POSTGRES_USER: richstudio
+          POSTGRES_PASSWORD: e2e-db-password-1234
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U richstudio"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: '5432'
+      POSTGRES_DB: richstudio
+      POSTGRES_USER: richstudio
+      POSTGRES_PASSWORD: e2e-db-password-1234
+      REDIS_URL: redis://127.0.0.1:6379/0
+      JWT_SECRET: e2e-only-jwt-secret-0123456789abcdef0123456789
+      ADMIN_EMAIL: e2e-admin@artline.local
+      ADMIN_PASSWORD: e2e-admin-password-123
+      MEDIA_DIR: /tmp/e2e-media
+      MEDIA_SIGNING: transitional
+      DAILY_BUDGET_USD: '0'
+      E2E_BASE_URL: http://127.0.0.1:8000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deps
+        run: pip install -r apps/api/requirements.txt pytest playwright
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Start app (API + frontend, one origin)
+        run: |
+          mkdir -p /tmp/e2e-media
+          nohup python scripts/e2e_server.py > /tmp/e2e-server.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8000/health && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8000/health || { cat /tmp/e2e-server.log; exit 1; }
+      - name: Playwright scenario
+        run: pytest -q tests/e2e
+      - name: Server log on failure
+        if: failure()
+        run: cat /tmp/e2e-server.log
+
   build-and-push:
-    needs: checks
+    needs: [checks, e2e]
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
