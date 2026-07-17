@@ -13,6 +13,7 @@ from app.pipeline import (
     core_feature_text,
     extract_product,
     fetch_html,
+    gallery_urls,
     generate_html,
     generate_image,
     inspect_product_references,
@@ -149,6 +150,7 @@ def process_project(self, project_id, reuse_images=False):
             page_html = fetch_html(project.source_url)
             jsonld, images, title, clean_text = parse_page(page_html, project.source_url)
             project.source_images = json.dumps(images, ensure_ascii=False)
+            page_gallery = gallery_urls(images)
             db.commit()
 
             log(db, project, 'extract', f'Витягування характеристик · {project.text_model}', 15)
@@ -351,7 +353,7 @@ def process_project(self, project_id, reuse_images=False):
                     if master_html is None:
                         log(db, project, 'content', f'Створення майстер-макета {master_language.upper()} / {variant} · {project.text_model}', progress)
                         rich_html, added_input, added_output, fallback_reason = generate_html(
-                            product, style, master_language, variant, hero, feature, project.text_model
+                            product, style, master_language, variant, hero, feature, project.text_model, gallery=page_gallery
                         )
                         if fallback_reason and settings.openai_api_key:
                             log(db, project, 'content', f'{master_language.upper()} / {variant}: {fallback_reason}', progress, 'warning')
@@ -414,7 +416,7 @@ def process_project(self, project_id, reuse_images=False):
                             # Offline/no-key fallback still uses the deterministic
                             # template, whose structure is identical for all languages.
                             rich_html, added_input, added_output, fallback_reason = generate_html(
-                                product, style, language, variant, hero, feature, project.text_model
+                                product, style, language, variant, hero, feature, project.text_model, gallery=page_gallery
                             )
                             if fallback_reason and settings.openai_api_key:
                                 log(db, project, 'content', f'{language.upper()} / {variant}: {fallback_reason}', progress, 'warning')

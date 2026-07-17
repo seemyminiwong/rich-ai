@@ -24,12 +24,17 @@ from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, P
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
 from app.tasks import process_project
 from app.pipeline import _is_reasoning_model, is_public_http_url, sanitize_html, style_image_prompt, text_client
-from app.runtime import mask, runtime_config, set_runtime
+from app.runtime import OPENROUTER_BASE_URL, mask, runtime_config, set_runtime
 from app.version import __version__
 
 logger = logging.getLogger(__name__)
 from app.prompts import (
     BASE_STYLE_NAME,
+    SHOWCASE_FEATURE_PROMPT,
+    SHOWCASE_HERO_PROMPT,
+    SHOWCASE_NEGATIVE_PROMPT,
+    SHOWCASE_STYLE_NAME,
+    SHOWCASE_STYLE_PROMPT,
     DEFAULT_FEATURE_PROMPT,
     DEFAULT_HERO_PROMPT,
     DEFAULT_NEGATIVE_PROMPT,
@@ -73,6 +78,17 @@ MANAGED_STYLES = [
             'feature_prompt': '',
             'negative_prompt': ENGINEERING_NEGATIVE_PROMPT,
             'score_json': json.dumps({'consistency': 98, 'readability': 98, 'brand_fit': 98}),
+        },
+    },
+    {
+        'name': SHOWCASE_STYLE_NAME,
+        'default': False,
+        'values': {
+            'description': 'Іміджевий формат на реальних фото галереї: темний Hero-кадр, великі числа, чергування темних і світлих секцій. Для флагманських товарів із багатою галереєю.',
+            'prompt': SHOWCASE_STYLE_PROMPT,
+            'hero_prompt': SHOWCASE_HERO_PROMPT,
+            'feature_prompt': SHOWCASE_FEATURE_PROMPT,
+            'negative_prompt': SHOWCASE_NEGATIVE_PROMPT,
         },
     },
 ]
@@ -1002,6 +1018,61 @@ def _secrets_view():
         'openrouter_api_key_source': cfg['openrouter_api_key_source'],
         'openrouter_text_model': cfg['openrouter_text_model'],
     }
+
+
+@app.get('/api/providers/balance')
+def providers_balance(db: Session = Depends(get_db), user=Depends(require_root)):
+    """Account balances where the provider exposes them, honesty where it does not.
+
+    OpenRouter reports credits on the same API key (GET /api/v1/credits). OpenAI
+    deliberately offers no balance endpoint for API keys and Gemini has none
+    either, so for those the studio shows its own 30-day spend from the database -
+    a number we actually know - plus a link to the provider's billing page.
+    """
+    import httpx as _httpx
+    cfg = runtime_config()
+    since = datetime.utcnow() - timedelta(days=30)
+    projects = db.scalars(select(Project).where(Project.created_at >= since)).all()
+    text_spend = sum(p.text_cost or 0 for p in projects)
+    gemini_images = db.scalar(
+        select(func.coalesce(func.sum(Asset.cost), 0.0)).where(Asset.created_at >= since, Asset.model.like('gemini-%'))
+    ) or 0.0
+    openai_images = db.scalar(
+        select(func.coalesce(func.sum(Asset.cost), 0.0)).where(Asset.created_at >= since, Asset.model.not_like('gemini-%'), Asset.cost > 0)
+    ) or 0.0
+    out = {
+        'openai': {
+            'configured': bool(cfg['openai_api_key']),
+            'balance': None,
+            'note': 'OpenAI не надає баланс за API-ключем — перевіряйте на platform.openai.com/settings/organization/billing',
+            'spend_30d': round(text_spend + openai_images, 4),
+        },
+        'gemini': {
+            'configured': bool(cfg['gemini_api_key']),
+            'balance': None,
+            'note': 'Gemini не має API балансу; безкоштовний тир — 500 зображень/день. Витрати: console.cloud.google.com/billing',
+            'spend_30d': round(gemini_images, 4),
+        },
+        'openrouter': {
+            'configured': bool(cfg['openrouter_api_key']),
+            'balance': None,
+            'note': '',
+            'spend_30d': 0.0,
+        },
+    }
+    if cfg['openrouter_api_key']:
+        try:
+            with _httpx.Client(timeout=10) as http:
+                reply = http.get(f'{OPENROUTER_BASE_URL}/credits', headers={'Authorization': f"Bearer {cfg['openrouter_api_key']}"})
+                reply.raise_for_status()
+                data = (reply.json() or {}).get('data') or {}
+                total = float(data.get('total_credits') or 0)
+                used = float(data.get('total_usage') or 0)
+                out['openrouter']['balance'] = round(total - used, 4)
+                out['openrouter']['spend_30d'] = round(used, 4)
+        except Exception as exc:
+            out['openrouter']['note'] = f'Не вдалося отримати баланс: {str(exc)[:120]}'
+    return out
 
 
 @app.get('/api/secrets')
