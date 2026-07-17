@@ -1351,6 +1351,25 @@ def _deterministic_html(product, style, language, variant, hero, feature):
 </section>'''
 
 
+def _round_image_corners(html: str) -> str:
+    """Every content <img> gets rounded corners unless it already has them.
+
+    A square photo inside a 12-28px-radius card reads as unfinished; models add
+    the radius inconsistently. Positioned hero images are skipped - their wrapper
+    clips them - and existing border-radius values are respected.
+    """
+    soup = BeautifulSoup(html or '', 'html.parser')
+    changed = 0
+    for img in soup.find_all('img'):
+        style = img.get('style') or ''
+        flat = style.replace(' ', '').lower()
+        if 'border-radius' in flat or 'position:absolute' in flat:
+            continue
+        img['style'] = (style.rstrip(';') + ';' if style.strip() else '') + 'border-radius:10px'
+        changed += 1
+    return str(soup) if changed else html
+
+
 def _enforce_image_whitelist(html: str, allowed: list[str], spares: list[str] | None = None) -> str:
     """Every <img> must point at an image we actually supplied.
 
@@ -1557,6 +1576,7 @@ HTML:
             raise RuntimeError('AI returned an incomplete page (only the Hero section)')
         output = _restore_image_urls(output, hero, feature, variant, img_hero='THE FIRST CHILD of the wrapper' in (style.prompt or ''))
         output = _enforce_image_whitelist(output, [hero, feature] + list(gallery or []), spares=list(gallery or []))
+        output = _round_image_corners(output)
         return output, input_tokens, output_tokens, ''
     except Exception as exc:
         logger.warning('generate_html fell back to deterministic template for %s/%s: %s', language, variant, exc)
