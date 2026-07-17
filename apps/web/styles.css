@@ -284,3 +284,14 @@ optgroup[disabled]{color:var(--gray-3)}
 .progress .phead{position:absolute;top:50%;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:var(--blue);transition:left .7s cubic-bezier(.3,.8,.3,1);animation:barPulse 1.6s ease-out infinite}
 @keyframes barPulse{0%{box-shadow:0 0 0 0 rgba(25,188,201,.45)}70%{box-shadow:0 0 0 8px rgba(25,188,201,0)}100%{box-shadow:0 0 0 0 rgba(25,188,201,0)}}
 @media(prefers-reduced-motion:reduce){.progress.run i::after,.progress .phead{animation:none}}
+
+.techloop-panel h2{margin-bottom:18px}
+.techloop{position:relative;overflow:hidden;--tl-gap:38px;-webkit-mask-image:linear-gradient(to right,transparent,#000 9%,#000 91%,transparent);mask-image:linear-gradient(to right,transparent,#000 9%,#000 91%,transparent)}
+.techloop-track{display:flex;width:max-content;will-change:transform;animation:tlScroll 38s linear infinite}
+.techloop:hover .techloop-track{animation-play-state:paused}
+.techloop-seq{display:flex;align-items:center;gap:var(--tl-gap);padding-right:var(--tl-gap)}
+.techloop-item{display:inline-flex;align-items:center;gap:9px;font-weight:850;font-size:15px;letter-spacing:-.01em;color:var(--muted);white-space:nowrap;transition:color .25s,transform .25s}
+.techloop-item::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--c);flex:0 0 auto}
+.techloop-item:hover{color:var(--c);transform:scale(1.07)}
+@keyframes tlScroll{to{transform:translate3d(-50%,0,0)}}
+@media(prefers-reduced-motion:reduce){.techloop-track{animation:none}}

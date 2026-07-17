@@ -204,6 +204,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'tech stack loop on settings page': 'function techStrip' in web and 'techloop-seq' in web and '${seq(false)}${seq(true)}' in web and '${techStrip()}' in web and 'tlScroll' in (root / 'apps/web/styles.css').read_text(encoding='utf-8'),
     'fallback reason is classified, not raw exception text': 'def public_fallback_reason' in pipeline and 'public_fallback_reason(exc)' in pipeline and 'used built-in template: {exc}' not in pipeline,
     'external downloads are stream-capped': 'def fetch_bytes_capped' in pipeline and pipeline.count('fetch_bytes_capped(') >= 4 and 'fetch_bytes_capped(http, asset.url)' in main and 'total_archive_bytes' in main,
     'optional project ownership mode': 'def require_project_edit' in main and main.count('require_project_edit(') >= 6 and 'project_ownership' in config,
