@@ -256,6 +256,9 @@ optgroup[disabled]{color:var(--gray-3)}
 .prior-strip{margin:10px 0;padding:10px 12px;border:1px solid #B8E8ED;border-radius:12px;background:#EAF9FB}
 .prior-strip .check{font-size:12.5px;margin:0}
 .prior-thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
-.prior-thumb{display:grid;gap:2px;justify-items:center}
+.prior-thumb{display:grid;gap:2px;justify-items:center;position:relative;border:2px solid transparent;border-radius:10px;padding:2px;background:none;cursor:pointer}
+.prior-thumb:hover{border-color:var(--silver)}
+.prior-thumb.off img{opacity:.28;filter:grayscale(1)}
+.prior-thumb.off::after{content:'⟳ заново';position:absolute;top:24px;left:0;right:0;text-align:center;font-size:9px;font-weight:900;color:#B42D2D}
 .prior-thumb img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border);background:#fff}
 .prior-thumb i{font-style:normal;font-size:9.5px;color:var(--muted)}

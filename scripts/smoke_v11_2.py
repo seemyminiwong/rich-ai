@@ -200,6 +200,9 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'adoption is per-image': 'reuse_labels' in main and 'function togglePrior' in web,
+    'partial adoption regenerates the rest': "feature_mode = 'adopted'" in tasks and 'adopted_hero' in tasks and 'covers_heroes and covers_feature' in tasks,
+    'reference always rides along for regeneration': "wanted.add('product-reference')" in main,
     'facts critic checks identifiers, not the verbatim commercial name': 'Product identifiers missing' in pipeline and "'Product name is missing'" not in pipeline,
     'showcase wears artline colours': '#19BCC9' in prompts.split('SHOWCASE_STYLE_PROMPT')[1].split('SHOWCASE_HERO_PROMPT')[0] and '#ffd47a' not in prompts and '#050505' not in prompts,
     'auto gallery survives a liveness check': 'def validated_gallery_urls' in pipeline and 'chosen_gallery or validated_gallery_urls(images)' in tasks,

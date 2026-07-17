@@ -123,7 +123,15 @@ def process_project(self, project_id, reuse_images=False):
             # Reuse keeps the previous shots and regenerates only the copy: no image
             # cost and no waiting for the image model.
             existing_images = _existing_images(db, project) if reuse_images else {}
-            reused = any(k.startswith(('hero-', 'feature-')) for k in existing_images)
+            wanted_variants = [v for v in project.variants.split(',') if v]
+            covers_heroes = all(
+                existing_images.get(f'hero-{v}-generated') or existing_images.get('hero-custom') or existing_images.get('hero-source')
+                for v in wanted_variants
+            ) if wanted_variants else False
+            covers_feature = bool(existing_images.get('feature-generated') or existing_images.get('feature-custom') or existing_images.get('feature-source'))
+            # Full coverage -> skip image work entirely. Partial coverage -> the full
+            # branch below runs, keeps the adopted shots and regenerates only the rest.
+            reused = bool(existing_images) and covers_heroes and covers_feature
             project.status = Status.processing
             project.started_at = now()
             project.finished_at = None
@@ -275,6 +283,11 @@ def process_project(self, project_id, reuse_images=False):
                         'mobile': ('1024x1536', 1024, 1536, 'portrait mobile composition; complete product in the upper area; protected text-safe space below it'),
                     }
                     for offset, variant in enumerate(requested_variants):
+                        adopted_hero = existing_images.get(f'hero-{variant}-generated') or existing_images.get('hero-custom')
+                        if adopted_hero:
+                            hero_by_variant[variant] = adopted_hero
+                            log(db, project, 'images', f'Hero {variant}: взято з попередньої генерації — без витрат', 24 + offset * 5)
+                            continue
                         size, width, height, composition = hero_specs.get(variant, hero_specs['desktop'])
                         log(db, project, 'images', f'Створення Hero {variant} · {project.image_model}', 24 + offset * 5)
                         hero_prompt = (
@@ -313,7 +326,11 @@ def process_project(self, project_id, reuse_images=False):
                 planned_feature_url = f'/media/{project.id}/feature.webp'
                 feature_mode = 'photo'
                 feature_photo_fallback = ''
-                if project.custom_feature_url:
+                if existing_images.get('feature-generated') or existing_images.get('feature-custom'):
+                    feature = existing_images.get('feature-generated') or existing_images.get('feature-custom')
+                    feature_mode = 'adopted'
+                    log(db, project, 'images', 'Feature взято з попередньої генерації — без витрат', 35)
+                elif project.custom_feature_url:
                     feature = project.custom_feature_url
                     feature_mode = 'custom'
                     db.add(Asset(project_id=project.id,kind='image',label='feature-custom',url=feature,prompt='',model='custom',metadata_json=json.dumps({'source':'custom'},ensure_ascii=False)))
