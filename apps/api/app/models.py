@@ -94,6 +94,8 @@ class Project(Base):
     product_category: Mapped[str] = mapped_column(String, default='')
     product_json: Mapped[str] = mapped_column(Text, default='{}')
     source_images: Mapped[str] = mapped_column(Text, default='[]')
+    # Operator-curated gallery frames from the probe dialog; empty = auto-pick.
+    gallery_json: Mapped[str] = mapped_column(Text, default='[]')
     error: Mapped[str] = mapped_column(Text, default='')
     duration_seconds: Mapped[float] = mapped_column(Float, default=0)
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
