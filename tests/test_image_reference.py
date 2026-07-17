@@ -344,3 +344,24 @@ def test_safe_client_allows_public_to_public_redirects():
     with patch('app.pipeline.is_public_http_url', _fake_public):
         with safe_client(transport=httpx.MockTransport(handler)) as client:
             assert client.get('https://shop.example/photo').text == 'ok'
+
+
+def test_media_urls_are_signed_and_tamper_proof(monkeypatch):
+    from app import media as media_mod
+    monkeypatch.setattr(media_mod.settings, 'jwt_secret', 'unit-test-secret-0123456789')
+    url = media_mod.media_url('proj-1', 'hero-desktop.webp')
+    path, token = url.split('?t=')
+    assert media_mod.verify_media_token(path, token)
+    assert not media_mod.verify_media_token('/media/proj-2/hero-desktop.webp', token)
+    assert not media_mod.verify_media_token(path, '')
+    assert media_mod.strip_media_query(url) == path
+
+
+def test_provider_keys_encrypt_roundtrip_and_survive_rotation(monkeypatch):
+    from app import runtime as runtime_mod
+    monkeypatch.setattr(runtime_mod.settings, 'jwt_secret', 'secret-A-0123456789')
+    stored = runtime_mod._encrypt('sk-proj-VALUE')
+    assert stored.startswith('enc:v1:') and 'VALUE' not in stored
+    assert runtime_mod._decrypt(stored) == 'sk-proj-VALUE'
+    monkeypatch.setattr(runtime_mod.settings, 'jwt_secret', 'secret-B-rotated')
+    assert runtime_mod._decrypt(stored) == ''

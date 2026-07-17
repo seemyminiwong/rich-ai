@@ -13,6 +13,9 @@ prompts = (root / 'apps/api/app/prompts.py').read_text(encoding='utf-8')
 runtime = (root / 'apps/api/app/runtime.py').read_text(encoding='utf-8')
 config = (root / 'apps/api/app/config.py').read_text(encoding='utf-8')
 nginx = (root / 'apps/web/nginx.conf').read_text(encoding='utf-8')
+media = (root / 'apps/api/app/media.py').read_text(encoding='utf-8')
+limits = (root / 'apps/api/app/limits.py').read_text(encoding='utf-8')
+runtime_src = (root / 'apps/api/app/runtime.py').read_text(encoding='utf-8')
 compose = (root / 'docker-compose.yml').read_text(encoding='utf-8')
 envex = (root / '.env.example').read_text(encoding='utf-8')
 caddyfile = (root / 'Caddyfile').read_text(encoding='utf-8')
@@ -47,7 +50,7 @@ checks = {
     'style preview sanitized': "sanitize_html(data.pop('preview_html'" in main,
     'ssrf guard on archive fetch': 'non-public image url blocked' in main,
     'ssrf guard on reference': 'if not is_public_http_url(url):' in pipeline,
-    'login rate limit': 'def rate_limit_login' in main and 'rate_limit_login(' in main,
+    'login rate limit': 'def check_login' in limits and 'check_login(' in main,
     'admin self-protection': 'Не можна деактивувати власний обліковий запис' in main and 'щонайменше один активний адміністратор' in main,
     'pyjwt not jose': 'import jwt' in security and 'jose' not in security,
 
@@ -92,7 +95,7 @@ checks = {
     'feature block lives in the main prompt': prompts.count('[FEATURE_IMAGE]') == 2 and prompts.count('[/FEATURE_IMAGE]') == 2,
     'feature image built from core feature text': 'def core_feature_text' in pipeline and 'core_feature_text(master_html)' in tasks and 'FEATURE DESCRIPTION FROM THE PAGE' in tasks,
     'art direction never leaks to text model': 'def strip_image_blocks' in pipeline and 'strip_image_blocks(style.prompt)' in pipeline,
-    'feature url planned before text': 'planned_feature_url' in tasks and "f'/media/{project.id}/feature.webp'" in tasks,
+    'feature url planned before text': "planned_feature_url = media_url(project.id, 'feature.webp')" in tasks,
     'feature falls back to real photo': 'def select_feature_photo' in pipeline and 'feature generation failed' in tasks,
     'key feature fallback kept': 'def select_key_feature' in pipeline and 'select_key_feature(product)' in tasks,
     'rerun can reuse existing images': 'def process_project(self, project_id, reuse_images=False)' in tasks and "feature_mode = 'reused'" in tasks and 'reuse_images: bool = False' in main and 'process_project.delay(p.id, reuse_images=reuse)' in main and 'function reuseImagesField' in web,
@@ -201,6 +204,12 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'media urls are signed at every creation point': 'def media_url' in media and 'media_url(project_id, filename)' in pipeline and "media_url(project_id, f'{label}.webp')" in pipeline and "media_url(project.id, 'feature.webp')" in tasks,
+    'media served through a verifying endpoint, not a static mount': "app.mount('/media'" not in main and 'verify_media_token(path, t)' in main and "media_signing == 'strict'" in main,
+    'provider keys encrypted at rest with transparent migration': "_ENC_PREFIX = 'enc:v1:'" in runtime_src and 'def migrate_plaintext_secrets' in runtime_src and 'migrate_plaintext_secrets()' in main,
+    'login throttle is redis-backed, per email and ip': 'def check_login' in limits and 'rl:login:ip:' in limits and 'rate_limit_login' not in main,
+    'expensive endpoints capped and budgeted': main.count('check_budget()') >= 6 and 'def check_budget' in limits and 'incrbyfloat' in limits and 'add_spend(' in tasks,
+    'limits fail open when redis is down': 'failing open' in limits,
     'security roadmap shipped': (root / 'docs/SECURITY_ROADMAP.md').exists(),
     'every redirect-following fetch validates each hop': 'def safe_client' in pipeline and 'def _require_public_hop' in pipeline and 'follow_redirects=True' not in pipeline.replace("kwargs.setdefault('follow_redirects', True)", ''),
     'archive uses the safe client too': 'with safe_client(timeout=20)' in main,

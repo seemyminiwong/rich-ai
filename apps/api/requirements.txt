@@ -13,3 +13,4 @@ beautifulsoup4==4.13.4
 openai==1.93.0
 
 pillow==11.2.1
+cryptography==44.0.1
