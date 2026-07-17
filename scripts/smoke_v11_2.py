@@ -201,6 +201,12 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'security roadmap shipped': (root / 'docs/SECURITY_ROADMAP.md').exists(),
+    'every redirect-following fetch validates each hop': 'def safe_client' in pipeline and 'def _require_public_hop' in pipeline and 'follow_redirects=True' not in pipeline.replace("kwargs.setdefault('follow_redirects', True)", ''),
+    'archive uses the safe client too': 'with safe_client(timeout=20)' in main,
+    'page size capped': 'larger than 8 MB' in pipeline,
+    'adopt guarded against path traversal': 'media_root not in src_file.parents' in main,
+    'ssrf regression tests shipped': 'test_safe_client_blocks_redirects_into_private_space' in (root / 'tests/test_image_reference.py').read_text(encoding='utf-8'),
     'every content image gets rounded corners mechanically': 'def _round_image_corners' in pipeline and '_round_image_corners(output)' in pipeline,
     'progress bar tweens through a memo, not a dead transition': 'PROGRESS_MEMO' in web and 'function animateProgressBars' in web and web.count('animateProgressBars()') >= 3,
     'only active runs animate': "['processing','queued'].includes(p.status)" in web and '.progress.run i::after' in css,

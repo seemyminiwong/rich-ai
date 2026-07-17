@@ -306,3 +306,41 @@ def test_language_check_tolerates_a_preserved_foreign_name():
     )
     assert _language_matches(ua_page, 'ru') is False
     assert _language_matches(ua_page, 'ua') is True
+
+
+def _fake_public(url):
+    """DNS-free stand-in for is_public_http_url: block obvious private hosts."""
+    from urllib.parse import urlparse
+    host = urlparse(url).hostname or ''
+    return host not in ('127.0.0.1', 'localhost', '169.254.169.254', '10.0.0.1')
+
+
+def test_safe_client_blocks_redirects_into_private_space():
+    """A public URL answering 302 -> localhost must abort, not follow."""
+    import httpx
+    import pytest
+    from app.pipeline import safe_client
+
+    def handler(request):
+        if request.url.host == 'shop.example':
+            return httpx.Response(302, headers={'location': 'http://127.0.0.1:8000/api/system'})
+        return httpx.Response(200, text='reached')
+
+    with patch('app.pipeline.is_public_http_url', _fake_public):
+        with safe_client(transport=httpx.MockTransport(handler)) as client:
+            with pytest.raises(RuntimeError, match='non-public'):
+                client.get('https://shop.example/product')
+
+
+def test_safe_client_allows_public_to_public_redirects():
+    import httpx
+    from app.pipeline import safe_client
+
+    def handler(request):
+        if request.url.host == 'shop.example':
+            return httpx.Response(302, headers={'location': 'https://cdn.example/photo.webp'})
+        return httpx.Response(200, text='ok')
+
+    with patch('app.pipeline.is_public_http_url', _fake_public):
+        with safe_client(transport=httpx.MockTransport(handler)) as client:
+            assert client.get('https://shop.example/photo').text == 'ok'

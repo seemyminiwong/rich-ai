@@ -334,14 +334,37 @@ def _language_matches(markup: str, language: str) -> bool:
     return True
 
 
+def _require_public_hop(request):
+    """httpx request hook: every hop of every outbound fetch must stay public.
+
+    is_public_http_url() used to vet only the FIRST url; follow_redirects then
+    happily walked a 302 into 127.0.0.1 or the LAN. This hook runs for redirected
+    requests too, so a redirect into private address space aborts the transfer.
+    Residual risk (accepted): DNS rebinding between this check and the connect.
+    """
+    url = str(request.url)
+    if not is_public_http_url(url):
+        raise RuntimeError(f'Blocked non-public redirect hop: {request.url.host}')
+
+
+def safe_client(**kwargs) -> httpx.Client:
+    """The only correct way to fetch an external URL in this codebase."""
+    kwargs.setdefault('follow_redirects', True)
+    hooks = kwargs.setdefault('event_hooks', {})
+    hooks.setdefault('request', []).append(_require_public_hop)
+    return httpx.Client(**kwargs)
+
+
 def fetch_html(url: str) -> str:
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
         "Accept-Language": "en-US,en;q=0.8",
     }
-    with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True, headers=headers) as http:
+    with safe_client(timeout=settings.request_timeout_seconds, headers=headers) as http:
         response = http.get(url)
         response.raise_for_status()
+        if len(response.content) > 8_000_000:
+            raise RuntimeError("Product page is larger than 8 MB - refusing to parse it")
         if not response.text.strip():
             raise RuntimeError("Product page returned an empty response")
         return response.text
@@ -465,7 +488,7 @@ def _url_is_alive(url: str) -> bool:
     """Cheap liveness probe. HEAD first; some CDNs reject HEAD, so fall back to a
     one-byte ranged GET. Anything but 2xx counts as dead."""
     try:
-        with httpx.Client(timeout=6, follow_redirects=True) as http:
+        with safe_client(timeout=6) as http:
             reply = http.head(url)
             if reply.status_code == 405 or reply.status_code == 403:
                 reply = http.get(url, headers={'Range': 'bytes=0-0'})
@@ -568,7 +591,7 @@ def inspect_product_references(images: list[str], preferred_url: str = '') -> li
                 continue
         return rows
 
-    with httpx.Client(timeout=30, follow_redirects=True, headers=headers) as http:
+    with safe_client(timeout=30, headers=headers) as http:
         inspected.extend(inspect_pool(http, preferred_candidates[:8]))
         if not inspected:
             inspected.extend(inspect_pool(http, fallback_candidates[:16]))
@@ -957,7 +980,7 @@ def _reference_image(url: str):
     if not is_public_http_url(url):
         return None
     try:
-        with httpx.Client(timeout=90, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as http:
+        with safe_client(timeout=90, headers={"User-Agent": "Mozilla/5.0"}) as http:
             response = http.get(url)
             response.raise_for_status()
             if len(response.content) > 45 * 1024 * 1024:
@@ -1228,7 +1251,7 @@ def generate_image(
         if getattr(item, 'b64_json', None):
             path.write_bytes(base64.b64decode(item.b64_json))
         elif getattr(item, 'url', None):
-            with httpx.Client(timeout=120, follow_redirects=True) as http:
+            with safe_client(timeout=120) as http:
                 image_response = http.get(item.url)
                 image_response.raise_for_status()
                 path.write_bytes(image_response.content)
