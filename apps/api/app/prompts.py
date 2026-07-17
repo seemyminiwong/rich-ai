@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.18"
+BASE_STYLE_VERSION = "12.19"
 BASE_STYLE_NAME = "ARTLINE Base"
 ENGINEERING_STYLE_NAME = "ARTLINE Engineering"
 
@@ -612,7 +612,8 @@ SECTION SET, IN ORDER
 - Above it one overlay div: position:absolute;inset:0;background:linear-gradient(90deg,rgba(16,16,16,.92) 0%,rgba(16,16,16,.55) 52%,rgba(16,16,16,0) 100%) - it must fade to FULLY TRANSPARENT on the side where the product stands, so the photo is plainly visible there. Mobile: same ramp at 180deg, dense at the bottom, transparent at the top over the product.
 - Content layer: position:relative;z-index:1;min-height:585px (mobile ~600px);padding:78px 46px 54px (mobile 300px 18px 26px);display:flex;align-items:center.
 - Inside, max-width:720px: a pill badge, one h2 60-64px/950 line-height .94 (mobile 34-38px), one bold subtitle 24-27px in #C9F0F4, one paragraph 16-17px #d8dde2, then a chip row of 3 white pills with the three strongest confirmed values.
-- NAME APPEARS ONCE PER SECTION: the badge carries only the brand and product category (for example "DEYE · Гібридний інвертор"), the h2 carries the full model name exactly once. Badge text duplicating the h2 is a defect. The same rule applies to the final recap badge.
+- NAME APPEARS ONCE PER SECTION: the badge carries only the brand and product category (for example "DEYE · Гібридний інвертор"), the h2 carries the model exactly once. Badge text duplicating the h2 is a defect. The same rule applies to the final recap badge.
+- HERO TYPOGRAPHY: the h2 is BRAND + MODEL CODE only (for example "DEYE SUN-12K-SG05LP3-EU-SM2") - never the full commercial name with units, phase counts and connectivity suffixes: a four-line all-caps wall is a defect. Those descriptors move to the subtitle as compact specs separated by " · " (for example "12 кВт · 48 В · 2 MPPT · Wi-Fi · трифазний 220/380 В"). The paragraph below stays a fluent sentence, not a spec list.
 2. SPEC STRIP - four value cards
 - Grid repeat(4,1fr) desktop / 1fr mobile, gap 14px. Each card: radius 22px, padding 24px; value first at 34px/950 in the accent, then h3 19px, then one short line.
 - Exactly one card is dark (#1A2128, border #35393F, cyan value) - the single most decision-critical number; the rest are white with #157985 values.
@@ -629,7 +630,7 @@ FACTS AND TONE
 
 FINAL SELF-CHECK
 - the Hero wrapper carries the hero URL as background (center/cover) AND its first child is the same URL as <img> (position:absolute;inset:0) with NO opacity; the overlay fades to transparent over the product so the photo is visible; text above the overlay;
-- the badge does not repeat the h2: brand + category in the badge, full model once in the h2;
+- the badge does not repeat the h2; the h2 is brand + model code only, commercial-name descriptors live in the subtitle as " · " specs;
 - no photo-only sections; the trust tiles contain zero registry data (SKU, codes, EAN, country);
 - no white-background render is cropped by cover or placed bare on a dark canvas;
 - dark and light sections strictly alternate; pills only where specified; cyan only for eyebrows, values and badge borders;
