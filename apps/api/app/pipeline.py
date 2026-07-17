@@ -1586,9 +1586,21 @@ def critic_html(artifacts, critic_type: str, product: dict):
             issues.append('Very small text detected'); score -= 10
         suggestions = ['Add accurate alt text', 'Maintain readable mobile typography']
     elif critic_type == 'facts':
+        # The full commercial name never survives verbatim: units get respaced
+        # ("12KW" -> "12 kW") and words are translated per language. What must
+        # actually be present are the identifiers a buyer searches by: the brand
+        # and the model code.
         name = str(product.get('name') or '').strip()
-        if name and name.lower() not in html.lower():
-            issues.append('Product name is missing'); score -= 25
+        text = re.sub(r'<[^>]+>', ' ', html).lower()
+        brand = str(product.get('brand') or '').strip().lower()
+        model_tokens = [t for t in re.split(r'[\s,()]+', name) if re.search(r'\d', t) and len(t) >= 5]
+        model_token = max(model_tokens, key=len).lower() if model_tokens else ''
+        required = [b for b in (brand, model_token) if b]
+        if not required and name:
+            required = [name.lower()]
+        missing = [b for b in required if b not in text]
+        if missing:
+            issues.append('Product identifiers missing: ' + ', '.join(missing)); score -= 25
         banned = ['best in the world','100% guaranteed','unmatched','revolutionary']
         for phrase in banned:
             if phrase in html.lower(): issues.append(f'Unsupported claim: {phrase}'); score -= 10
