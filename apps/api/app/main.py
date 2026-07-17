@@ -23,7 +23,7 @@ from app.db import Base, SessionLocal, engine, ensure_schema, get_db, run_migrat
 from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Project, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
 from app.tasks import process_project, translate_project
-from app.pipeline import _is_reasoning_model, fetch_html, gallery_urls, is_public_http_url, parse_page, sanitize_html, style_image_prompt, text_client
+from app.pipeline import _is_reasoning_model, fetch_html, gallery_urls, is_public_http_url, parse_page, safe_client, sanitize_html, style_image_prompt, text_client
 from app.runtime import OPENROUTER_BASE_URL, mask, runtime_config, set_runtime
 from app.version import __version__
 
@@ -667,8 +667,11 @@ def _adopt_images(db: Session, new_project: Project, source_project_id: str, lab
         new_url = asset.url
         if asset.url.startswith(prefix):
             name = asset.url[len(prefix):]
-            src_file = Path(settings.media_dir) / source.id / name
-            if not src_file.exists():
+            media_root = Path(settings.media_dir).resolve()
+            src_file = (media_root / source.id / name).resolve()
+            # Same traversal guard as the archive: asset URLs are ours, but a
+            # poisoned row must not be able to read outside the media root.
+            if media_root not in src_file.parents or not src_file.exists():
                 continue
             dst_dir = Path(settings.media_dir) / new_project.id
             dst_dir.mkdir(parents=True, exist_ok=True)
@@ -795,7 +798,7 @@ def project_archive(project_id: str, db: Session = Depends(get_db), user=Depends
     skipped = []
     media_root = Path(settings.media_dir).resolve()
     with zipfile.ZipFile(stream, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
-        with httpx.Client(timeout=20, follow_redirects=True) as http:
+        with safe_client(timeout=20) as http:
             for asset in assets:
                 if not asset.url or asset.url in image_paths:
                     continue
