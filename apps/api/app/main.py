@@ -934,7 +934,7 @@ def available_models(user=Depends(current)):
     reasoning_models = [x for x in text_models if _is_reasoning_model(x)]
     # Pricing travels with the model list so the New Project dialog can price a run
     # before it starts, using the same figures the worker bills against.
-    return {'text_models': text_models, 'image_models': image_models, 'reasoning_models': reasoning_models, 'source': source, 'unavailable': unavailable, 'unpriced': sorted({x for x in text_models if x not in settings.text_pricing} | {x for x in image_models if x not in settings.image_pricing}), 'default_text_model': settings.openai_text_model, 'default_image_model': settings.openai_image_model, 'text_pricing': settings.text_pricing, 'image_pricing': settings.image_pricing}
+    return {'text_models': text_models, 'image_models': image_models, 'reasoning_models': reasoning_models, 'source': source, 'gemini_available': bool(cfg['gemini_api_key']), 'gemini_models': list(settings.gemini_models), 'unavailable': unavailable, 'unpriced': sorted({x for x in text_models if x not in settings.text_pricing} | {x for x in image_models if x not in settings.image_pricing}), 'default_text_model': settings.openai_text_model, 'default_image_model': settings.openai_image_model, 'text_pricing': settings.text_pricing, 'image_pricing': settings.image_pricing}
 
 
 @app.get('/api/assets')

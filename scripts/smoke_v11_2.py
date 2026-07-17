@@ -199,6 +199,9 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'image models carry human notes and stars': 'IMAGE_MODEL_NOTES' in web and 'RECOMMENDED_IMAGE_MODELS' in web,
+    'gemini models advertised even without a key': 'потрібен ключ (Налаштування)' in web and "'gemini_available'" in main,
+    'preset stops show price, card speaks human': 'preset-facts' in web and 'estimateCost(r.text_model' in web,
     'no function shadows a dialog element id': not [i for i in ('translateDialog', 'rerunProjectDialog', 'probeBox', 'presetInfo', 'newProject', 'styleGenerator', 'inviteDialog', 'createUserDialog') if f'function {i}(' in web],
     'toasts surface above open dialogs': "document.querySelector('dialog[open]')||toastStack()" in web,
     'version check script shipped': (root / 'scripts/version-check.sh').exists(),
