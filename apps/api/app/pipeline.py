@@ -252,7 +252,7 @@ def is_public_http_url(url: str) -> bool:
             return False
         for info in socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == 'https' else 80)):
             ip = ipaddress.ip_address(info[4][0])
-            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            if not _address_is_public(ip):
                 return False
         return True
     except Exception:
@@ -341,16 +341,57 @@ def _require_public_hop(request):
     is_public_http_url() used to vet only the FIRST url; follow_redirects then
     happily walked a 302 into 127.0.0.1 or the LAN. This hook runs for redirected
     requests too, so a redirect into private address space aborts the transfer.
-    Residual risk (accepted): DNS rebinding between this check and the connect.
+    _PinnedTransport below closes the DNS-rebinding window this hook leaves.
     """
     url = str(request.url)
     if not is_public_http_url(url):
         raise RuntimeError(f'Blocked non-public redirect hop: {request.url.host}')
 
 
+def _address_is_public(ip) -> bool:
+    return not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified)
+
+
+class _PinnedTransport(httpx.HTTPTransport):
+    """DNS-rebinding guard: resolve once, validate every address, connect to the
+    exact IP that passed validation.
+
+    The event hook alone checks the hostname, but the OS resolves it AGAIN at
+    connect time - a hostile DNS server can answer a public IP for the check and
+    127.0.0.1 a millisecond later. Here the vetted IP goes straight into the
+    connection URL; the sni_hostname request extension keeps the TLS handshake
+    and certificate verification against the original hostname (httpx supports
+    this extension for exactly this pinning pattern).
+    """
+
+    def handle_request(self, request):
+        host = request.url.host
+        try:
+            literal = ipaddress.ip_address(host)
+        except ValueError:
+            literal = None
+        if literal is not None:
+            if not _address_is_public(literal):
+                raise RuntimeError(f'Blocked non-public address: {host}')
+            return super().handle_request(request)
+        port = request.url.port or (443 if request.url.scheme == 'https' else 80)
+        pinned = None
+        for info in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM):
+            ip = ipaddress.ip_address(info[4][0])
+            if not _address_is_public(ip):
+                raise RuntimeError(f'Blocked non-public address for {host}: {ip}')
+            if pinned is None or (pinned.version == 6 and ip.version == 4):
+                pinned = ip
+        if pinned is not None:
+            request.extensions['sni_hostname'] = host
+            request.url = request.url.copy_with(host=str(pinned))
+        return super().handle_request(request)
+
+
 def safe_client(**kwargs) -> httpx.Client:
     """The only correct way to fetch an external URL in this codebase."""
     kwargs.setdefault('follow_redirects', True)
+    kwargs.setdefault('transport', _PinnedTransport())
     hooks = kwargs.setdefault('event_hooks', {})
     hooks.setdefault('request', []).append(_require_public_hop)
     return httpx.Client(**kwargs)
@@ -369,6 +410,27 @@ def fetch_html(url: str) -> str:
         if not response.text.strip():
             raise RuntimeError("Product page returned an empty response")
         return response.text
+
+_MAX_FETCH_MB = 30
+
+def fetch_bytes_capped(http, url: str, cap_mb: int = _MAX_FETCH_MB) -> bytes:
+    """Streamed download with a hard byte ceiling.
+
+    `response.content` pulls the whole body into RAM before any size check can
+    run; one hostile URL could balloon the worker by gigabytes. This streams and
+    aborts the moment the ceiling is crossed (or Content-Length promises it)."""
+    cap = cap_mb * 1024 * 1024
+    with http.stream('GET', url) as response:
+        response.raise_for_status()
+        if int(response.headers.get('content-length') or 0) > cap:
+            raise RuntimeError(f'Remote file is larger than {cap_mb} MB')
+        total, chunks = 0, []
+        for chunk in response.iter_bytes(65536):
+            total += len(chunk)
+            if total > cap:
+                raise RuntimeError(f'Remote file exceeded {cap_mb} MB during download')
+            chunks.append(chunk)
+        return b''.join(chunks)
 
 
 def _safe_json(value: str):
@@ -557,11 +619,10 @@ def inspect_product_references(images: list[str], preferred_url: str = '') -> li
         rows = []
         for index, url in enumerate(pool):
             try:
-                response = http.get(url)
-                response.raise_for_status()
-                if not 256 < len(response.content) <= 45 * 1024 * 1024:
+                data = fetch_bytes_capped(http, url)
+                if len(data) <= 256:
                     continue
-                image = Image.open(BytesIO(response.content))
+                image = Image.open(BytesIO(data))
                 width, height = image.size
                 if width < 320 or height < 320:
                     continue
@@ -582,7 +643,7 @@ def inspect_product_references(images: list[str], preferred_url: str = '') -> li
                     'url': url,
                     'width': width,
                     'height': height,
-                    'bytes': len(response.content),
+                    'bytes': len(data),
                     'format': image.format or '',
                     'identity': identity,
                     'matches_primary': same_product_photo,
@@ -982,11 +1043,7 @@ def _reference_image(url: str):
         return None
     try:
         with safe_client(timeout=90, headers={"User-Agent": "Mozilla/5.0"}) as http:
-            response = http.get(url)
-            response.raise_for_status()
-            if len(response.content) > 45 * 1024 * 1024:
-                return None
-            source = ImageOps.exif_transpose(Image.open(BytesIO(response.content))).convert("RGBA")
+            source = ImageOps.exif_transpose(Image.open(BytesIO(fetch_bytes_capped(http, url)))).convert("RGBA")
             # OpenAI image editing is most reliable with a normalized PNG reference.
             source.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
             handle = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
@@ -1253,9 +1310,7 @@ def generate_image(
             path.write_bytes(base64.b64decode(item.b64_json))
         elif getattr(item, 'url', None):
             with safe_client(timeout=120) as http:
-                image_response = http.get(item.url)
-                image_response.raise_for_status()
-                path.write_bytes(image_response.content)
+                path.write_bytes(fetch_bytes_capped(http, item.url))
         else:
             return fallback, False, 'OpenAI returned no image data'
         return media_url(project_id, f'{label}.webp'), True, ''
@@ -1555,7 +1610,30 @@ def relayout_html(desktop_html: str, model: str):
             return None, total_in, total_out, 'мобільна верстка змінила зображення — застосовано незалежну генерацію'
         return output, total_in, total_out, ''
     except Exception as exc:
-        return None, total_in, total_out, f'перекомпонування не вдалося: {exc}'
+        logger.warning('Mobile relayout failed: %s', exc)
+        return None, total_in, total_out, 'перекомпонування не вдалося — застосовано незалежну генерацію'
+
+
+def public_fallback_reason(exc: Exception) -> str:
+    """Operator-facing failure reason WITHOUT raw exception text.
+
+    Raw provider exceptions can carry request URLs, payload fragments and header
+    values; fallback_reason is shown to every role in the UI and forwarded to
+    Telegram. Full detail stays in the server log next to this classification."""
+    text = str(exc).lower()
+    if isinstance(exc, httpx.TimeoutException) or 'timed out' in text or 'timeout' in text:
+        return 'провайдер не відповів вчасно (таймаут)'
+    if any(k in text for k in ('api key', 'apikey', 'invalid_api_key', 'unauthorized', 'authentication')):
+        return 'провайдер відхилив ключ API — перевірте ключ у налаштуваннях'
+    if any(k in text for k in ('insufficient_quota', 'quota', 'rate limit', 'too many requests')):
+        return 'вичерпано ліміт або квоту провайдера'
+    if isinstance(exc, httpx.HTTPError) or 'connection' in text:
+        return 'мережева помилка при зверненні до провайдера'
+    if 'language validation' in text:
+        return 'згенерований текст не пройшов мовну перевірку'
+    if 'incomplete page' in text or 'only the hero' in text:
+        return 'AI повернув неповну сторінку'
+    return f'внутрішня помилка генерації ({type(exc).__name__})'
 
 
 def generate_html(product, style, language, variant, hero, feature, model: str, gallery=None):
@@ -1603,8 +1681,8 @@ HTML:
         output = _round_image_corners(output)
         return output, input_tokens, output_tokens, ''
     except Exception as exc:
-        logger.warning('generate_html fell back to deterministic template for %s/%s: %s', language, variant, exc)
-        return fallback, 0, 0, f'AI generation failed, used built-in template: {exc}'
+        logger.exception('generate_html fell back to deterministic template for %s/%s', language, variant)
+        return fallback, 0, 0, public_fallback_reason(exc)
 
 
 def _translation_template(markup: str):
