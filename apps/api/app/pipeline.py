@@ -309,15 +309,28 @@ def _visible_text(markup: str) -> str:
     return BeautifulSoup(markup or "", "html.parser").get_text(" ", strip=True)
 
 def _language_matches(markup: str, language: str) -> bool:
+    """Is the visible copy in the target language?
+
+    Tolerant by design: a preserved brand or model name may legitimately carry a
+    few foreign-script letters (a Russian page titled with a Ukrainian product
+    name is still a Russian page). So the Ukrainian/Russian check is a RATIO over
+    all letters, not a veto on the first stray character.
+    """
     text = _visible_text(markup).lower()
+    letters = [ch for ch in text if ch.isalpha()]
+    total = len(letters) or 1
     if language == "pl":
-        latin = sum(ch.isalpha() and ord(ch) < 768 for ch in text)
-        cyr = sum("а" <= ch <= "я" or ch in "іїєґёыэъ" for ch in text)
+        latin = sum(ord(ch) < 768 for ch in letters)
+        cyr = sum("а" <= ch <= "я" or ch in "іїєґёыэъ" for ch in letters)
         return latin > max(80, cyr * 3)
     if language == "ru":
-        return not any(ch in text for ch in "іїєґ") and not any(w in text for w in (" ключові ", " зручн", " підтримк", " завдань", " обладнання"))
+        ua_specific = sum(ch in "іїєґ" for ch in letters)
+        # Up to ~4% Ukrainian-only letters is a preserved name, not a wrong language.
+        return ua_specific <= max(6, total * 0.04)
     if language == "ua":
-        return not any(ch in text for ch in "ыэёъ") and (any(ch in text for ch in "іїєґ") or any(w in text for w in (" ключові ", " зручн", " підтримк", " завдань", " обладнання")))
+        ru_specific = sum(ch in "ыэёъ" for ch in letters)
+        has_ua = any(ch in "іїєґ" for ch in letters) or any(w in text for w in (" ключові ", " зручн", " підтримк", " завдань", " обладнання"))
+        return ru_specific <= max(6, total * 0.04) and has_ua
     return True
 
 
