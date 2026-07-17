@@ -198,6 +198,7 @@ class ProjectIn(BaseModel):
     custom_hero_url: str = ''; custom_feature_url: str = ''
     gallery: list[str] = Field(default_factory=list, max_length=10)
     reuse_images_from: str = ''
+    reuse_labels: list[str] = Field(default_factory=list, max_length=10)
 class StyleIn(BaseModel):
     name: str
     description: str = ''
@@ -613,7 +614,7 @@ def add_language(project_id: str, body: TranslateIn, db: Session = Depends(get_d
 ADOPTABLE_IMAGE_LABELS = ('product-reference', 'hero-desktop-generated', 'hero-mobile-generated', 'feature-generated', 'hero-custom', 'feature-custom')
 
 
-def _adopt_images(db: Session, new_project: Project, source_project_id: str) -> int:
+def _adopt_images(db: Session, new_project: Project, source_project_id: str, labels: list[str] | None = None) -> int:
     """Copy a sibling project's finished images into a new project.
 
     Files are physically copied into the new project's media folder: referencing
@@ -624,7 +625,11 @@ def _adopt_images(db: Session, new_project: Project, source_project_id: str) -> 
     source = db.get(Project, source_project_id)
     if not source or source.source_url != new_project.source_url:
         raise HTTPException(400, 'Готові зображення можна взяти лише з проєкту за цим самим товаром')
-    rows = db.scalars(select(Asset).where(Asset.project_id == source.id, Asset.kind == 'image', Asset.label.in_(ADOPTABLE_IMAGE_LABELS))).all()
+    # An explicit selection limits which visuals are taken; the product reference
+    # always rides along - regenerating the rejected images needs it as the base.
+    wanted = set(labels) if labels else set(ADOPTABLE_IMAGE_LABELS)
+    wanted.add('product-reference')
+    rows = db.scalars(select(Asset).where(Asset.project_id == source.id, Asset.kind == 'image', Asset.label.in_([l for l in ADOPTABLE_IMAGE_LABELS if l in wanted]))).all()
     adopted = 0
     for asset in rows:
         prefix = f'/media/{source.id}/'
@@ -639,7 +644,8 @@ def _adopt_images(db: Session, new_project: Project, source_project_id: str) -> 
             shutil.copy2(src_file, dst_dir / name)
             new_url = f'/media/{new_project.id}/{name}'
         db.add(Asset(project_id=new_project.id, kind='image', label=asset.label, url=new_url, prompt=asset.prompt, model=asset.model, width=asset.width, height=asset.height, cost=0, metadata_json=json.dumps({'adopted_from': source.id}, ensure_ascii=False)))
-        adopted += 1
+        if asset.label != 'product-reference':
+            adopted += 1
     return adopted
 
 
@@ -694,7 +700,7 @@ def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depen
     db.add(p); db.flush()
     adopted = 0
     if payload.reuse_images_from:
-        adopted = _adopt_images(db, p, payload.reuse_images_from)
+        adopted = _adopt_images(db, p, payload.reuse_images_from, labels=payload.reuse_labels or None)
     audit(db, user, 'project.create', 'project', p.id, {'adopted_images': adopted} if adopted else None)
     db.commit(); db.refresh(p)
     process_project.delay(p.id, reuse_images=bool(adopted))
