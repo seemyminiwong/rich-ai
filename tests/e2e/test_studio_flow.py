@@ -33,6 +33,12 @@ def browser_page():
         page.on('pageerror', lambda exc: errors.append(str(exc)))
         console = []
         page.on('console', lambda msg: console.append(f'[{msg.type}] {msg.text}'))
+
+        def note_failed_response(response):
+            if response.status >= 400:
+                console.append(f'[http {response.status}] {response.request.method} {response.url}')
+
+        page.on('response', note_failed_response)
         yield page, errors
         # Post-mortem for CI: whatever the page looked like when the test ended.
         try:

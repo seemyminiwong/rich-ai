@@ -75,7 +75,7 @@ jobs:
       - name: Start app (API + frontend, one origin)
         run: |
           mkdir -p /tmp/e2e-media
-          nohup python scripts/e2e_server.py > /tmp/e2e-server.log 2>&1 &
+          nohup python -u scripts/e2e_server.py > /tmp/e2e-server.log 2>&1 &
           for i in $(seq 1 60); do
             curl -sf http://127.0.0.1:8000/health && break
             sleep 1
