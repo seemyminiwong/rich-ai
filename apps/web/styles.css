@@ -295,3 +295,5 @@ optgroup[disabled]{color:var(--gray-3)}
 .techloop-item:hover{color:var(--c);transform:scale(1.07)}
 @keyframes tlScroll{to{transform:translate3d(-50%,0,0)}}
 @media(prefers-reduced-motion:reduce){.techloop-track{animation:none}}
+.auth-or{text-align:center;color:var(--muted);font-size:12px;font-weight:700;display:flex;align-items:center;gap:12px}
+.auth-or::before,.auth-or::after{content:'';flex:1;height:1px;background:var(--border)}

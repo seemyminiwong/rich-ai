@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import html as html_lib
 import io
 import json
@@ -12,8 +13,9 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote, urlencode
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, HttpUrl
 from sqlalchemy import delete as sa_delete, func, select
@@ -397,6 +399,101 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
     user = User(email=inv.email, name=payload.name, password_hash=hash_password(payload.password), role=inv.role, active=True)
     db.add(user); inv.accepted_at = datetime.utcnow(); db.flush(); audit(db, user, 'auth.register', 'user', user.id); db.commit()
     return {'access_token': token(user), 'token_type': 'bearer'}
+
+
+# --- GitHub OAuth ------------------------------------------------------------
+# Вхід через GitHub НЕ відкриває реєстрацію будь-кому: пускаємо, якщо email з
+# GitHub (перевірений) або вже має обліковий запис, або має чинне запрошення -
+# тоді запис створюється з роллю із запрошення. Стороння людина з GitHub
+# отримує чітку відмову: це внутрішній інструмент.
+
+def _github_redirect_uri(request: Request) -> str:
+    return settings.github_callback_url or str(request.base_url).rstrip('/') + '/api/auth/github/callback'
+
+
+def _github_state_key() -> bytes:
+    return hashlib.sha256(b'artline-github:' + settings.jwt_secret.encode()).digest()
+
+
+def _github_state() -> str:
+    ts = str(int(time.time()))
+    return ts + '.' + hmac.new(_github_state_key(), ts.encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def _github_state_ok(value: str) -> bool:
+    ts, _, signature = (value or '').partition('.')
+    if not ts.isdigit() or not signature:
+        return False
+    expected = hmac.new(_github_state_key(), ts.encode(), hashlib.sha256).hexdigest()[:32]
+    return hmac.compare_digest(expected, signature) and 0 <= time.time() - int(ts) < 600
+
+
+@app.get('/api/auth/methods')
+def auth_methods():
+    """Публічний: які способи входу увімкнено (екран логіна показує кнопки)."""
+    return {'github': bool(settings.github_client_id and settings.github_client_secret)}
+
+
+@app.get('/api/auth/github')
+def github_start(request: Request):
+    if not (settings.github_client_id and settings.github_client_secret):
+        raise HTTPException(404, 'GitHub-вхід не налаштовано')
+    return RedirectResponse('https://github.com/login/oauth/authorize?' + urlencode({
+        'client_id': settings.github_client_id,
+        'redirect_uri': _github_redirect_uri(request),
+        'scope': 'user:email',
+        'state': _github_state(),
+    }))
+
+
+@app.get('/api/auth/github/callback')
+def github_callback(request: Request, code: str = '', state: str = '', db: Session = Depends(get_db)):
+    def bounce(message: str):
+        return RedirectResponse('/#gh_error=' + quote(message))
+
+    if not (settings.github_client_id and settings.github_client_secret):
+        return bounce('GitHub-вхід не налаштовано')
+    if not code or not _github_state_ok(state):
+        return bounce('GitHub-вхід: недійсний або протермінований запит. Спробуйте ще раз')
+    try:
+        with safe_client(timeout=15) as http:
+            exchange = http.post('https://github.com/login/oauth/access_token',
+                                 data={'client_id': settings.github_client_id,
+                                       'client_secret': settings.github_client_secret,
+                                       'code': code,
+                                       'redirect_uri': _github_redirect_uri(request)},
+                                 headers={'Accept': 'application/json'})
+            access = exchange.json().get('access_token') if exchange.status_code == 200 else None
+            if not access:
+                return bounce('GitHub не підтвердив авторизацію')
+            gh = {'Authorization': f'Bearer {access}', 'Accept': 'application/vnd.github+json'}
+            profile = http.get('https://api.github.com/user', headers=gh).json()
+            emails_reply = http.get('https://api.github.com/user/emails', headers=gh)
+            emails = emails_reply.json() if emails_reply.status_code == 200 else []
+    except Exception:
+        logger.exception('GitHub OAuth exchange failed')
+        return bounce('GitHub недоступний. Спробуйте пізніше')
+    verified = [e for e in emails if isinstance(e, dict) and e.get('verified')]
+    email = (next((e['email'] for e in verified if e.get('primary')), None)
+             or (verified[0]['email'] if verified else '')
+             or (profile.get('email') or '')).strip().lower()
+    if not email:
+        return bounce('GitHub не віддав підтвердженого email. Додайте і підтвердьте email у GitHub')
+    user = db.scalar(select(User).where(func.lower(User.email) == email))
+    if user is None:
+        invite = db.scalar(select(Invite).where(func.lower(Invite.email) == email,
+                                                Invite.accepted_at == None,  # noqa: E711
+                                                Invite.expires_at > datetime.utcnow()))
+        if invite is None:
+            return bounce(f'Для {email} немає запрошення. Попросіть адміністратора запросити вас')
+        user = User(email=email, name=(profile.get('name') or profile.get('login') or ''),
+                    password_hash=hash_password(secrets.token_urlsafe(24)), role=invite.role, active=True)
+        db.add(user); invite.accepted_at = datetime.utcnow(); db.flush()
+        audit(db, user, 'auth.register_github', 'user', user.id, {'github_login': profile.get('login')})
+    if not user.active:
+        return bounce('Обліковий запис деактивовано')
+    user.last_login_at = datetime.utcnow(); audit(db, user, 'auth.login_github', 'user', user.id); db.commit()
+    return RedirectResponse('/#gh_token=' + quote(token(user)))
 
 
 @app.get('/api/me')

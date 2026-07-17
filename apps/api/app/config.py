@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     # 'transitional' serves unsigned /media URLs with a warning (old artifacts keep
     # working); 'strict' refuses them. Flip to strict once logs run quiet.
     media_signing: str = 'transitional'
+    # GitHub OAuth (порожньо = кнопка входу через GitHub вимкнена).
+    github_client_id: str = ''
+    github_client_secret: str = ''
+    # Явний callback, коли авто-визначення не годиться (TLS за Caddy тощо).
+    github_callback_url: str = ''
     # 'shared' (усі редагують усе) або 'owner' (змінює лише власник або admin).
     project_ownership: str = 'shared'
     request_timeout_seconds: int = 75
