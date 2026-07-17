@@ -410,6 +410,13 @@ def process_project(self, project_id, reuse_images=False):
                             added_input += relayout_in
                             added_output += relayout_out
                             if relaid:
+                                # The relayout keeps URLs byte-identical by design, so it
+                                # inherits the DESKTOP hero. Swap in the portrait asset
+                                # mechanically - both URLs are ours and deterministic.
+                                desktop_hero = hero_by_variant.get('desktop')
+                                mobile_hero = hero_by_variant.get('mobile')
+                                if desktop_hero and mobile_hero and desktop_hero != mobile_hero:
+                                    relaid = relaid.replace(desktop_hero, mobile_hero)
                                 rich_html, fallback_reason = relaid, ''
                             else:
                                 # A failed relayout still billed tokens; keep them and

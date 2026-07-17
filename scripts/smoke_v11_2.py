@@ -201,6 +201,8 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'mobile relayout swaps in the portrait hero': 'relaid = relaid.replace(desktop_hero, mobile_hero)' in tasks,
+    'substituted frames get a crop-proof fit': "img['style'] = 'display:block;width:100%;height:100%;max-height:320px;object-fit:contain" in pipeline,
     'showcase hero is not double-darkened': 'NO opacity on this img' in prompts and 'rgba(16,16,16,0) 100%' in prompts,
     'fallback is recorded on the artifact': 'fallback_reason=fallback_reason' in tasks and 'fallback_reason' in models,
     'fallback escalates to error, alert and project.error': "level='error'" in tasks and 'send_alert(f\'Rich Studio: аварійний шаблон' in tasks and 'аварійний шаблон замість обраного стилю' in tasks,
