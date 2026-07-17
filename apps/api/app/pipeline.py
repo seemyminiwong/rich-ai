@@ -1130,6 +1130,33 @@ def _mime_for(path: Path) -> str:
     return {'.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif'}.get(suffix, 'image/jpeg')
 
 
+# Category keyword -> the single scene the Hero may build. The prompts used to
+# enumerate example environments per category and the image model painted the
+# examples into the frame (a 3D printer appeared next to an inverter). The server
+# picks ONE line now; the model never sees the menu.
+_ENVIRONMENTS = (
+    (('інвертор', 'инвертор', 'inverter', 'зберігання енергії', 'хранения энергии', 'акумулятор', 'аккумулятор', 'батаре', 'генератор', 'солнеч', 'сонячн', 'ups', 'дбж', 'ибп'),
+     'a clean technical utility room: the product mounted or placed at its realistic installation spot on a neutral wall, subtle electrical infrastructure (conduit, distribution box) in soft focus'),
+    (('3d принтер', '3d-принтер', 'printer', 'принтер 3d', 'сканер'),
+     'a tidy maker workshop desk with neutral tools and finished printed parts in soft focus'),
+    (("комп'ютер", 'компьютер', 'пк', 'ноутбук', 'моноблок', '系统блок', 'системний блок', 'системный блок'),
+     'an organised modern workstation desk with a monitor glow in soft focus'),
+    (('монітор', 'монитор'), 'a clean desk setup where the display is the centrepiece'),
+    (('крісло', 'кресло', 'стіл', 'стол'), 'a bright ergonomic home-office corner'),
+    (('роутер', 'маршрутизатор', 'комутатор', 'коммутатор', 'мереж', 'сетев'),
+     'a neat network shelf or small rack area with tidy cabling in soft focus'),
+)
+
+
+def hero_environment(product: dict) -> str:
+    """One concrete scene for this product, chosen server-side by category."""
+    haystack = ' '.join(str(product.get(k) or '') for k in ('category', 'name')).lower()
+    for keywords, scene in _ENVIRONMENTS:
+        if any(k in haystack for k in keywords):
+            return scene
+    return 'a clean professional space that matches this exact product category, neutral and uncluttered'
+
+
 def generate_image(
     prompt: str,
     project_id: str,

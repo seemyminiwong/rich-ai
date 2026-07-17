@@ -12,6 +12,7 @@ from app.models import Artifact, Asset, CriticReport, Event, Project, Status, St
 from app.prompts import BASE_STYLE_VERSION
 from app.pipeline import (
     _image_urls_of,
+    hero_environment,
     core_feature_text,
     extract_product,
     fetch_html,
@@ -293,7 +294,8 @@ def process_project(self, project_id, reuse_images=False):
                         size, width, height, composition = hero_specs.get(variant, hero_specs['desktop'])
                         log(db, project, 'images', f'Створення Hero {variant} · {project.image_model}', 24 + offset * 5)
                         hero_prompt = (
-                            f"{style_hero}\nCanvas requirement: {composition}. "
+                            f"{style_hero}\nENVIRONMENT: {hero_environment(product)}\n"
+                            f"Canvas requirement: {composition}. "
                             f"Render specifically at {size}; do not crop important product parts.\n"
                             f"Negative requirements: {negative}\nProduct: {product_name}. Verified product facts: {facts}"
                         )

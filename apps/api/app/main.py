@@ -68,7 +68,7 @@ MANAGED_STYLES = [
     },
     {
         'name': ENGINEERING_STYLE_NAME,
-        'default': True,
+        'default': False,
         'values': {
             'description': 'Керований інженерний стиль ARTLINE для технічних категорій: цифри з одиницями, підтверджені конструктивні рішення та реальні межі застосування',
             'prompt': ENGINEERING_STYLE_PROMPT,
@@ -82,7 +82,7 @@ MANAGED_STYLES = [
     },
     {
         'name': SHOWCASE_STYLE_NAME,
-        'default': False,
+        'default': True,
         'values': {
             'description': 'Іміджевий формат на реальних фото галереї: темний Hero-кадр, великі числа, чергування темних і світлих секцій. Для флагманських товарів із багатою галереєю.',
             'prompt': SHOWCASE_STYLE_PROMPT,
@@ -124,6 +124,17 @@ def seed():
                     setattr(style, key, value)
                 current_version = db.scalar(select(func.max(StyleVersion.version)).where(StyleVersion.style_id == style.id)) or 0
                 db.add(StyleVersion(style_id=style.id, version=current_version + 1, prompt=style.prompt, hero_prompt=style.hero_prompt, feature_prompt=style.feature_prompt))
+        # The spec default wins as long as the operator has not promoted a CUSTOM
+        # style: switching between managed defaults follows the code, a manual
+        # custom choice is never overridden.
+        managed_names = {spec['name'] for spec in MANAGED_STYLES}
+        spec_default_name = next((spec['name'] for spec in MANAGED_STYLES if spec['default']), None)
+        current_default = db.scalar(select(Style).where(Style.is_default == True))
+        if spec_default_name and current_default is not None and current_default.name in managed_names and current_default.name != spec_default_name:
+            wanted = db.scalar(select(Style).where(Style.name == spec_default_name))
+            if wanted:
+                current_default.is_default = False
+                wanted.is_default = True
         # Never leave the installation without a default style.
         if not db.scalar(select(Style).where(Style.is_default == True)):
             fallback = db.scalar(select(Style).where(Style.name == ENGINEERING_STYLE_NAME)) or db.scalar(select(Style))
