@@ -14,6 +14,7 @@ from app.pipeline import (
     extract_product,
     fetch_html,
     gallery_urls,
+    validated_gallery_urls,
     generate_html,
     generate_image,
     relayout_html,
@@ -152,7 +153,9 @@ def process_project(self, project_id, reuse_images=False):
             jsonld, images, title, clean_text = parse_page(page_html, project.source_url)
             project.source_images = json.dumps(images, ensure_ascii=False)
             chosen_gallery = [u for u in json.loads(project.gallery_json or '[]') if isinstance(u, str) and u.strip()]
-            page_gallery = chosen_gallery or gallery_urls(images)
+            # Manual picks were already vetted by the operator's browser;
+            # the automatic pick must survive a liveness check against the CDN.
+            page_gallery = chosen_gallery or validated_gallery_urls(images)
             if chosen_gallery:
                 log(db, project, 'scrape', f'Використовується галерея, обрана вручну ({len(chosen_gallery)} кадрів)', 6)
             db.commit()

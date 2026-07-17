@@ -200,6 +200,8 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'showcase wears artline colours': '#19BCC9' in prompts.split('SHOWCASE_STYLE_PROMPT')[1].split('SHOWCASE_HERO_PROMPT')[0] and '#ffd47a' not in prompts and '#050505' not in prompts,
+    'auto gallery survives a liveness check': 'def validated_gallery_urls' in pipeline and 'chosen_gallery or validated_gallery_urls(images)' in tasks,
     'probe offers images from a sibling project': "'prior': prior" in main and 'ADOPTABLE_IMAGE_LABELS' in main,
     'adopted images are copied, not referenced': 'def _adopt_images' in main and 'shutil.copy2' in main and "json.dumps({'adopted_from': source.id}" in main,
     'adoption locked to the same product url': 'source.source_url != new_project.source_url' in main,

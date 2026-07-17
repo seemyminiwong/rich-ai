@@ -432,18 +432,72 @@ def gallery_urls(images: list[str], limit: int = 6) -> list[str]:
         match = re.match(r'(\d+)_gallery_', name)
         return int(match.group(1)) if match else 0
 
-    best: dict[str, str] = {}
+    groups: dict[str, list[str]] = {}
     order: list[str] = []
     for url in images or []:
         identity = _gallery_identity(url)
         if not identity:
             continue
-        if identity not in best:
-            best[identity] = url
+        if identity not in groups:
+            groups[identity] = []
             order.append(identity)
-        elif weight(url) > weight(best[identity]):
-            best[identity] = url
-    return [best[i] for i in order[:limit]]
+        groups[identity].append(url)
+    picked = []
+    for identity in order[:limit]:
+        picked.append(sorted(groups[identity], key=weight, reverse=True)[0])
+    return picked
+
+
+def _url_is_alive(url: str) -> bool:
+    """Cheap liveness probe. HEAD first; some CDNs reject HEAD, so fall back to a
+    one-byte ranged GET. Anything but 2xx counts as dead."""
+    try:
+        with httpx.Client(timeout=6, follow_redirects=True) as http:
+            reply = http.head(url)
+            if reply.status_code == 405 or reply.status_code == 403:
+                reply = http.get(url, headers={'Range': 'bytes=0-0'})
+            return 200 <= reply.status_code < 300 or reply.status_code == 206
+    except Exception:
+        return False
+
+
+def validated_gallery_urls(images: list[str], limit: int = 6) -> list[str]:
+    """gallery_urls with a liveness pass.
+
+    The artline CDN does not host every size variant of every frame: the textual
+    "largest variant" pick regularly lands on a 404, which then renders as a
+    broken-image icon on the page. For each frame try variants from largest to
+    smallest and keep the first one that actually answers; a frame with no live
+    variant is dropped entirely.
+    """
+    def weight(url: str) -> int:
+        name = url.rsplit('/', 1)[-1]
+        if name.startswith('gallery_'):
+            return 10000
+        match = re.match(r'(\d+)_gallery_', name)
+        return int(match.group(1)) if match else 0
+
+    groups: dict[str, list[str]] = {}
+    order: list[str] = []
+    for url in images or []:
+        identity = _gallery_identity(url)
+        if not identity:
+            continue
+        groups.setdefault(identity, [])
+        if identity not in order:
+            order.append(identity)
+        groups[identity].append(url)
+    picked = []
+    for identity in order:
+        if len(picked) >= limit:
+            break
+        for candidate in sorted(set(groups[identity]), key=weight, reverse=True):
+            if _url_is_alive(candidate):
+                picked.append(candidate)
+                break
+        else:
+            logger.warning('Gallery frame %s has no live variant, dropped', identity)
+    return picked
 
 
 def inspect_product_references(images: list[str], preferred_url: str = '') -> list[dict]:
