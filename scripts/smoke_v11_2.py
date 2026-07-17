@@ -194,6 +194,34 @@ checks = {
     'license present': (root / 'LICENSE').exists() and 'PolyForm Noncommercial License 1.0.0' in (root / 'LICENSE').read_text(encoding='utf-8'),
     'critic css': 'v11.8' in css,
 }
+
+# Late additions: registered via update() with asserts in the build script, after
+# several dict-edit attempts silently missed their anchors. Every check that
+# guards a UI feature added after v12.0 lives here.
+checks.update({
+    'showcase is protected in the ui too': "'ARTLINE Showcase'" in web.split('MANAGED_STYLE_NAMES=')[1].split(']')[0],
+    'preset picker is a slider with in-place updates': 'function slidePreset' in web and 'type="range"' in web and 'pickPreset' not in web,
+    'page probe is free and permissioned': "@app.post('/api/projects/probe')" in main,
+    'operator can curate the gallery': 'gallery_json' in models and 'chosen_gallery' in tasks and 'function toggleFrame' in web,
+    'showcase verdict warns on thin galleries': 'для Showcase замало' in web,
+    'broken previews are dropped from the run': 'function frameError' in web and 'x.on&&!x.dead' in web,
+    'probe box cannot inflate the dialog': 'dialog form>*{min-width:0}' in css and '.probe-grid{max-height' in css,
+})
+
+# Structural guard for the class of bug that ate the probe helpers: every function
+# the New Project dialog calls must be defined exactly once.
+import re as _re
+_dialog = web[web.index('function projectDialog'):web.index('async function createProject')]
+_called = set(_re.findall(r'(?:onclick|onblur|onchange|oninput|onerror)="([A-Za-z_]\w*)\(', _dialog)) | set(_re.findall(r'\$\{([A-Za-z_]\w*)\(', _dialog))
+_known = {'esc', 'hint', 'options', 'dataList', 'languagePicker', 'updateEstimate', 'setProjectMode', 'probePage', 'createProject'}
+_defined = lambda f: _re.search(r'function ' + f + r'\(', web) or _re.search(r'[=,;({\s]' + f + r'\s*=', web)
+_missing = sorted(f for f in _called if f not in _known and not _defined(f))
+# A truthy string here would count as a pass; keep the value strictly boolean and
+# report the names on their own line instead.
+if _missing:
+    print('  undefined in the dialog:', ', '.join(_missing))
+checks['dialog references only defined functions'] = not _missing
+
 failed = [name for name, ok in checks.items() if not ok]
 for name, ok in checks.items():
     print(f"{'OK' if ok else 'FAIL'}: {name}")
