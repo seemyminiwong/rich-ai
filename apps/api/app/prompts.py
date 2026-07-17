@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.17"
+BASE_STYLE_VERSION = "12.18"
 BASE_STYLE_NAME = "ARTLINE Base"
 ENGINEERING_STYLE_NAME = "ARTLINE Engineering"
 
@@ -608,8 +608,8 @@ SHOWCASE DESIGN SYSTEM
 SECTION SET, IN ORDER
 1. HERO - dark, full-bleed photograph
 - Wrapper: position:relative;overflow:hidden;border-radius:32px;border:1px solid #35393F;background:#101010 url(HERO_URL) center/cover no-repeat - substitute HERO_URL with the exact supplied hero URL. The same URL appears TWICE in the Hero: as this background and as the img below. That redundancy is intentional - never drop either.
-- THE FIRST CHILD of the wrapper is the hero asset as <img style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;opacity:.64"> - an IMG element, never a CSS background (background images do not survive the artline editor). A Hero without this img is an invalid page.
-- Above it one overlay div: position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.94),rgba(0,0,0,.70) 48%,rgba(0,0,0,.18)). Mobile: vertical gradient (180deg) with the dense end at the bottom, text below the product silhouette.
+- THE FIRST CHILD of the wrapper is the hero asset as <img style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center"> - NO opacity on this img: the overlay below is the only darkening. Dimming the photo as well crushes a dark scene into a black rectangle - an IMG element, never a CSS background (background images do not survive the artline editor). A Hero without this img is an invalid page.
+- Above it one overlay div: position:absolute;inset:0;background:linear-gradient(90deg,rgba(16,16,16,.92) 0%,rgba(16,16,16,.55) 52%,rgba(16,16,16,0) 100%) - it must fade to FULLY TRANSPARENT on the side where the product stands, so the photo is plainly visible there. Mobile: same ramp at 180deg, dense at the bottom, transparent at the top over the product.
 - Content layer: position:relative;z-index:1;min-height:585px (mobile ~600px);padding:78px 46px 54px (mobile 300px 18px 26px);display:flex;align-items:center.
 - Inside, max-width:720px: a pill badge, one h2 60-64px/950 line-height .94 (mobile 34-38px), one bold subtitle 24-27px in #C9F0F4, one paragraph 16-17px #d8dde2, then a chip row of 3 white pills with the three strongest confirmed values.
 - NAME APPEARS ONCE PER SECTION: the badge carries only the brand and product category (for example "DEYE · Гібридний інвертор"), the h2 carries the full model name exactly once. Badge text duplicating the h2 is a defect. The same rule applies to the final recap badge.
@@ -628,7 +628,7 @@ FACTS AND TONE
 - SEO: natural category wording in h2/h3; no keyword stuffing.
 
 FINAL SELF-CHECK
-- the Hero wrapper carries the hero URL as background (center/cover) AND its first child is the same URL as <img> (position:absolute;inset:0); overlay above; text above the overlay;
+- the Hero wrapper carries the hero URL as background (center/cover) AND its first child is the same URL as <img> (position:absolute;inset:0) with NO opacity; the overlay fades to transparent over the product so the photo is visible; text above the overlay;
 - the badge does not repeat the h2: brand + category in the badge, full model once in the h2;
 - no photo-only sections; the trust tiles contain zero registry data (SKU, codes, EAN, country);
 - no white-background render is cropped by cover or placed bare on a dark canvas;
