@@ -9,7 +9,9 @@ from app.celery_app import celery
 from app.config import DEFAULT_IMAGE_PRICING, DEFAULT_TEXT_PRICING, settings
 from app.db import SessionLocal
 from app.models import Artifact, Asset, CriticReport, Event, Project, Status, Style
+from app.prompts import BASE_STYLE_VERSION
 from app.pipeline import (
+    _image_urls_of,
     core_feature_text,
     extract_product,
     fetch_html,
@@ -378,6 +380,7 @@ def process_project(self, project_id, reuse_images=False):
             total_outputs = len(languages) * len(variants)
             completed_outputs = 0
             feature_done = False
+            used_page_images = set()
             # Desktop first: the mobile master is derived from the finished desktop
             # page by a layout-only transform, so the two variants cannot drift.
             variants = sorted(variants, key=lambda v: 0 if v == 'desktop' else 1)
@@ -498,15 +501,18 @@ def process_project(self, project_id, reuse_images=False):
                         Artifact.language == language,
                         Artifact.variant == variant,
                     )) or 0
+                    marker = (f'<!-- ARTLINE Rich Studio · стиль v{BASE_STYLE_VERSION} · {language}/{variant} · '
+                              f'{datetime.utcnow().strftime("%Y-%m-%d %H:%M")} UTC -->\n')
                     db.add(Artifact(
                         project_id=project.id,
                         language=language,
                         variant=variant,
-                        html=rich_html,
+                        html=marker + rich_html,
                         version=latest_version + 1,
                     ))
                     db.commit()
                     completed_outputs += 1
+                    used_page_images.update(_image_urls_of(rich_html))
 
             recalculate_cost(project)
             project.cost_breakdown_json = json.dumps(cost_breakdown(project, extract_in, extract_out, content_in, content_out), ensure_ascii=False)
@@ -518,6 +524,14 @@ def process_project(self, project_id, reuse_images=False):
             for critic_type in ('html','facts','accessibility','marketing'):
                 score, summary, issues, suggestions = critic_html(latest, critic_type, product)
                 db.add(CriticReport(project_id=project.id, critic_type=critic_type, score=score, summary=summary, issues_json=json.dumps(issues, ensure_ascii=False), suggestions_json=json.dumps(suggestions, ensure_ascii=False)))
+            known_urls = {a.url for a in db.scalars(select(Asset).where(Asset.project_id == project.id, Asset.kind == 'image')).all()}
+            page_extra = [u for u in sorted(used_page_images) if u and u not in known_urls]
+            for index, url in enumerate(page_extra, start=1):
+                db.add(Asset(project_id=project.id, kind='image', label=f'page-image-{index}', url=url, prompt='', model='source', cost=0,
+                             metadata_json=json.dumps({'source': 'page-html'}, ensure_ascii=False)))
+            if page_extra:
+                db.commit()
+                log(db, project, 'images', f'До медіатеки додано всі зображення сторінки ({len(page_extra)} поза базовим набором)')
             project.status = Status.review
             project.stage = 'review'
             project.progress = 100

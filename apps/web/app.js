@@ -11,7 +11,7 @@ const ASSET_LABEL={
   'product-reference':'Фото товару · референс','hero-generated':'Hero · AI','hero-desktop-generated':'Hero Desktop · AI','hero-mobile-generated':'Hero Mobile · AI','feature-generated':'Feature · AI',
   'hero-source':'Hero · оригінал','feature-source':'Feature · оригінал','hero-custom':'Hero · власне','feature-custom':'Feature · власне'
 };
-const assetLabel=a=>{if(/^gallery-frame-(\d+)$/.test(a?.label||''))return `Кадр галереї ${a.label.split('-')[2]} · вихідний`;return ASSET_LABEL[a?.label]||a?.label||'Зображення'};
+const assetLabel=a=>{if(/^gallery-frame-(\d+)$/.test(a?.label||''))return `Кадр галереї ${a.label.split('-')[2]} · вихідний`;if(/^page-image-(\d+)$/.test(a?.label||''))return `Зображення сторінки ${a.label.split('-')[2]}`;return ASSET_LABEL[a?.label]||a?.label||'Зображення'};
 const assetCategory=a=>(a?.label||'').includes('generated')?'generated':(a?.label||'').includes('custom')?'custom':(a?.label||'').includes('reference')||a?.model==='source'?'source':'other';
 const assetRole=a=>{const label=(a?.label||'').toLowerCase();return label.includes('hero')?'hero':label.includes('feature')?'feature':label.includes('reference')?'reference':'other'};
 const languageLabel=code=>LANG[code]||String(code||'').toUpperCase();
