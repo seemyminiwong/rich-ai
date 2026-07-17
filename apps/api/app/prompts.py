@@ -602,6 +602,8 @@ SHOWCASE DESIGN SYSTEM
 - Weights are heavy: h2 900-950, numeric values 950, chips 850-900. Section gap 18px, big-section padding 40-48px desktop / 22-26px mobile.
 - Rhythm rule: strictly alternate section canvases - dark, light, dark, light. Two same-tone sections may never touch.
 - Photography works only next to copy: every frame sits in a split or a card with text. When GALLERY_IMAGES offers fewer frames, drop photo slots instead of repeating an image.
+- FITTING RULE for gallery frames: most are studio renders of the product on a white background. Such frames must NEVER be cropped: use object-fit:contain inside a white card (background:#FFFFFF; border:1px solid #D0D7DE; radius 20-28px; padding:18-24px) with a fixed height, so the whole product stays visible. object-fit:cover is allowed only for frames that show a real environment filling the whole picture. An amputated product edge is a defect.
+- Inside dark sections a white-background frame still sits in a WHITE framed card - never bare on the dark canvas and never darkened.
 
 SECTION SET, IN ORDER
 1. HERO - dark, full-bleed photograph
@@ -627,6 +629,7 @@ FACTS AND TONE
 FINAL SELF-CHECK
 - the FIRST CHILD of the Hero wrapper is the hero <img> (position:absolute;inset:0), never a CSS background; overlay above it; text above the overlay;
 - no photo-only sections; the trust tiles contain zero registry data (SKU, codes, EAN, country);
+- no white-background render is cropped by cover or placed bare on a dark canvas;
 - dark and light sections strictly alternate; pills only where specified; gold only for eyebrows, values and badge borders;
 - every gallery URL used at most once; no invented image URLs; alt on every img; loading="lazy" beyond the Hero;
 - desktop and mobile copy is word-for-word identical; mobile is single-column with the same section order;
