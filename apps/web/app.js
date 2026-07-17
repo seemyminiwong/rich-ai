@@ -35,7 +35,48 @@ function legacyCopy(text){try{const ta=document.createElement('textarea');ta.val
 // usually opened over plain HTTP on the LAN, so fall back to the legacy copy path.
 function copyText(btn){const t=btn?.dataset?.copy||'';if(!t)return;const ok=()=>toast('Скопійовано'),bad=()=>toast('Не вдалося скопіювати',true);if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(t).then(ok).catch(()=>{legacyCopy(t)?ok():bad()})}else{legacyCopy(t)?ok():bad()}}
 function hint(text){return `<span class="hint" tabindex="0" role="img" aria-label="${esc(text)}" data-tip="${esc(text)}">i</span>`}
-function bootScreen(){root.innerHTML=`<div class="boot-screen"><img src="${LOGO}" alt="ARTLINE"><div class="boot-spinner"></div><p>Завантаження робочого простору…</p></div>`}
+
+// --- Піксельне поле (ванільний порт PixelBlast: FBM-шум -> дизеринг Байєра ->
+// хвилі від кліків). Малюємо 1 клітинку = 1 піксель ImageData і розтягуємо CSS-ом
+// з image-rendering:pixelated - ті самі "чанки" без WebGL і залежностей.
+// Цикл сам гасне, щойно canvas зникає з DOM (повний ре-рендер сторінки).
+function startPixelField(canvas){
+  if(!canvas||canvas.dataset.live)return;canvas.dataset.live='1';
+  const ctx=canvas.getContext('2d'),CELL=6,BLOCK=8;
+  const BAYER=[0,32,8,40,2,34,10,42,48,16,56,24,50,18,58,26,12,44,4,36,14,46,6,38,60,28,52,20,62,30,54,22,3,35,11,43,1,33,9,41,51,19,59,27,49,17,57,25,15,47,7,39,13,45,5,37,63,31,55,23,61,29,53,21];
+  let bw=0,bh=0,img,px;
+  function resize(){const w=canvas.clientWidth||innerWidth,h=canvas.clientHeight||innerHeight;bw=Math.max(1,Math.ceil(w/CELL));bh=Math.max(1,Math.ceil(h/CELL));canvas.width=bw;canvas.height=bh;img=ctx.createImageData(bw,bh);px=new Uint32Array(img.data.buffer)}
+  resize();addEventListener('resize',resize,{passive:true});
+  const hash=(x,y,z)=>{const n=Math.sin(x*127.1+y*311.7+z*74.7)*43758.5453;return n-Math.floor(n)};
+  function noise(x,y,z){const xi=Math.floor(x),yi=Math.floor(y),zi=Math.floor(z),fx=x-xi,fy=y-yi,fz=z-zi,ux=fx*fx*(3-2*fx),uy=fy*fy*(3-2*fy);
+    const slice=zz=>{const a=hash(xi,yi,zz),b=hash(xi+1,yi,zz),c=hash(xi,yi+1,zz),d=hash(xi+1,yi+1,zz);return a+(b-a)*ux+(c-a)*uy+(a-b-c+d)*ux*uy};
+    return slice(zi)+(slice(zi+1)-slice(zi))*(fz*fz*(3-2*fz))}
+  const ripples=[],host=canvas.parentElement;
+  host&&host.addEventListener('pointerdown',e=>{const r=canvas.getBoundingClientRect();ripples.push({x:(e.clientX-r.left)/(r.width||1)*bw,y:(e.clientY-r.top)/(r.height||1)*bh,at:performance.now()});if(ripples.length>8)ripples.shift()},{passive:true});
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const t0=Math.random()*100;let last=0;
+  function frame(now){
+    if(!canvas.isConnected)return;
+    if(now-last<33){requestAnimationFrame(frame);return}last=now;
+    const t=t0+now*0.00009,gw=Math.ceil(bw/BLOCK)+1,gh=Math.ceil(bh/BLOCK)+1,grid=new Float32Array(gw*gh);
+    for(let gy=0;gy<gh;gy++)for(let gx=0;gx<gw;gx++){
+      let s=0,amp=1,f=0.09;
+      for(let o=0;o<3;o++){s+=amp*noise(gx*BLOCK*f,gy*BLOCK*f,t*(1+o*0.6));f*=1.9;amp*=0.65}
+      let feed=s*0.5-0.58;
+      for(let i=0;i<ripples.length;i++){const rp=ripples[i],dt=(now-rp.at)/1000,dx=(gx*BLOCK-rp.x)/bh,dy=(gy*BLOCK-rp.y)/bh,d=Math.sqrt(dx*dx+dy*dy),ring=Math.exp(-Math.pow((d-dt*0.9)/0.09,2))*Math.exp(-1.4*dt)*Math.exp(-2.2*d);if(ring>feed)feed=ring}
+      grid[gy*gw+gx]=feed}
+    px.fill(0);
+    const edge=Math.max(8,Math.min(bw,bh)*0.16);
+    for(let y=0;y<bh;y++){const row=y*bw,gy=(y/BLOCK|0)*gw,ey=Math.min(y,bh-1-y);
+      for(let x=0;x<bw;x++){
+        const feed=grid[gy+(x/BLOCK|0)];
+        if(feed+BAYER[(y&7)*8+(x&7)]/64-0.5>0.5){
+          const fade=Math.min(1,Math.min(ey,Math.min(x,bw-1-x))/edge);
+          if(fade>0)px[row+x]=(200*fade<<24)|0xC9BC19}}}
+    ctx.putImageData(img,0,0);
+    if(!reduced)requestAnimationFrame(frame)}
+  requestAnimationFrame(frame)}
+function bootScreen(){root.innerHTML=`<div class="boot-screen"><canvas class="pixel-bg"></canvas><img src="${LOGO}" alt="ARTLINE"><div class="boot-spinner"></div><p>Завантаження робочого простору…</p></div>`;startPixelField(document.querySelector('.pixel-bg'))}
 let keysBound=false;
 function bindKeys(){if(keysBound)return;keysBound=true;document.addEventListener('keydown',e=>{if(e.key==='/'&&!e.target.matches('input,textarea,select')){const s=document.querySelector('input[placeholder^="Пошук"]');if(s){e.preventDefault();s.focus()}}})}
 async function boot(){bindKeys();if(!state.token){render();loadAuthMethods();return}bootScreen();try{await loadAll()}catch(x){toast(x.message,true)}render();startLive()}
@@ -48,7 +89,7 @@ function startLive(){clearInterval(live);liveSig=liveSignature();live=setInterva
 async function loadAuthMethods(){try{state.authMethods=await api('/api/auth/methods')}catch{state.authMethods={}}render()}
 async function login(e){e.preventDefault();const f=new FormData(e.target);try{const d=await api('/api/auth/login',{method:'POST',body:JSON.stringify({email:f.get('email'),password:f.get('password')})});state.token=d.access_token;localStorage.setItem('token',state.token);await boot()}catch(x){toast(x.message,true)}}
 function logout(){localStorage.removeItem('token');location.reload()}
-function loginView(){root.innerHTML=`<div class="auth"><img class="auth-logo" src="${LOGO}" alt="ARTLINE"><form onsubmit="login(event)"><h1>Вхід до робочого простору</h1><p>Генерація та керування rich-контентом.</p><label>Email<input name="email" type="email" required></label><label>Пароль<input name="password" type="password" required></label><button class="btn primary">Увійти</button>${state.authMethods?.github?`<div class="auth-or">або</div><button type="button" class="btn secondary" onclick="location.href='/api/auth/github'">Увійти через GitHub</button>`:''}</form></div>`}
+function loginView(){root.innerHTML=`<div class="auth"><canvas class="pixel-bg"></canvas><img class="auth-logo" src="${LOGO}" alt="ARTLINE"><form onsubmit="login(event)"><h1>Вхід до робочого простору</h1><p>Генерація та керування rich-контентом.</p><label>Email<input name="email" type="email" required></label><label>Пароль<input name="password" type="password" required></label><button class="btn primary">Увійти</button>${state.authMethods?.github?`<div class="auth-or">або</div><button type="button" class="btn secondary" onclick="location.href='/api/auth/github'">Увійти через GitHub</button>`:''}</form></div>`;startPixelField(document.querySelector('.auth .pixel-bg'))}
 // Access is driven by effective permissions (role defaults + per-user overrides),
 // resolved by the API and returned in state.me.permissions. The UI mirrors them.
 const can=p=>(state.me?.permissions||[]).includes(p);

@@ -297,3 +297,4 @@ optgroup[disabled]{color:var(--gray-3)}
 @media(prefers-reduced-motion:reduce){.techloop-track{animation:none}}
 .auth-or{text-align:center;color:var(--muted);font-size:12px;font-weight:700;display:flex;align-items:center;gap:12px}
 .auth-or::before,.auth-or::after{content:'';flex:1;height:1px;background:var(--border)}
+.pixel-bg{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;opacity:.6;pointer-events:none}
