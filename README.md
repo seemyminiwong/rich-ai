@@ -102,9 +102,12 @@ API відмовиться стартувати, поки `JWT_SECRET` і `ADMIN
 
 - WebUI: `http://SERVER_IP:3000`
 - API-доки: `http://SERVER_IP:8000/docs`
-- Перевірка: `curl http://127.0.0.1:8000/health` → `{"status":"ok","version":"12.1"}`
+- Перевірка: `curl http://127.0.0.1:8000/health` → `{"status":"ok"}`
 
 Повний runbook (деплой готовими образами з GHCR, відкат, бекап, міграції) — **[docs/DEPLOY.md](docs/DEPLOY.md)**.
+
+> Образи в GHCR публічні й містять вбудовані промпти стилів. Це свідоме рішення:
+> код і промпти вже відкриті в цьому репозиторії під PolyForm Noncommercial.
 
 ## Обов’язкові змінні
 

@@ -18,11 +18,30 @@ NAME=richstudio-restore-test
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 docker run -d --name "$NAME" -e POSTGRES_PASSWORD=drill -e POSTGRES_DB=drill postgres:16-alpine >/dev/null
 
+cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+
 echo "Чекаю на тестовий Postgres..."
-for i in $(seq 1 30); do
-  docker exec "$NAME" pg_isready -U postgres -d drill >/dev/null 2>&1 && break
-  sleep 1
+# pg_isready тут НЕ годиться: під час першого запуску образ postgres піднімає
+# ТИМЧАСОВИЙ сервер для init-скриптів і потім гасить його — pg_isready встигає
+# відповісти «ок», а pg_restore влучає у «the database system is shutting down»
+# (перше навчання з відновлення впало саме так). Тимчасовий сервер не живе двох
+# перевірок поспіль, тому чекаємо на два успішні SELECT 1 з паузою між ними.
+ok=0
+for i in $(seq 1 60); do
+  if docker exec "$NAME" psql -U postgres -d drill -c 'SELECT 1' >/dev/null 2>&1; then
+    ok=$((ok+1))
+    [ "$ok" -ge 2 ] && break
+  else
+    ok=0
+  fi
+  sleep 2
 done
+if [ "$ok" -lt 2 ]; then
+  echo "Postgres так і не піднявся. Останні логи контейнера:"
+  docker logs --tail 15 "$NAME"
+  exit 1
+fi
 
 docker cp "$DUMP" "$NAME:/tmp/drill.dump"
 docker exec "$NAME" pg_restore -U postgres -d drill --no-owner --no-privileges /tmp/drill.dump
@@ -35,6 +54,5 @@ docker exec "$NAME" psql -U postgres -d drill -t -A -F' | ' -c "
   UNION ALL SELECT 'стилі', count(*) FROM richstudio_v11_2.styles
   UNION ALL SELECT 'користувачі', count(*) FROM richstudio_v11_2.users;"
 
-docker rm -f "$NAME" >/dev/null
 echo ""
 echo "ВЕРДИКТ: дамп відновлюється. Тестовий контейнер прибрано, прод не торкався."

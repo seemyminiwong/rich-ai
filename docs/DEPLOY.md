@@ -205,9 +205,19 @@ docker compose logs -f caddy
 
 Обидва типи чистяться після `BACKUP_KEEP_DAYS` (типово 14).
 
-**Обов'язковий крок, який робиться руками в TrueNAS UI:** бекап на тому ж диску переживає помилки, але не диск. Заведіть у TrueNAS завдання на цю теку:
-- Data Protection → Periodic Snapshot Task на датасет із `rich-ai/backups`, або
-- Data Protection → Cloud Sync Task → у Backblaze B2 / S3 (краще: переживає і пожежу).
+**Обов'язковий крок, який робиться руками в TrueNAS UI:** бекап на тому ж диску переживає помилки, але не диск. Offsite-копія, покроково (TrueNAS SCALE, ~10 хвилин):
+
+1. Заведіть бакет у Backblaze B2 (найдешевше) або будь-якому S3: `artline-rich-backups`, приватний. Створіть application key лише на цей бакет.
+2. TrueNAS → **Credentials → Backup Credentials → Cloud Credentials → Add**: тип Backblaze B2 (або Amazon S3), вставте keyID/applicationKey, Verify Credential.
+3. **Data Protection → Cloud Sync Tasks → Add**:
+   - Direction **Push**, Transfer Mode **Copy** (не Sync: випадкове локальне видалення не зітре offsite-копію);
+   - Source `/mnt/Data/Apps/rich-studio/rich-ai/backups`, Target — бакет;
+   - Schedule: щодня, на годину пізніше за контейнер `backup` (щоб забирати вже свіжий дамп);
+   - **Remote Encryption: увімкнути** і зберегти парольну фразу в менеджері паролів. Старі дампи, зроблені до Fernet-шифрування ключів, містять ключі провайдерів відкритим текстом — у хмару вони мають їхати лише зашифрованими.
+4. Кнопка **Dry Run** — перелік файлів без передачі; потім **Run Now** і перевірте, що обʼєкти зʼявились у бакеті.
+5. Раз на квартал: скачайте один дамп ІЗ ХМАРИ і проженіть через `scripts/restore-test.sh` — offsite-копія, яку жодного разу не відновлювали, це не бекап, а сподівання.
+
+Periodic Snapshot Task на датасет — корисний додаток (миттєвий відкат), але не заміна: снапшот живе на тому ж диску.
 
 **Навчання з відновлення** (раз на місяць, 2 хвилини, прод не торкається):
 
