@@ -22,7 +22,7 @@ from app.config import settings
 from app.db import Base, SessionLocal, engine, ensure_schema, get_db, run_migrations
 from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Project, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
-from app.tasks import process_project
+from app.tasks import process_project, translate_project
 from app.pipeline import _is_reasoning_model, fetch_html, gallery_urls, is_public_http_url, parse_page, sanitize_html, style_image_prompt, text_client
 from app.runtime import OPENROUTER_BASE_URL, mask, runtime_config, set_runtime
 from app.version import __version__
@@ -188,6 +188,8 @@ class UserCreate(BaseModel):
     role: Role = Role.viewer
 class ProbeIn(BaseModel):
     source_url: HttpUrl
+class TranslateIn(BaseModel):
+    language: str = Field(min_length=2, max_length=10)
 class ProjectIn(BaseModel):
     name: str = ''; source_url: HttpUrl; style_id: str | None = None
     languages: list[str] = Field(default_factory=lambda: ['ua', 'ru'])
@@ -579,6 +581,32 @@ def analyze_style(payload: StyleAnalyzeIn, user=Depends(require_perm('style.mana
 def projects(db: Session = Depends(get_db), user=Depends(current)):
     styles_by_id = {x.id: x.name for x in db.scalars(select(Style)).all()}
     return [project_dict(x, style_name=styles_by_id.get(x.style_id, '')) for x in db.scalars(select(Project).order_by(Project.created_at.desc())).all()]
+
+
+@app.post('/api/projects/{project_id}/translate')
+def add_language(project_id: str, body: TranslateIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
+    """Translate the newest finished variants into one more language.
+
+    Unlike a rerun this touches nothing but copy: no scrape, no images, no master
+    regeneration - so it cannot degrade an approved layout and costs only the
+    translation tokens.
+    """
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, 'Проєкт не знайдено')
+    normalized = normalize_languages([body.language])
+    if not normalized:
+        raise HTTPException(400, 'Невідомий код мови')
+    language = normalized[0]
+    existing = {x.strip() for x in (project.languages or '').split(',') if x.strip()}
+    if language in existing:
+        raise HTTPException(400, f'Мова {language.upper()} вже є у проєкті')
+    if not db.scalar(select(func.count(Artifact.id)).where(Artifact.project_id == project.id)):
+        raise HTTPException(400, 'У проєкту ще немає готових версій — спершу дочекайтесь генерації')
+    audit(db, user, 'project.translate', 'project', project.id, {'language': language})
+    db.commit()
+    translate_project.delay(project.id, language)
+    return {'ok': True, 'language': language}
 
 
 @app.post('/api/projects/probe')
