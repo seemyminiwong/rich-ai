@@ -80,7 +80,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.17"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.18"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 2 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -200,13 +200,14 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'showcase hero is not double-darkened': 'NO opacity on this img' in prompts and 'rgba(16,16,16,0) 100%' in prompts,
     'fallback is recorded on the artifact': 'fallback_reason=fallback_reason' in tasks and 'fallback_reason' in models,
     'fallback escalates to error, alert and project.error': "level='error'" in tasks and 'send_alert(f\'Rich Studio: аварійний шаблон' in tasks and 'аварійний шаблон замість обраного стилю' in tasks,
     'fallback is loud in the ui': 'function fallbackBanner' in web and 'Це не обраний стиль' in web,
     'fallback pages cannot be approved': 'anyFallback' in web,
     'fallback column migrated': (root / 'apps/api/alembic/versions/0004_artifact_fallback.py').exists(),
     'language check tolerates a preserved foreign name': 'ua_specific <= max(6, total * 0.04)' in pipeline and 'a preserved brand or model name' in pipeline,
-    'preview audits its own media files': 'function auditPreviewMedia' in web and 'mediaAudit' in web and 'проблема у сховищі медіа' in web,
+    'preview audits its own media files': 'function auditPreviewMedia' in web and 'naturalWidth' in web and 'це верстка стилю, а не файли' in web,
     'showcase is the managed default': "'name': SHOWCASE_STYLE_NAME,\n        'default': True," in main and "'name': ENGINEERING_STYLE_NAME,\n        'default': False," in main,
     'managed default flips only between managed styles': 'current_default.name in managed_names' in main,
     'hero scene chosen server-side, no category menu in prompts': 'def hero_environment' in pipeline and 'ENVIRONMENT: {hero_environment(product)}' in tasks and 'workshop or maker workspace for a 3D printer' not in prompts,
