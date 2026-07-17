@@ -83,7 +83,12 @@ def test_login_dialog_modes_create_and_settings(browser_page):
     page.fill('#newProject input[name=source_url]', url_value)
     page.click('#newProject button:has-text("Створити й запустити")')
     # Без worker проєкт чесно висить у черзі — сторінка проєкту вже відкрита.
-    page.wait_for_selector('.badge.queued, .badge.processing', timeout=30_000)
+    # Червоний тост = API відхилив створення; впасти треба з ЙОГО текстом,
+    # а не з німим таймаутом на бейджі.
+    page.wait_for_selector('.badge.queued, .badge.processing, .toast.bad', timeout=30_000)
+    bad_toast = page.locator('.toast.bad')
+    if bad_toast.count():
+        raise AssertionError(f'API відхилив створення проєкту: {bad_toast.first.inner_text()}')
     assert errors == [], f'JS errors after project creation: {errors}'
 
     # --- Налаштування: сторінка рендериться, стрічка технологій на місці -----

@@ -24,4 +24,6 @@ app.mount('/', StaticFiles(directory=str(ROOT / 'apps' / 'web'), html=True), nam
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='127.0.0.1', port=8000, log_level='warning')
+    # info + access log: коди відповідей POST /api/... видно в /tmp/e2e-server.log,
+    # який CI друкує при падінні - діагноз без повторних прогонів.
+    uvicorn.run(app, host='127.0.0.1', port=8000, log_level='info', access_log=True)
