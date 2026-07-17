@@ -200,6 +200,8 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'artifacts carry a build marker': 'ARTLINE Rich Studio · стиль v' in tasks,
+    'media lists every image the page references': 'used_page_images' in tasks and "page-image-" in tasks and 'Зображення сторінки' in web,
     'review draft survives tab switches': 'function reviewDraft' in web and 'state.reviewDraft=null' in web,
     'review has an embedded preview': 'review-stage' in web and 'Перевіряйте прямо тут' in web,
     'approve gated on the full checklist': 'reviewApproveBtn' in web and 'done===items.length' in web,
