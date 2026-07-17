@@ -262,3 +262,9 @@ optgroup[disabled]{color:var(--gray-3)}
 .prior-thumb.off::after{content:'⟳ заново';position:absolute;top:24px;left:0;right:0;text-align:center;font-size:9px;font-weight:900;color:#B42D2D}
 .prior-thumb img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border);background:#fff}
 .prior-thumb i{font-style:normal;font-size:9.5px;color:var(--muted)}
+
+/* Review flow */
+.review-stage{height:52vh}
+.review-cta{display:flex;align-items:center;gap:14px;flex-wrap:wrap;border-left:4px solid var(--warning);border-radius:0 var(--radius) var(--radius) 0}
+.review-cta .btn{margin-left:auto}
+#reviewApproveBtn:disabled,#reviewChangesBtn:disabled{opacity:.45;cursor:not-allowed}
