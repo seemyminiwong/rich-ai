@@ -184,6 +184,23 @@ def process_project(self, project_id, reuse_images=False):
                 # come only from this page until documents have an explicit product link.
                 prompt=style_row.prompt
             )
+
+            # Image-led styles build the page from real gallery frames; those frames
+            # are working material exactly like Hero and Feature, so they belong in
+            # the Медіа tab. Replace, not append: a rerun may carry a different
+            # manual selection.
+            if 'GALLERY_IMAGES' in (style.prompt or ''):
+                db.execute(delete(Asset).where(
+                    Asset.project_id == project.id, Asset.label.like('gallery-frame-%')
+                ))
+                for index, frame_url in enumerate(page_gallery, start=1):
+                    db.add(Asset(
+                        project_id=project.id, kind='image', label=f'gallery-frame-{index}',
+                        url=frame_url, prompt='', model='source', cost=0,
+                        metadata_json=json.dumps({'source': 'gallery', 'picked_manually': bool(chosen_gallery)}, ensure_ascii=False),
+                    ))
+                db.commit()
+                log(db, project, 'images', f'Кадри галереї збережено в медіатеку ({len(page_gallery)} шт.)', 18)
             if reused:
                 requested_variants = [value for value in project.variants.split(',') if value]
                 fallback = existing_images.get('product-reference', '')

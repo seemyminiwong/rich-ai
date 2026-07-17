@@ -200,15 +200,16 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'gallery frames land in the media library': "label=f'gallery-frame-{index}'" in tasks and 'Кадр галереї' in web and "Asset.label.like('gallery-frame-%')" in tasks,
     'simple mode lets the operator pick a style': 'select name="style_id"' in web.split('function simpleFields')[1].split('function presetInfoTpl')[0] and "KEEP_FIELDS=['source_url','style_id'" in web,
     'image models carry human notes and stars': 'IMAGE_MODEL_NOTES' in web and 'RECOMMENDED_IMAGE_MODELS' in web,
     'gemini models advertised even without a key': 'потрібен ключ (Налаштування)' in web and "'gemini_available'" in main,
-    'preset stops show price, card speaks human': 'preset-facts' in web and 'estimateCost(r.text_model' in web,
+    'preset cards carry price and human facts': 'preset-facts' in web and 'preset-cost' in web and 'IMAGE_MODEL_NOTES[p.image_model]' in web,
     'no function shadows a dialog element id': not [i for i in ('translateDialog', 'rerunProjectDialog', 'probeBox', 'presetInfo', 'newProject', 'styleGenerator', 'inviteDialog', 'createUserDialog') if f'function {i}(' in web],
     'toasts surface above open dialogs': "document.querySelector('dialog[open]')||toastStack()" in web,
     'version check script shipped': (root / 'scripts/version-check.sh').exists(),
     'showcase is protected in the ui too': "'ARTLINE Showcase'" in web.split('MANAGED_STYLE_NAMES=')[1].split(']')[0],
-    'preset picker is a slider with in-place updates': 'function slidePreset' in web and 'type="range"' in web and 'pickPreset' not in web,
+    'preset cards update in place, no dialog rebuild': 'function pickPresetCard' in web and 'render()' not in web.split('function pickPresetCard')[1].split('\n')[0] and 'function slidePreset' not in web,
     'page probe is free and permissioned': "@app.post('/api/projects/probe')" in main,
     'operator can curate the gallery': 'gallery_json' in models and 'chosen_gallery' in tasks and 'function toggleFrame' in web,
     'showcase verdict warns on thin galleries': 'для Showcase замало' in web,
