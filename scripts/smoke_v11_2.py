@@ -200,6 +200,11 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'review draft survives tab switches': 'function reviewDraft' in web and 'state.reviewDraft=null' in web,
+    'review has an embedded preview': 'review-stage' in web and 'Перевіряйте прямо тут' in web,
+    'approve gated on the full checklist': 'reviewApproveBtn' in web and 'done===items.length' in web,
+    'checkbox ticks never reload the preview iframe': 'function updateReviewUI' in web and 'render()' not in web.split('function reviewCheckToggle(el){')[1].split('}')[0],
+    'changes requested leads to a rerun cta': 'review-cta' in web,
     'adoption is per-image': 'reuse_labels' in main and 'function togglePrior' in web,
     'partial adoption regenerates the rest': "feature_mode = 'adopted'" in tasks and 'adopted_hero' in tasks and 'covers_heroes and covers_feature' in tasks,
     'reference always rides along for regeneration': "wanted.add('product-reference')" in main,
