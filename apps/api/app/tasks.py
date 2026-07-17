@@ -150,7 +150,10 @@ def process_project(self, project_id, reuse_images=False):
             page_html = fetch_html(project.source_url)
             jsonld, images, title, clean_text = parse_page(page_html, project.source_url)
             project.source_images = json.dumps(images, ensure_ascii=False)
-            page_gallery = gallery_urls(images)
+            chosen_gallery = [u for u in json.loads(project.gallery_json or '[]') if isinstance(u, str) and u.strip()]
+            page_gallery = chosen_gallery or gallery_urls(images)
+            if chosen_gallery:
+                log(db, project, 'scrape', f'Використовується галерея, обрана вручну ({len(chosen_gallery)} кадрів)', 6)
             db.commit()
 
             log(db, project, 'extract', f'Витягування характеристик · {project.text_model}', 15)

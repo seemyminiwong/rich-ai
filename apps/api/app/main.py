@@ -23,7 +23,7 @@ from app.db import Base, SessionLocal, engine, ensure_schema, get_db, run_migrat
 from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Project, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
 from app.tasks import process_project
-from app.pipeline import _is_reasoning_model, is_public_http_url, sanitize_html, style_image_prompt, text_client
+from app.pipeline import _is_reasoning_model, fetch_html, gallery_urls, is_public_http_url, parse_page, sanitize_html, style_image_prompt, text_client
 from app.runtime import OPENROUTER_BASE_URL, mask, runtime_config, set_runtime
 from app.version import __version__
 
@@ -186,12 +186,15 @@ class UserCreate(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     password: str = Field(min_length=8, max_length=200)
     role: Role = Role.viewer
+class ProbeIn(BaseModel):
+    source_url: HttpUrl
 class ProjectIn(BaseModel):
     name: str = ''; source_url: HttpUrl; style_id: str | None = None
     languages: list[str] = Field(default_factory=lambda: ['ua', 'ru'])
     variants: list[str] = Field(default_factory=lambda: ['desktop', 'mobile'])
     text_model: str | None = None; image_model: str | None = None; image_quality: str = 'medium'
     custom_hero_url: str = ''; custom_feature_url: str = ''
+    gallery: list[str] = Field(default_factory=list, max_length=10)
 class StyleIn(BaseModel):
     name: str
     description: str = ''
@@ -578,6 +581,26 @@ def projects(db: Session = Depends(get_db), user=Depends(current)):
     return [project_dict(x, style_name=styles_by_id.get(x.style_id, '')) for x in db.scalars(select(Project).order_by(Project.created_at.desc())).all()]
 
 
+@app.post('/api/projects/probe')
+def probe_product_page(payload: ProbeIn, user=Depends(require_perm('project.create'))):
+    """Look at the product page before spending anything on it.
+
+    Pure scrape - zero tokens. Returns the detected name and the unique gallery
+    frames so the dialog can show what Showcase would be built from, and let the
+    operator drop bad frames before the run starts.
+    """
+    url = str(payload.source_url)
+    if not is_public_http_url(url):
+        raise HTTPException(400, 'Посилання має бути публічним http(s)-URL')
+    try:
+        page_html = fetch_html(url)
+        _, images, title, _ = parse_page(page_html, url)
+    except Exception as exc:
+        raise HTTPException(422, f'Не вдалося прочитати сторінку: {str(exc)[:200]}')
+    frames = gallery_urls(images, limit=10)
+    return {'name': title, 'gallery': frames, 'count': len(frames)}
+
+
 @app.post('/api/projects')
 def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
     style = db.get(Style, payload.style_id) if payload.style_id else db.scalar(select(Style).where(Style.is_default == True))
@@ -588,7 +611,7 @@ def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depen
         if value and not is_public_http_url(value):
             raise HTTPException(400, f'Власне {label} URL має бути публічним http(s)-посиланням')
     p = Project(name=payload.name.strip() or 'Определение товара…', source_url=str(payload.source_url), style_id=style.id, owner_id=user.id, languages=','.join(dict.fromkeys(langs)), variants=','.join(dict.fromkeys(vars)),
-                text_model=payload.text_model or settings.openai_text_model, image_model=payload.image_model or settings.openai_image_model, image_quality=payload.image_quality if payload.image_quality in {'low', 'medium', 'high'} else 'medium', custom_hero_url=payload.custom_hero_url.strip(), custom_feature_url=payload.custom_feature_url.strip(), status=Status.queued, stage='queued')
+                text_model=payload.text_model or settings.openai_text_model, image_model=payload.image_model or settings.openai_image_model, image_quality=payload.image_quality if payload.image_quality in {'low', 'medium', 'high'} else 'medium', custom_hero_url=payload.custom_hero_url.strip(), custom_feature_url=payload.custom_feature_url.strip(), gallery_json=json.dumps([u.strip() for u in payload.gallery if is_public_http_url(u.strip())][:10]), status=Status.queued, stage='queued')
     db.add(p); db.flush(); audit(db, user, 'project.create', 'project', p.id); db.commit(); db.refresh(p); process_project.delay(p.id); return project_dict(p, style_name=style.name)
 
 
