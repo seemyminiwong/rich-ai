@@ -1377,9 +1377,16 @@ def _enforce_image_whitelist(html: str, allowed: list[str], spares: list[str] | 
             img['src'] = spare.pop(0)
             # The slot was styled for the image the model imagined (cover crops,
             # fixed heights). A substituted catalogue frame is usually a product
-            # render on white: force a crop-proof fit so the swap never shows an
-            # amputated product.
-            img['style'] = 'display:block;width:100%;height:100%;max-height:320px;object-fit:contain;background:#FFFFFF;border-radius:12px'
+            # render on white: rebuild the slot as a proper white card with the
+            # frame contained inside, so the swap looks deliberate on light AND
+            # dark sections instead of a floating white patch.
+            img['style'] = 'display:block;width:100%;height:100%;max-height:280px;object-fit:contain'
+            card = soup.new_tag('div')
+            card['style'] = ('background:#FFFFFF;border:1px solid #D0D7DE;border-radius:16px;'
+                             'padding:16px;height:100%;min-height:240px;display:flex;'
+                             'align-items:center;justify-content:center;box-sizing:border-box')
+            img.replace_with(card)
+            card.append(img)
         else:
             img.decompose()
         changed += 1

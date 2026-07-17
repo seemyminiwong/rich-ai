@@ -80,7 +80,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.18"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.19"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 2 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -201,8 +201,9 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'hero h2 is brand plus model code, not the commercial wall': 'HERO TYPOGRAPHY' in prompts and 'four-line all-caps wall is a defect' in prompts,
     'mobile relayout swaps in the portrait hero': 'relaid = relaid.replace(desktop_hero, mobile_hero)' in tasks,
-    'substituted frames get a crop-proof fit': "img['style'] = 'display:block;width:100%;height:100%;max-height:320px;object-fit:contain" in pipeline,
+    'substituted frames sit in a proper white card': 'card = soup.new_tag' in pipeline and 'img.replace_with(card)' in pipeline,
     'showcase hero is not double-darkened': 'NO opacity on this img' in prompts and 'rgba(16,16,16,0) 100%' in prompts,
     'fallback is recorded on the artifact': 'fallback_reason=fallback_reason' in tasks and 'fallback_reason' in models,
     'fallback escalates to error, alert and project.error': "level='error'" in tasks and 'send_alert(f\'Rich Studio: аварійний шаблон' in tasks and 'аварійний шаблон замість обраного стилю' in tasks,
