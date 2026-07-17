@@ -195,3 +195,32 @@ docker compose logs -f caddy
 - Нову зміну схеми додавайте новою ревізією в `apps/api/alembic/versions/`, ланцюжок має лишатися лінійним.
 
 Ручний запуск (з контейнера api): `docker compose exec api alembic upgrade head`, поточна ревізія — `docker compose exec api alembic current`.
+
+## Бекапи: що і куди
+
+Контейнер `backup` щодоби складає в `./backups` (тобто `/mnt/Data/Apps/rich-studio/rich-ai/backups` на пулі):
+
+- `richstudio-*.dump` — БД (pg_dump -Fc), кожен дамп одразу перевіряється `pg_restore --list`; битий дамп видаляється і летить алерт у Telegram, а не зберігається;
+- `media-*.tar.gz` — усі згенеровані зображення. Без них відновлена база посилалась би на неіснуючі файли.
+
+Обидва типи чистяться після `BACKUP_KEEP_DAYS` (типово 14).
+
+**Обов'язковий крок, який робиться руками в TrueNAS UI:** бекап на тому ж диску переживає помилки, але не диск. Заведіть у TrueNAS завдання на цю теку:
+- Data Protection → Periodic Snapshot Task на датасет із `rich-ai/backups`, або
+- Data Protection → Cloud Sync Task → у Backblaze B2 / S3 (краще: переживає і пожежу).
+
+**Навчання з відновлення** (раз на місяць, 2 хвилини, прод не торкається):
+
+```bash
+sh scripts/restore-test.sh
+```
+
+Підніме одноразовий Postgres, відновить свіжий дамп, покаже кількість проєктів/артефактів/стилів/користувачів і приберe за собою.
+
+**Міграція старих дампів** зі старого docker-тому (один раз після оновлення):
+
+```bash
+docker run --rm -v rich-ai_backup_data:/old -v /mnt/Data/Apps/rich-studio/rich-ai/backups:/new alpine sh -c 'cp -a /old/. /new/ 2>/dev/null || true'
+```
+
+`.env` в бекап не потрапляє свідомо — там секрети. Збережіть його копію в менеджері паролів: без `JWT_SECRET`/`ADMIN_PASSWORD` відновлення закінчиться переналаштуванням з нуля.
