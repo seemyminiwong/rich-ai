@@ -197,6 +197,7 @@ class ProjectIn(BaseModel):
     text_model: str | None = None; image_model: str | None = None; image_quality: str = 'medium'
     custom_hero_url: str = ''; custom_feature_url: str = ''
     gallery: list[str] = Field(default_factory=list, max_length=10)
+    reuse_images_from: str = ''
 class StyleIn(BaseModel):
     name: str
     description: str = ''
@@ -609,6 +610,40 @@ def add_language(project_id: str, body: TranslateIn, db: Session = Depends(get_d
     return {'ok': True, 'language': language}
 
 
+ADOPTABLE_IMAGE_LABELS = ('product-reference', 'hero-desktop-generated', 'hero-mobile-generated', 'feature-generated', 'hero-custom', 'feature-custom')
+
+
+def _adopt_images(db: Session, new_project: Project, source_project_id: str) -> int:
+    """Copy a sibling project's finished images into a new project.
+
+    Files are physically copied into the new project's media folder: referencing
+    the old URLs would tie this project's page to a sibling that anyone may
+    delete. Asset rows are cloned with rewritten URLs, so the reuse_images path
+    picks them up exactly as if this project had generated them.
+    """
+    source = db.get(Project, source_project_id)
+    if not source or source.source_url != new_project.source_url:
+        raise HTTPException(400, 'Готові зображення можна взяти лише з проєкту за цим самим товаром')
+    rows = db.scalars(select(Asset).where(Asset.project_id == source.id, Asset.kind == 'image', Asset.label.in_(ADOPTABLE_IMAGE_LABELS))).all()
+    adopted = 0
+    for asset in rows:
+        prefix = f'/media/{source.id}/'
+        new_url = asset.url
+        if asset.url.startswith(prefix):
+            name = asset.url[len(prefix):]
+            src_file = Path(settings.media_dir) / source.id / name
+            if not src_file.exists():
+                continue
+            dst_dir = Path(settings.media_dir) / new_project.id
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_file, dst_dir / name)
+            new_url = f'/media/{new_project.id}/{name}'
+        db.add(Asset(project_id=new_project.id, kind='image', label=asset.label, url=new_url, prompt=asset.prompt, model=asset.model, width=asset.width, height=asset.height, cost=0, metadata_json=json.dumps({'adopted_from': source.id}, ensure_ascii=False)))
+        adopted += 1
+    return adopted
+
+
+
 @app.post('/api/projects/probe')
 def probe_product_page(payload: ProbeIn, user=Depends(require_perm('project.create'))):
     """Look at the product page before spending anything on it.
@@ -626,7 +661,23 @@ def probe_product_page(payload: ProbeIn, user=Depends(require_perm('project.crea
     except Exception as exc:
         raise HTTPException(422, f'Не вдалося прочитати сторінку: {str(exc)[:200]}')
     frames = gallery_urls(images, limit=10)
-    return {'name': title, 'gallery': frames, 'count': len(frames)}
+    prior = None
+    with SessionLocal() as db:
+        # Images are the expensive part of a run; if an earlier project for this
+        # exact URL already generated them, offer them for adoption.
+        siblings = db.scalars(select(Project).where(Project.source_url == url).order_by(Project.created_at.desc()).limit(5)).all()
+        for sibling in siblings:
+            assets = db.scalars(select(Asset).where(Asset.project_id == sibling.id, Asset.kind == 'image', Asset.label.in_(ADOPTABLE_IMAGE_LABELS))).all()
+            reusable = [a for a in assets if a.label != 'product-reference']
+            if reusable:
+                prior = {
+                    'project_id': sibling.id,
+                    'project_name': sibling.name,
+                    'created_at': sibling.created_at.isoformat() if sibling.created_at else None,
+                    'images': [{'label': a.label, 'url': a.url} for a in reusable],
+                }
+                break
+    return {'name': title, 'gallery': frames, 'count': len(frames), 'prior': prior}
 
 
 @app.post('/api/projects')
@@ -640,7 +691,14 @@ def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depen
             raise HTTPException(400, f'Власне {label} URL має бути публічним http(s)-посиланням')
     p = Project(name=payload.name.strip() or 'Определение товара…', source_url=str(payload.source_url), style_id=style.id, owner_id=user.id, languages=','.join(dict.fromkeys(langs)), variants=','.join(dict.fromkeys(vars)),
                 text_model=payload.text_model or settings.openai_text_model, image_model=payload.image_model or settings.openai_image_model, image_quality=payload.image_quality if payload.image_quality in {'low', 'medium', 'high'} else 'medium', custom_hero_url=payload.custom_hero_url.strip(), custom_feature_url=payload.custom_feature_url.strip(), gallery_json=json.dumps([u.strip() for u in payload.gallery if is_public_http_url(u.strip())][:10]), status=Status.queued, stage='queued')
-    db.add(p); db.flush(); audit(db, user, 'project.create', 'project', p.id); db.commit(); db.refresh(p); process_project.delay(p.id); return project_dict(p, style_name=style.name)
+    db.add(p); db.flush()
+    adopted = 0
+    if payload.reuse_images_from:
+        adopted = _adopt_images(db, p, payload.reuse_images_from)
+    audit(db, user, 'project.create', 'project', p.id, {'adopted_images': adopted} if adopted else None)
+    db.commit(); db.refresh(p)
+    process_project.delay(p.id, reuse_images=bool(adopted))
+    return project_dict(p, style_name=style.name)
 
 
 @app.get('/api/projects/{project_id}')

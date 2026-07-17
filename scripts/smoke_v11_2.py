@@ -200,6 +200,11 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'probe offers images from a sibling project': "'prior': prior" in main and 'ADOPTABLE_IMAGE_LABELS' in main,
+    'adopted images are copied, not referenced': 'def _adopt_images' in main and 'shutil.copy2' in main and "json.dumps({'adopted_from': source.id}" in main,
+    'adoption locked to the same product url': 'source.source_url != new_project.source_url' in main,
+    'adopted run skips image generation': 'process_project.delay(p.id, reuse_images=bool(adopted))' in main,
+    'prior strip in the probe ui': 'usePrior' in web and 'reuse_images_from' in web,
     'showcase hero is background plus img, redundantly': 'url(HERO_URL) center/cover' in prompts and "html.replace('HERO_URL', hero)" in pipeline,
     'invented image urls are swapped or dropped': 'def _enforce_image_whitelist' in pipeline and 'spares=list(gallery or [])' in pipeline,
     'full product name never doubles in a section': 'NAME APPEARS ONCE PER SECTION' in prompts,
