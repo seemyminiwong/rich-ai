@@ -12,8 +12,8 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, HttpUrl
 from sqlalchemy import delete as sa_delete, func, select
@@ -23,8 +23,10 @@ from app.db import Base, SessionLocal, engine, ensure_schema, get_db, run_migrat
 from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Project, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
 from app.tasks import process_project, translate_project
+from app.limits import check_action, check_budget, check_login, client_ip, today_spend
+from app.media import media_url, strip_media_query, verify_media_token
 from app.pipeline import _is_reasoning_model, fetch_html, gallery_urls, is_public_http_url, parse_page, safe_client, sanitize_html, style_image_prompt, text_client
-from app.runtime import OPENROUTER_BASE_URL, mask, runtime_config, set_runtime
+from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.version import __version__
 
 logger = logging.getLogger(__name__)
@@ -186,11 +188,30 @@ async def lifespan(_app: FastAPI):
     run_migrations()
     Base.metadata.create_all(engine)
     seed()
+    migrate_plaintext_secrets()
     yield
 
 
 app = FastAPI(title='ARTLINE Rich Studio API', version=APP_VERSION, lifespan=lifespan)
-app.mount('/media', StaticFiles(directory=settings.media_dir), name='media')
+# /media is a verifying endpoint now, not a blind static mount: signed URLs are
+# capabilities, unsigned ones are tolerated only in transitional mode.
+_MEDIA_NAME = re.compile(r'^[A-Za-z0-9._\-]+$')
+
+
+@app.get('/media/{project_id}/{filename}')
+def media_file(project_id: str, filename: str, t: str = ''):
+    if not _MEDIA_NAME.fullmatch(project_id) or not _MEDIA_NAME.fullmatch(filename) or '..' in filename:
+        raise HTTPException(404, 'Not found')
+    path = f'/media/{project_id}/{filename}'
+    if not verify_media_token(path, t):
+        if settings.media_signing == 'strict':
+            raise HTTPException(403, 'Посилання на зображення без дійсного підпису')
+        logger.warning('Unsigned media hit (transitional): %s', path)
+    file_path = (Path(settings.media_dir) / project_id / filename).resolve()
+    media_root = Path(settings.media_dir).resolve()
+    if media_root not in file_path.parents or not file_path.is_file():
+        raise HTTPException(404, 'Not found')
+    return FileResponse(file_path)
 
 
 class Login(BaseModel): email: str; password: str
@@ -286,20 +307,8 @@ def rate_limit_client_error(identifier: str) -> bool:
     return True
 
 
-# Simple in-memory login throttle: max attempts per identifier inside the window.
-_LOGIN_WINDOW_SECONDS = 300
-_LOGIN_MAX_ATTEMPTS = 10
-_login_attempts: dict[str, list[float]] = defaultdict(list)
-
-
-def rate_limit_login(identifier: str):
-    now = time.time()
-    attempts = [t for t in _login_attempts[identifier] if now - t < _LOGIN_WINDOW_SECONDS]
-    if len(attempts) >= _LOGIN_MAX_ATTEMPTS:
-        _login_attempts[identifier] = attempts
-        raise HTTPException(429, 'Забагато спроб входу. Зачекайте кілька хвилин і спробуйте знову')
-    attempts.append(now)
-    _login_attempts[identifier] = attempts
+# Login throttling moved to app.limits: Redis-backed, per-email AND per-IP,
+# survives restarts. The in-memory client-error cap stays local on purpose.
 
 
 def normalize_languages(values: list[str]) -> list[str]:
@@ -371,8 +380,8 @@ def health(): return {'status': 'ok', 'version': APP_VERSION}
 
 
 @app.post('/api/auth/login')
-def login(payload: Login, db: Session = Depends(get_db)):
-    rate_limit_login((payload.email or '').strip().lower() or 'unknown')
+def login(request: Request, payload: Login, db: Session = Depends(get_db)):
+    check_login((payload.email or '').strip().lower() or 'unknown', client_ip(request))
     user = db.scalar(select(User).where(User.email == payload.email))
     if not user or not verify(payload.password, user.password_hash): raise HTTPException(401, 'Неправильний email або пароль')
     if not user.active: raise HTTPException(403, 'Обліковий запис деактивовано')
@@ -569,6 +578,7 @@ def style_preview(style_id: str, db: Session = Depends(get_db), user=Depends(cur
 
 @app.post('/api/styles/{style_id}/preview')
 def style_preview_generate(style_id: str, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
+    check_action(user.id, 'style_ai', 4); check_budget()
     """Generate a real AI example page for this style from the demo product and save it."""
     from types import SimpleNamespace
     from app.pipeline import generate_html
@@ -618,6 +628,7 @@ def projects(db: Session = Depends(get_db), user=Depends(current)):
 
 @app.post('/api/projects/{project_id}/translate')
 def add_language(project_id: str, body: TranslateIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
+    check_action(user.id, 'translate', 6); check_budget()
     """Translate the newest finished variants into one more language.
 
     Unlike a rerun this touches nothing but copy: no scrape, no images, no master
@@ -664,9 +675,10 @@ def _adopt_images(db: Session, new_project: Project, source_project_id: str, lab
     adopted = 0
     for asset in rows:
         prefix = f'/media/{source.id}/'
+        clean_url = strip_media_query(asset.url)
         new_url = asset.url
-        if asset.url.startswith(prefix):
-            name = asset.url[len(prefix):]
+        if clean_url.startswith(prefix):
+            name = clean_url[len(prefix):]
             media_root = Path(settings.media_dir).resolve()
             src_file = (media_root / source.id / name).resolve()
             # Same traversal guard as the archive: asset URLs are ours, but a
@@ -676,7 +688,7 @@ def _adopt_images(db: Session, new_project: Project, source_project_id: str, lab
             dst_dir = Path(settings.media_dir) / new_project.id
             dst_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src_file, dst_dir / name)
-            new_url = f'/media/{new_project.id}/{name}'
+            new_url = media_url(new_project.id, name)
         db.add(Asset(project_id=new_project.id, kind='image', label=asset.label, url=new_url, prompt=asset.prompt, model=asset.model, width=asset.width, height=asset.height, cost=0, metadata_json=json.dumps({'adopted_from': source.id}, ensure_ascii=False)))
         if asset.label != 'product-reference':
             adopted += 1
@@ -686,6 +698,7 @@ def _adopt_images(db: Session, new_project: Project, source_project_id: str, lab
 
 @app.post('/api/projects/probe')
 def probe_product_page(payload: ProbeIn, user=Depends(require_perm('project.create'))):
+    check_action(user.id, 'probe', 15)
     """Look at the product page before spending anything on it.
 
     Pure scrape - zero tokens. Returns the detected name and the unique gallery
@@ -722,6 +735,7 @@ def probe_product_page(payload: ProbeIn, user=Depends(require_perm('project.crea
 
 @app.post('/api/projects')
 def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
+    check_action(user.id, 'create', 6); check_budget()
     style = db.get(Style, payload.style_id) if payload.style_id else db.scalar(select(Style).where(Style.is_default == True))
     if not style: raise HTTPException(400, 'Немає доступного стилю')
     langs = normalize_languages(payload.languages); vars = [x for x in payload.variants if x in {'desktop', 'mobile'}]
@@ -807,8 +821,8 @@ def project_archive(project_id: str, db: Session = Depends(get_db), user=Depends
                     suffix = Path(asset.url.split('?', 1)[0]).suffix.lower()
                     if suffix not in {'.png', '.jpg', '.jpeg', '.webp', '.avif'}:
                         suffix = '.webp'
-                    if asset.url.startswith('/media/'):
-                        candidate = (media_root / asset.url.removeprefix('/media/')).resolve()
+                    if strip_media_query(asset.url).startswith('/media/'):
+                        candidate = (media_root / strip_media_query(asset.url).removeprefix('/media/')).resolve()
                         if media_root not in candidate.parents and candidate != media_root:
                             raise ValueError('unsafe media path')
                         data = candidate.read_bytes()
@@ -882,6 +896,7 @@ manifest.json contains generation metadata.
 
 @app.post('/api/projects/{project_id}/run')
 def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
+    check_action(user.id, 'rerun', 6); check_budget()
     p = db.get(Project, project_id)
     if not p: raise HTTPException(404, 'Проєкт не знайдено')
     if p.status in {Status.processing, Status.queued}: raise HTTPException(409, 'Проєкт уже виконується або стоїть у черзі')
@@ -1073,6 +1088,7 @@ Return strict JSON with keys description, style_prompt, hero_prompt, feature_pro
 
 @app.post('/api/styles/generate')
 def generate_style(payload: StyleGenerateIn, user=Depends(require_perm('style.manage'))):
+    check_action(user.id, 'style_ai', 4); check_budget()
     model = payload.model or settings.openai_text_model
     fallback = {'description': 'Згенерований ARTLINE-стиль', 'style_prompt': DEFAULT_STYLE_PROMPT + '\n' + payload.brief, 'hero_prompt': DEFAULT_HERO_PROMPT, 'feature_prompt': DEFAULT_FEATURE_PROMPT, 'negative_prompt': DEFAULT_NEGATIVE_PROMPT, 'score': {'consistency': 96, 'readability': 97, 'brand_fit': 97}, 'preview_html': '<section style="padding:32px;border-radius:12px;background:#F7F8FA;border:1px solid #D0D7DE;color:#101010;font-family:Arial;box-sizing:border-box"><div style="font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#19BCC9">ARTLINE STYLE</div><h2 style="font-size:36px;line-height:1.1;margin:12px 0;color:#101010">Premium product presentation</h2><p style="max-width:620px;margin:0;color:#555555;line-height:1.6">Unified ARTLINE visual system preview.</p></section>', 'model': model}
     if not settings.openai_api_key: return fallback
@@ -1094,6 +1110,7 @@ def generate_style(payload: StyleGenerateIn, user=Depends(require_perm('style.ma
 
 @app.post('/api/styles/{style_id}/improve')
 def improve_style(style_id: str, payload: StyleImproveIn, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
+    check_action(user.id, 'style_ai', 4); check_budget()
     s = db.get(Style, style_id)
     if not s: raise HTTPException(404, 'Стиль не знайдено')
     generated = generate_style(StyleGenerateIn(name=s.name, brief=(s.prompt + '\nImprovement request: ' + payload.instructions)[:12000], model=payload.model), user)
@@ -1144,6 +1161,8 @@ def system_status(db: Session = Depends(get_db), user=Depends(require_perm('sett
         'redis_ok': redis_ok,
         'worker_ok': worker_ok,
         'watchdog_minutes': settings.stuck_project_minutes,
+        'daily_budget_usd': float(settings.daily_budget_usd or 0),
+        'today_spend_usd': round(today_spend(), 4),
         'alerts_telegram': bool(settings.telegram_bot_token and settings.telegram_chat_id),
         'alerts_webhook': bool(settings.alert_webhook_url),
         'media_files': media_files,

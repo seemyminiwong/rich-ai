@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup, Comment, NavigableString
 from openai import OpenAI
 from PIL import Image, ImageOps
 from app.config import settings
+from app.media import media_url
 from app.runtime import GEMINI_BASE_URL, OPENROUTER_BASE_URL, runtime_config
 
 logger = logging.getLogger("richstudio.pipeline")
@@ -1009,7 +1010,7 @@ def materialize_product_reference(url: str, project_id: str, filename: str = 'pr
         image.save(path, format='PNG', optimize=True)
         width, height = image.size
         return (
-            f'/media/{project_id}/{filename}',
+            media_url(project_id, filename),
             path,
             {'source_url': url, 'width': width, 'height': height, 'format': 'PNG', 'is_reference': True},
         )
@@ -1231,7 +1232,7 @@ def generate_image(
             raw = _gemini_edit(model, edit_prompt, reference_path.read_bytes(), _mime_for(reference_path), size)
             # Gemini answers in PNG/JPEG; the page expects webp like the OpenAI path.
             Image.open(BytesIO(raw)).convert('RGB').save(path, 'WEBP', quality=90)
-            return f'/media/{project_id}/{label}.webp', True, ''
+            return media_url(project_id, f'{label}.webp'), True, ''
         with reference_path.open('rb') as image_file:
             edit_options = dict(
                 model=model,
@@ -1257,7 +1258,7 @@ def generate_image(
                 path.write_bytes(image_response.content)
         else:
             return fallback, False, 'OpenAI returned no image data'
-        return f'/media/{project_id}/{label}.webp', True, ''
+        return media_url(project_id, f'{label}.webp'), True, ''
     except Exception as exc:
         return fallback, False, str(exc)
     finally:

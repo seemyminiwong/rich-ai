@@ -62,9 +62,14 @@ class Settings(BaseSettings):
     text_pricing_json: str = json.dumps(DEFAULT_TEXT_PRICING)
     image_pricing_json: str = json.dumps(DEFAULT_IMAGE_PRICING)
     media_dir: str = '/app/media'
+    # 'transitional' serves unsigned /media URLs with a warning (old artifacts keep
+    # working); 'strict' refuses them. Flip to strict once logs run quiet.
+    media_signing: str = 'transitional'
     request_timeout_seconds: int = 75
     # Watchdog: a project stuck in processing/queued longer than this is failed.
     stuck_project_minutes: int = 45
+    # Hard daily cap on NEW paid work, USD. 0 disables. Running work finishes.
+    daily_budget_usd: float = 25.0
     # Optional failure alerts. Telegram: token + chat id. Webhook: any URL that
     # accepts a JSON POST {"text": ...}. Empty values disable alerts silently.
     telegram_bot_token: str = ''

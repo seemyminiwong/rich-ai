@@ -9,6 +9,8 @@ from app.celery_app import celery
 from app.config import DEFAULT_IMAGE_PRICING, DEFAULT_TEXT_PRICING, settings
 from app.db import SessionLocal
 from app.models import Artifact, Asset, CriticReport, Event, Project, Status, Style
+from app.limits import add_spend
+from app.media import media_url
 from app.prompts import BASE_STYLE_VERSION
 from app.pipeline import (
     _image_urls_of,
@@ -118,11 +120,13 @@ def _existing_images(db, project) -> dict:
 @celery.task(bind=True, max_retries=0)
 def process_project(self, project_id, reuse_images=False):
     started = time.time()
+    cost_at_start = 0.0
     with SessionLocal() as db:
         project = db.get(Project, project_id)
         if not project:
             return
         try:
+            cost_at_start = float(project.estimated_cost or 0)
             # Reuse keeps the previous shots and regenerates only the copy: no image
             # cost and no waiting for the image model.
             existing_images = _existing_images(db, project) if reuse_images else {}
@@ -327,7 +331,7 @@ def process_project(self, project_id, reuse_images=False):
                 # The Feature image is generated AFTER the text, from the finished Core
                 # Feature section, so the shot always matches what the page actually says.
                 # Its URL is deterministic, so the copy can reference it in advance.
-                planned_feature_url = f'/media/{project.id}/feature.webp'
+                planned_feature_url = media_url(project.id, 'feature.webp')
                 feature_mode = 'photo'
                 feature_photo_fallback = ''
                 if existing_images.get('feature-generated') or existing_images.get('feature-custom'):
@@ -556,6 +560,8 @@ def process_project(self, project_id, reuse_images=False):
                                  f'Перегенеруйте проєкт. Деталі: {summary}')
                 log(db, project, 'review', 'Увага: частина сторінок — аварійний шаблон, а не обраний стиль. Перед публікацією перегенеруйте.', level='error')
                 send_alert(f'Rich Studio: аварійний шаблон замість стилю\nПроєкт: {project.name}\n{summary}')
+            # Feed the daily budget with the REAL delta this run cost.
+            add_spend(float(project.estimated_cost or 0) - cost_at_start)
             project.status = Status.review
             project.stage = 'review'
             project.progress = 100
@@ -599,6 +605,7 @@ def translate_project(project_id: str, language: str):
         project = db.get(Project, project_id)
         if not project:
             return
+        cost_before_translate = float(project.estimated_cost or 0)
         source_language = (project.languages or 'ua').split(',')[0].strip() or 'ua'
         variants = [v.strip() for v in (project.variants or 'desktop').split(',') if v.strip()]
         log(db, project, 'translate', f'Переклад наявних версій на {language.upper()} (з {source_language.upper()})')
@@ -635,6 +642,7 @@ def translate_project(project_id: str, language: str):
             added_any = True
             log(db, project, 'translate', f'{variant}: {language.upper()} v{latest + 1} готово')
         if added_any:
+            add_spend(float(project.estimated_cost or 0) - cost_before_translate)
             langs = [x.strip() for x in (project.languages or '').split(',') if x.strip()]
             if language not in langs:
                 langs.append(language)
