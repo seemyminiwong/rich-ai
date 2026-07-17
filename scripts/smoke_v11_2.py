@@ -200,6 +200,9 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'showcase hero is background plus img, redundantly': 'url(HERO_URL) center/cover' in prompts and "html.replace('HERO_URL', hero)" in pipeline,
+    'invented image urls are swapped or dropped': 'def _enforce_image_whitelist' in pipeline and 'spares=list(gallery or [])' in pipeline,
+    'full product name never doubles in a section': 'NAME APPEARS ONCE PER SECTION' in prompts,
     'mobile derives from desktop by relayout': 'def relayout_html' in pipeline and 'desktop_master_html' in tasks and "sorted(variants, key=lambda v: 0 if v == 'desktop' else 1)" in tasks,
     'relayout validated mechanically': '_visible_text_signature(output) != want_text' in pipeline and '_image_urls_of(output) != want_imgs' in pipeline,
     'hero presence checked as src or css url, not substring': 'hero_used = bool(hero)' in pipeline,
