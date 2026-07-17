@@ -569,3 +569,72 @@ CONSTRAINTS
 Photorealistic professional equipment photography. No text, labels added by the model, redrawn or garbled logos, warped brand marks, invented lettering on the product, fabricated screen content, captions, arrows, dimension lines, callouts, diagrams, schematics, UI, people, hands, duplicate products, invented accessories, unverified installations, fake internals or cutaways, glow, smoke, particles, cheap snapshot look or watermark.'''
 
 ENGINEERING_NEGATIVE_PROMPT = r'''Do not create a new, approximate or similar product. Do not redraw, redesign, restyle, recolor, simplify, distort, duplicate, mirror or replace the supplied product. Do not alter geometry, proportions, perspective, materials, ports, controls, vents, labels, branding, logos or visible hardware. Do not regenerate, re-letter, redraw, sharpen or complete any existing logo, brand mark, model name, sticker, printed marking, warning label or display content — preserve them exactly as pixels from the source photograph. No alternative viewpoint, no rotated, turned, re-posed, re-shot or re-rendered product, no substituted product variant or different model. No synthesized letterforms; no garbled, warped, smeared, mirrored, doubled, misspelled or invented lettering; no fake brand marks; no fabricated screen or display UI. Do not invent internal components, cutaways, exploded views, cabling, accessories, installations or specifications. No text, letters, captions, badges, arrows, dimension lines, callouts, diagrams, schematics, UI, watermarks, people, hands, clutter, fantasy scenery, neon cyberpunk styling, smoke, sparks, particles, lens flares, excessive glow, dramatic advertising lighting or completely black backgrounds. Avoid a cheap, dull, flat, low-contrast, amateur or generic stock look. The image must contain ZERO added text: no captions, titles, headlines, subtitles, feature names, spec values, annotations, arrows, callouts or infographic overlays in any language — the only readable characters allowed are those physically present on the real product in the source photograph. Preserve the original product identity exactly. If accurate preservation or a truthful visual explanation is not possible, keep the original product and make only minimal environment, framing and lighting changes.'''
+
+
+# --- ARTLINE Showcase --------------------------------------------------------
+# Image-led premium format modelled on the strongest hand-made artline.eu pages
+# (dark hero as a positioned <img>, big numeric spec strip, alternating dark and
+# light photo sections built from REAL gallery frames). Distinct design contract
+# from Base/Engineering: warm gold accent, 22-32px radii, pills allowed.
+
+SHOWCASE_STYLE_NAME = 'ARTLINE Showcase'
+
+SHOWCASE_STYLE_PROMPT = r'''Create a premium image-led ecommerce rich page for artline. The reader decides with their eyes first: real product photography carries the story, large confirmed numbers anchor it, short text explains it. Inform confidently; never invent.
+
+NON-NEGOTIABLE RULES
+- Use inline CSS only. Allowed elements: section, div, h2, h3, p, ul, li, img, strong, span.
+- Never use h1, script, style, JavaScript, forms, buttons, prices, purchase links, tabs, accordions, video, SVG, base64 images, markdown or code fences.
+- Use only image URLs supplied in the request: hero, feature and GALLERY_IMAGES. Never invent URLs. Every fact comes from Product JSON only.
+- Every <img> carries a concise descriptive alt in the target language; loading="lazy" on every non-Hero image.
+- Do not use media queries. Desktop and mobile are separate outputs.
+- Desktop and mobile must carry IDENTICAL copy. Only layout may differ: column counts, paddings, font sizes, image heights. Same sections, same headings, same numbers, same sentences.
+- NEVER DESCRIBE THE PAGE OR THE IMAGES. No sentence may mention pictures, sections, layouts or these instructions. The copy must read correctly with every image removed.
+
+ROOT
+Desktop: <section style="max-width:1240px;margin:0 auto;padding:0 14px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
+Mobile:  <section style="max-width:480px;margin:0 auto;padding:0 10px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
+
+SHOWCASE DESIGN SYSTEM
+- Dark surfaces: #050505, #0b0f14, #071017; dark border #1f2428. Light surfaces: #FFFFFF, #F5F7FA; light border #D0D7DE.
+- Accent is warm gold: #ffd47a on dark surfaces, #a56a00 on light. Use it ONLY for eyebrow labels, big numeric values and badge borders. Never for paragraphs.
+- Body text: #555555 on light, #d0d7de-#d8dde2 on dark. Headings: #101010 on light, #FFFFFF on dark.
+- Radii: outer sections 28-32px, inner cards 16-22px, chips and badges 999px (pills are part of this style).
+- Weights are heavy: h2 900-950, numeric values 950, chips 850-900. Section gap 18px, big-section padding 40-48px desktop / 22-26px mobile.
+- Rhythm rule: strictly alternate section canvases - dark, light, dark, light. Two same-tone sections may never touch.
+- Roughly half of the page area is photography. When GALLERY_IMAGES offers fewer frames, keep the structure and reuse none - drop the extra photo slots instead of repeating an image.
+
+SECTION SET, IN ORDER
+1. HERO - dark, full-bleed photograph
+- Wrapper: position:relative;overflow:hidden;border-radius:32px;background:#050505;border:1px solid #1f2428.
+- The hero asset is an <img style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;opacity:.64"> - an IMG element, never a CSS background (background images do not survive the artline editor).
+- Above it one overlay div: position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.94),rgba(0,0,0,.70) 48%,rgba(0,0,0,.18)). Mobile: vertical gradient (180deg) with the dense end at the bottom, text below the product silhouette.
+- Content layer: position:relative;z-index:1;min-height:585px (mobile ~600px);padding:78px 46px 54px (mobile 300px 18px 26px);display:flex;align-items:center.
+- Inside, max-width:720px: a pill badge with the exact brand/model (rgba gold background + gold border), one h2 60-64px/950 line-height .94 (mobile 34-38px), one bold subtitle 24-27px in #fff1c8, one paragraph 16-17px #d8dde2, then a chip row of 3 white pills with the three strongest confirmed values.
+2. SPEC STRIP - four value cards
+- Grid repeat(4,1fr) desktop / 1fr mobile, gap 14px. Each card: radius 22px, padding 24px; value first at 34px/950 in the accent, then h3 19px, then one short line.
+- Exactly one card is dark (#0b0f14, border #1f2428, gold value) - the single most decision-critical number; the rest are white with #a56a00 values.
+3. FULL-WIDTH PHOTO BAND - one gallery frame as a standalone image section: radius 30px, dark background, <img style="display:block;width:100%;height:auto">.
+4. LIGHT FEATURE SPLIT - #F5F7FA, radius 30px, padding 44px; grid .92fr/1.08fr (mobile stacked): left - gold uppercase eyebrow 13px/900, h2 40-42px/950, paragraph, chip row of dark pills (#071017) with confirmed materials/facts; right - one gallery frame in a white 28px-radius card.
+5. DARK FEATURE SPLIT - grid 1fr/1fr (mobile stacked): left panel #071017 radius 30px padding 40px with gold eyebrow, white h2 36-38px, paragraph #d0d7de and a 2x2 mini-grid of stat tiles (rgba(255,255,255,.08), 24px/950 gold value + 14px label); right - one gallery frame, radius 30px, object-fit:cover.
+6. CAPABILITY TRIO - three white/soft cards (radius 28px): gallery frame on top (height:250px;object-fit:cover, mobile height:210px), then padding 22px with h3 20px and one line. If fewer frames remain, two cards are acceptable - never a repeated photo.
+7. TRUST SPLIT - left dark panel (#071017, radius 28px, padding 36px) with h2 34-36px and one supportive paragraph about choosing/completing the build with artline - no invented services or warranties beyond Product JSON; right - 2x2 grid of soft cards, each h3 19px + one short line built from confirmed facts.
+8. FINAL RECAP - centered dark section, radius 28px, padding 48px 28px, background linear-gradient(135deg,#071017,#3b321f): pill badge with brand/model, h2 40-42px white, one summary paragraph #d0d7de max-width 700px, chip row of 3 white pills with exact confirmed values (dimensions, key spec, capacity).
+
+FACTS AND TONE
+- Numbers with units everywhere a number exists. Every chip, tile and value card states a confirmed fact from Product JSON - no marketing superlatives without a number behind them.
+- The exact brand and model appear in the Hero badge, once mid-page and in the final recap.
+- SEO: natural category wording in h2/h3; no keyword stuffing.
+
+FINAL SELF-CHECK
+- hero is a positioned <img>, not a CSS background; overlay above it; text above the overlay;
+- dark and light sections strictly alternate; pills only where specified; gold only for eyebrows, values and badge borders;
+- every gallery URL used at most once; no invented image URLs; alt on every img; loading="lazy" beyond the Hero;
+- desktop and mobile copy is word-for-word identical; mobile is single-column with the same section order;
+- no sentence describes the page or the images; every value traces to Product JSON;
+- exactly one <section> root, all tags closed, inline CSS only.'''
+
+SHOWCASE_HERO_PROMPT = ENGINEERING_HERO_PROMPT
+
+SHOWCASE_FEATURE_PROMPT = ENGINEERING_FEATURE_PROMPT
+
+SHOWCASE_NEGATIVE_PROMPT = ENGINEERING_NEGATIVE_PROMPT

@@ -418,6 +418,34 @@ def _schema_image_urls(value) -> list[str]:
     return []
 
 
+def gallery_urls(images: list[str], limit: int = 6) -> list[str]:
+    """Best real gallery frames for direct page use, one URL per physical photo.
+
+    The page lists each frame in several resolutions (220/350/600/1400/original);
+    group by gallery identity and keep the largest variant. Purely textual - no
+    downloads - because these URLs go into the prompt, not through the editor.
+    """
+    def weight(url: str) -> int:
+        name = url.rsplit('/', 1)[-1]
+        if name.startswith('gallery_'):
+            return 10000  # original, no size prefix
+        match = re.match(r'(\d+)_gallery_', name)
+        return int(match.group(1)) if match else 0
+
+    best: dict[str, str] = {}
+    order: list[str] = []
+    for url in images or []:
+        identity = _gallery_identity(url)
+        if not identity:
+            continue
+        if identity not in best:
+            best[identity] = url
+            order.append(identity)
+        elif weight(url) > weight(best[identity]):
+            best[identity] = url
+    return [best[i] for i in order[:limit]]
+
+
 def inspect_product_references(images: list[str], preferred_url: str = '') -> list[dict]:
     """Validate and rank real product-image candidates using pixels and gallery provenance.
 
@@ -1140,7 +1168,13 @@ def _section_count(markup: str) -> int:
     return len(re.findall(r'<h2\b', markup or '', re.I))
 
 
-def _prompt(product, style, language, variant, hero, feature):
+def _gallery_line(style, gallery) -> str:
+    if not gallery or 'GALLERY_IMAGES' not in (style.prompt or ''):
+        return ''
+    return '\nGALLERY_IMAGES (real photos of this exact product from its page, already verified; use them as detail/interior frames): ' + json.dumps(gallery, ensure_ascii=False)
+
+
+def _prompt(product, style, language, variant, hero, feature, gallery=None):
     layout = 'single-column mobile layout with no horizontal overflow' if variant == 'mobile' else 'desktop layout up to 1240px'
     target_language_rule = language_rule(language)
     return f"""Create standardized premium ecommerce rich content. Return HTML only: exactly one complete <section>...</section>.
@@ -1154,7 +1188,7 @@ The style prompt below is the primary design specification. Follow it precisely 
 STYLE PROMPT:
 {strip_image_blocks(style.prompt)}
 Mandatory factual rule: use only facts present in Product JSON. Never invent warranty, partnership, certification, compatibility, performance, contents or support claims.
-Images: hero={hero}; feature={feature}.
+Images: hero={hero}; feature={feature}.{_gallery_line(style, gallery)}
 Product JSON: {json.dumps(product, ensure_ascii=False)}"""
 
 
@@ -1251,7 +1285,7 @@ def _restore_image_urls(html: str, hero: str, feature: str, variant: str) -> str
     return html
 
 
-def generate_html(product, style, language, variant, hero, feature, model: str):
+def generate_html(product, style, language, variant, hero, feature, model: str, gallery=None):
     """Return (html, input_tokens, output_tokens, fallback_reason).
 
     fallback_reason is '' when the AI response was used, otherwise a short reason
@@ -1260,7 +1294,7 @@ def generate_html(product, style, language, variant, hero, feature, model: str):
     fallback = _deterministic_html(product, style, language, variant, hero, feature)
     if not text_ready():
         return fallback, 0, 0, 'Text provider is not configured'
-    base_prompt = _prompt(product, style, language, variant, hero, feature)
+    base_prompt = _prompt(product, style, language, variant, hero, feature, gallery)
     try:
         response = _responses_create(model, base_prompt, 16000)
         output = _html_only(response.output_text)
