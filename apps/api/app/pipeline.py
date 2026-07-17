@@ -1375,6 +1375,11 @@ def _enforce_image_whitelist(html: str, allowed: list[str], spares: list[str] | 
             continue
         if spare:
             img['src'] = spare.pop(0)
+            # The slot was styled for the image the model imagined (cover crops,
+            # fixed heights). A substituted catalogue frame is usually a product
+            # render on white: force a crop-proof fit so the swap never shows an
+            # amputated product.
+            img['style'] = 'display:block;width:100%;height:100%;max-height:320px;object-fit:contain;background:#FFFFFF;border-radius:12px'
         else:
             img.decompose()
         changed += 1
