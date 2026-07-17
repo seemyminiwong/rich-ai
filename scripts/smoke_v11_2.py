@@ -200,6 +200,10 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'mobile derives from desktop by relayout': 'def relayout_html' in pipeline and 'desktop_master_html' in tasks and "sorted(variants, key=lambda v: 0 if v == 'desktop' else 1)" in tasks,
+    'relayout validated mechanically': '_visible_text_signature(output) != want_text' in pipeline and '_image_urls_of(output) != want_imgs' in pipeline,
+    'hero presence checked as src or css url, not substring': 'hero_used = bool(hero)' in pipeline,
+    'white renders are never cropped': 'FITTING RULE' in prompts and 'object-fit:contain' in prompts,
     'backups live on the pool, not in a docker volume': './backups:/backups' in compose and 'backup_data' not in compose,
     'dumps are verified before being kept': 'pg_restore --list' in compose,
     'media is backed up alongside the db': 'media-$$STAMP.tar.gz' in compose and 'media_data:/media:ro' in compose,

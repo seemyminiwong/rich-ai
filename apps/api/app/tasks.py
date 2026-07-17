@@ -16,6 +16,7 @@ from app.pipeline import (
     gallery_urls,
     generate_html,
     generate_image,
+    relayout_html,
     inspect_product_references,
     materialize_product_reference,
     parse_page,
@@ -357,6 +358,10 @@ def process_project(self, project_id, reuse_images=False):
             total_outputs = len(languages) * len(variants)
             completed_outputs = 0
             feature_done = False
+            # Desktop first: the mobile master is derived from the finished desktop
+            # page by a layout-only transform, so the two variants cannot drift.
+            variants = sorted(variants, key=lambda v: 0 if v == 'desktop' else 1)
+            desktop_master_html = None
             for variant in variants:
                 # Generate one master layout per viewport. Every other language is a
                 # text-node-only translation of this master, so DOM, inline CSS,
@@ -371,13 +376,31 @@ def process_project(self, project_id, reuse_images=False):
                         return
                     progress = 40 + int(52 * completed_outputs / max(1, total_outputs))
                     if master_html is None:
-                        log(db, project, 'content', f'Створення майстер-макета {master_language.upper()} / {variant} · {project.text_model}', progress)
-                        rich_html, added_input, added_output, fallback_reason = generate_html(
-                            product, style, master_language, variant, hero, feature, project.text_model, gallery=page_gallery
-                        )
+                        rich_html = None
+                        added_input = added_output = 0
+                        if variant == 'mobile' and desktop_master_html:
+                            log(db, project, 'content', f'Мобільна верстка з десктопного макета · {project.text_model}', progress)
+                            relaid, relayout_in, relayout_out, relayout_reason = relayout_html(desktop_master_html, project.text_model)
+                            added_input += relayout_in
+                            added_output += relayout_out
+                            if relaid:
+                                rich_html, fallback_reason = relaid, ''
+                            else:
+                                # A failed relayout still billed tokens; keep them and
+                                # fall through to the independent generation path.
+                                log(db, project, 'content', f'{variant}: {relayout_reason}', progress, 'warning')
+                        if rich_html is None:
+                            log(db, project, 'content', f'Створення майстер-макета {master_language.upper()} / {variant} · {project.text_model}', progress)
+                            rich_html, generated_in, generated_out, fallback_reason = generate_html(
+                                product, style, master_language, variant, hero, feature, project.text_model, gallery=page_gallery
+                            )
+                            added_input += generated_in
+                            added_output += generated_out
                         if fallback_reason and settings.openai_api_key:
                             log(db, project, 'content', f'{master_language.upper()} / {variant}: {fallback_reason}', progress, 'warning')
                         master_html = rich_html
+                        if variant == 'desktop':
+                            desktop_master_html = master_html
                         if feature_mode == 'generate' and not feature_done:
                             # The page now exists: build the Feature shot from the text of
                             # its Core Feature section, so image and copy always agree.

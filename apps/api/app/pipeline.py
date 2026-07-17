@@ -1280,20 +1280,93 @@ def _restore_image_urls(html: str, hero: str, feature: str, variant: str, img_he
         match = pattern.search(html)
         if match:
             html = html[:match.start(3)] + hero + html[match.end(3):]
-    if hero and hero not in html and img_hero:
+    hero_used = bool(hero) and bool(
+        re.search(r'src=["\']' + re.escape(hero or '') + r'["\']', html)
+        or re.search(r'url\((["\']?)' + re.escape(hero or '') + r'\1\)', html)
+    )
+    if hero and not hero_used and img_hero:
         # Image-led styles carry the hero as a positioned <img> inside the first
         # position:relative wrapper. If the model dropped it, put it back as the
         # wrapper's first child - exactly where the style contract expects it.
-        wrapper = re.search(r"<div[^>]*style=\"[^\"]*position:\s*relative[^\"]*\"[^>]*>", html, re.I)
+        wrapper = re.search(r"<(?:div|section)[^>]*style=[\"'][^\"']*position:\s*relative[^\"']*[\"'][^>]*>", html, re.I)
         if wrapper:
             tag = (f'<img src="{hero}" alt="" loading="eager" '
                    'style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;opacity:.64">')
             html = html[:wrapper.end()] + tag + html[wrapper.end():]
         else:
             logger.warning('Hero URL missing from generated HTML (%s) and no wrapper to repair', variant)
-    elif hero and hero not in html:
+    elif hero and not hero_used:
         logger.warning('Hero URL missing from generated HTML (%s) and no background to repair', variant)
     return html
+
+
+def _visible_text_signature(html: str) -> str:
+    """Normalized visible copy, for proving two variants carry identical text."""
+    text = BeautifulSoup(html or '', 'html.parser').get_text(' ')
+    return ' '.join(text.split()).strip().lower()
+
+
+def _image_urls_of(html: str) -> list[str]:
+    soup = BeautifulSoup(html or '', 'html.parser')
+    img_srcs = {img.get('src') for img in soup.find_all('img') if img.get('src')}
+    css_urls = {m[1] for m in re.findall(r"url\((['\"]?)([^)'\"]+)\1\)", html or '')}
+    return sorted(img_srcs | css_urls)
+
+
+RELAYOUT_PROMPT = """You are re-laying-out a finished desktop ecommerce rich page into its MOBILE variant.
+This is a LAYOUT-ONLY transformation. Both variants are published on the same product page, so the copy must stay literally identical.
+
+ALLOWED CHANGES (inline CSS and structure only):
+- root becomes max-width:480px with mobile paddings;
+- every multi-column grid or flex row becomes a single column (text before its related image);
+- font sizes, paddings, gaps, min-heights and image heights adapt to the style's mobile rules;
+- the Hero keeps its <img> as the first child of the wrapper; its overlay gradient becomes vertical (180deg, dense at the bottom) and the copy sits below the product silhouette;
+- order of sections and of cards inside a section stays exactly the same.
+
+FORBIDDEN:
+- adding, removing, rewording, translating or reordering ANY visible text, number or unit;
+- adding or removing any element that carries text or any <img>;
+- changing any URL anywhere;
+- media queries, scripts, external CSS.
+
+Return HTML only: exactly one complete <section>...</section>.
+
+DESKTOP PAGE:
+"""
+
+
+def relayout_html(desktop_html: str, model: str):
+    """Return (mobile_html, in_tokens, out_tokens, reason). '' reason on success.
+
+    The mobile page is derived from the finished desktop page instead of being
+    generated independently, so the two variants cannot tell different stories.
+    Validation is mechanical: identical visible text, identical image URLs.
+    """
+    if not text_ready():
+        return None, 0, 0, 'Text provider is not configured'
+    want_text = _visible_text_signature(desktop_html)
+    want_imgs = _image_urls_of(desktop_html)
+    prompt = RELAYOUT_PROMPT + desktop_html
+    total_in = total_out = 0
+    try:
+        response = _responses_create(model, prompt, 16000)
+        output = _html_only(response.output_text)
+        added_in, added_out = _usage_counts(response, prompt, response.output_text)
+        total_in += added_in; total_out += added_out
+        if _visible_text_signature(output) != want_text or _image_urls_of(output) != want_imgs:
+            correction = ("Your previous mobile re-layout changed the copy or the images. Do it again. "
+                          "The visible text and every URL must be byte-for-byte those of the desktop page; only layout may differ.\n\n" + prompt)
+            retried = _responses_create(model, correction, 16000)
+            output = _html_only(retried.output_text)
+            ri, ro = _usage_counts(retried, correction, retried.output_text)
+            total_in += ri; total_out += ro
+        if _visible_text_signature(output) != want_text:
+            return None, total_in, total_out, 'мобільна верстка змінила текст — застосовано незалежну генерацію'
+        if _image_urls_of(output) != want_imgs:
+            return None, total_in, total_out, 'мобільна верстка змінила зображення — застосовано незалежну генерацію'
+        return output, total_in, total_out, ''
+    except Exception as exc:
+        return None, total_in, total_out, f'перекомпонування не вдалося: {exc}'
 
 
 def generate_html(product, style, language, variant, hero, feature, model: str, gallery=None):
