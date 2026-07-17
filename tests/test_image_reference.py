@@ -164,7 +164,12 @@ def test_image_prompts_are_reference_first_and_have_distinct_jobs():
     hero = DEFAULT_HERO_PROMPT.lower()
     feature = DEFAULT_FEATURE_PROMPT.lower()
 
-    assert 'category-appropriate environment' in hero
+    # The scene comes from the server-picked ENVIRONMENT line. The prompt must
+    # never enumerate example environments per category: image models paint the
+    # examples into the frame (a 3D printer appeared beside an inverter).
+    assert 'environment line of the request' in hero
+    assert 'never place equipment of any other product category' in hero
+    assert '3d printer' not in hero
     assert 'supplied product is immutable' in hero
     assert 'full-bleed css background' in hero
     assert 'single strongest confirmed product feature' in feature
