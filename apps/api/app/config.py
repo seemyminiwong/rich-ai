@@ -16,6 +16,9 @@ DEFAULT_IMAGE_PRICING = {
     "gpt-image-1-mini": {"low": 0.005, "medium": 0.015, "high": 0.04},
     # Gemini image models bill a flat rate per image: they have no quality tiers,
     # so every tier resolves to the same figure.
+    # Non-square tiers (our Hero/Feature are 1536x1024 or 1024x1536) plus an edit
+    # surcharge: gpt-image-2 always ingests the reference photo at high fidelity.
+    "gpt-image-2": {"low": 0.02, "medium": 0.06, "high": 0.20},
     "gemini-2.5-flash-image": {"low": 0.039, "medium": 0.039, "high": 0.039},
     "gemini-3.1-flash-image-preview": {"low": 0.045, "medium": 0.045, "high": 0.045},
     "gemini-3.1-flash-lite-image": {"low": 0.02, "medium": 0.02, "high": 0.02},
