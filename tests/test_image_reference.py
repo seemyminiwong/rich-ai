@@ -7,7 +7,7 @@ from PIL import Image
 
 from types import SimpleNamespace
 
-from app.pipeline import _aspect_ratio, _deterministic_html, _gallery_identity, _html_only, _translation_template, generate_image, inspect_product_references, language_rule, parse_page, translate_html
+from app.pipeline import _language_matches, _aspect_ratio, _deterministic_html, _gallery_identity, _html_only, _translation_template, generate_image, inspect_product_references, language_rule, parse_page, translate_html
 from app.prompts import DEFAULT_FEATURE_PROMPT, DEFAULT_HERO_PROMPT, DEFAULT_STYLE_PROMPT
 
 
@@ -287,3 +287,22 @@ def test_openai_image_model_never_reaches_the_gemini_path(tmp_path):
             '/media/reference.png', reference_path=reference, size='1536x1024',
         )
     assert generated is True, error
+
+
+def test_language_check_tolerates_a_preserved_foreign_name():
+    # A Russian page may legitimately keep a Ukrainian product name in the Hero.
+    ru_page = (
+        '<h2>Гібридний інвертор DEYE SUN-12K-SG05LP3-EU-SM2 Трифазний</h2>'
+        '<p>Современное решение для трёхфазной сети 220/380 В, батарея 48 В и два '
+        'трекера обеспечивают стабильную выработку и высокий КПД в любых условиях.</p>'
+    )
+    assert _language_matches(ru_page, 'ru') is True
+
+    # A genuinely Ukrainian page must still be rejected when ru was requested.
+    ua_page = (
+        '<h2>Гібридний інвертор</h2>'
+        '<p>Сучасне рішення для щоденних та професійних задач; ключові характеристики '
+        'й переваги подані на основі підтверджених даних товару та специфікацій.</p>'
+    )
+    assert _language_matches(ua_page, 'ru') is False
+    assert _language_matches(ua_page, 'ua') is True
