@@ -1257,6 +1257,39 @@ def _deterministic_html(product, style, language, variant, hero, feature):
 </section>'''
 
 
+def _enforce_image_whitelist(html: str, allowed: list[str], spares: list[str] | None = None) -> str:
+    """Every <img> must point at an image we actually supplied.
+
+    The model occasionally invents a plausible-looking URL (a dead image with an
+    alt caption on the page). Swap unknown srcs for an unused supplied frame when
+    one is left, otherwise remove the img outright - a missing photo slot reads
+    better than a broken-image icon.
+    """
+    allowed_set = {u for u in allowed if u}
+    if not allowed_set:
+        return html
+    soup = BeautifulSoup(html or '', 'html.parser')
+    used = {img.get('src') for img in soup.find_all('img')}
+    # Only gallery frames may fill a hole: substituting the Hero into a body slot
+    # would duplicate it on the page.
+    pool = spares if spares is not None else allowed
+    spare = [u for u in pool if u and u not in used]
+    changed = 0
+    for img in soup.find_all('img'):
+        src = img.get('src') or ''
+        if src in allowed_set:
+            continue
+        if spare:
+            img['src'] = spare.pop(0)
+        else:
+            img.decompose()
+        changed += 1
+    if changed:
+        logger.warning('Replaced or removed %d invented image URLs', changed)
+        return str(soup)
+    return html
+
+
 def _restore_image_urls(html: str, hero: str, feature: str, variant: str, img_hero: bool = False) -> str:
     """Guarantee the generated page actually points at this project's images.
 
@@ -1280,10 +1313,17 @@ def _restore_image_urls(html: str, hero: str, feature: str, variant: str, img_he
         match = pattern.search(html)
         if match:
             html = html[:match.start(3)] + hero + html[match.end(3):]
+    if hero:
+        html = html.replace('HERO_URL', hero)
     hero_used = bool(hero) and bool(
         re.search(r'src=["\']' + re.escape(hero or '') + r'["\']', html)
         or re.search(r'url\((["\']?)' + re.escape(hero or '') + r'\1\)', html)
     )
+    if hero and img_hero:
+        wrapper_match = re.search(r"<(?:div|section)([^>]*style=[\"'])([^\"']*position:\s*relative[^\"']*)([\"'][^>]*)>", html, re.I)
+        if wrapper_match and 'url(' not in wrapper_match.group(2):
+            insert = wrapper_match.group(2).rstrip(';') + f';background:#050505 url({hero}) center/cover no-repeat'
+            html = html[:wrapper_match.start(2)] + insert + html[wrapper_match.end(2):]
     if hero and not hero_used and img_hero:
         # Image-led styles carry the hero as a positioned <img> inside the first
         # position:relative wrapper. If the model dropped it, put it back as the
@@ -1410,6 +1450,7 @@ HTML:
         if _section_count(output) < 3:
             raise RuntimeError('AI returned an incomplete page (only the Hero section)')
         output = _restore_image_urls(output, hero, feature, variant, img_hero='GALLERY_IMAGES' in (style.prompt or ''))
+        output = _enforce_image_whitelist(output, [hero, feature] + list(gallery or []), spares=list(gallery or []))
         return output, input_tokens, output_tokens, ''
     except Exception as exc:
         logger.warning('generate_html fell back to deterministic template for %s/%s: %s', language, variant, exc)

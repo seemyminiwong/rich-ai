@@ -607,11 +607,12 @@ SHOWCASE DESIGN SYSTEM
 
 SECTION SET, IN ORDER
 1. HERO - dark, full-bleed photograph
-- Wrapper: position:relative;overflow:hidden;border-radius:32px;background:#050505;border:1px solid #1f2428.
+- Wrapper: position:relative;overflow:hidden;border-radius:32px;border:1px solid #1f2428;background:#050505 url(HERO_URL) center/cover no-repeat - substitute HERO_URL with the exact supplied hero URL. The same URL appears TWICE in the Hero: as this background and as the img below. That redundancy is intentional - never drop either.
 - THE FIRST CHILD of the wrapper is the hero asset as <img style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;opacity:.64"> - an IMG element, never a CSS background (background images do not survive the artline editor). A Hero without this img is an invalid page.
 - Above it one overlay div: position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.94),rgba(0,0,0,.70) 48%,rgba(0,0,0,.18)). Mobile: vertical gradient (180deg) with the dense end at the bottom, text below the product silhouette.
 - Content layer: position:relative;z-index:1;min-height:585px (mobile ~600px);padding:78px 46px 54px (mobile 300px 18px 26px);display:flex;align-items:center.
-- Inside, max-width:720px: a pill badge with the exact brand/model (rgba gold background + gold border), one h2 60-64px/950 line-height .94 (mobile 34-38px), one bold subtitle 24-27px in #fff1c8, one paragraph 16-17px #d8dde2, then a chip row of 3 white pills with the three strongest confirmed values.
+- Inside, max-width:720px: a pill badge, one h2 60-64px/950 line-height .94 (mobile 34-38px), one bold subtitle 24-27px in #fff1c8, one paragraph 16-17px #d8dde2, then a chip row of 3 white pills with the three strongest confirmed values.
+- NAME APPEARS ONCE PER SECTION: the badge carries only the brand and product category (for example "DEYE · Гібридний інвертор"), the h2 carries the full model name exactly once. Badge text duplicating the h2 is a defect. The same rule applies to the final recap badge.
 2. SPEC STRIP - four value cards
 - Grid repeat(4,1fr) desktop / 1fr mobile, gap 14px. Each card: radius 22px, padding 24px; value first at 34px/950 in the accent, then h3 19px, then one short line.
 - Exactly one card is dark (#0b0f14, border #1f2428, gold value) - the single most decision-critical number; the rest are white with #a56a00 values.
@@ -627,7 +628,8 @@ FACTS AND TONE
 - SEO: natural category wording in h2/h3; no keyword stuffing.
 
 FINAL SELF-CHECK
-- the FIRST CHILD of the Hero wrapper is the hero <img> (position:absolute;inset:0), never a CSS background; overlay above it; text above the overlay;
+- the Hero wrapper carries the hero URL as background (center/cover) AND its first child is the same URL as <img> (position:absolute;inset:0); overlay above; text above the overlay;
+- the badge does not repeat the h2: brand + category in the badge, full model once in the h2;
 - no photo-only sections; the trust tiles contain zero registry data (SKU, codes, EAN, country);
 - no white-background render is cropped by cover or placed bare on a dark canvas;
 - dark and light sections strictly alternate; pills only where specified; gold only for eyebrows, values and badge borders;
