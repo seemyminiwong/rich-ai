@@ -490,6 +490,62 @@ def process_project(self, project_id, reuse_images=False):
 
 
 @celery.task
+def translate_project(project_id: str, language: str):
+    """Add one language to a finished project by translating its newest artifacts.
+
+    No scraping, no images, no master regeneration: translate_html() rewrites text
+    nodes only, so layout, styles and image URLs stay byte-identical to the source
+    variant. Costs tokens for the copy alone - the cheapest way to add a language.
+    """
+    with SessionLocal() as db:
+        project = db.get(Project, project_id)
+        if not project:
+            return
+        source_language = (project.languages or 'ua').split(',')[0].strip() or 'ua'
+        variants = [v.strip() for v in (project.variants or 'desktop').split(',') if v.strip()]
+        log(db, project, 'translate', f'Переклад наявних версій на {language.upper()} (з {source_language.upper()})')
+        added_any = False
+        for variant in variants:
+            source = db.scalar(select(Artifact).where(
+                Artifact.project_id == project.id,
+                Artifact.language == source_language,
+                Artifact.variant == variant,
+            ).order_by(Artifact.version.desc()))
+            if not source:
+                log(db, project, 'translate', f'{variant}: немає вихідної версії {source_language.upper()} — пропущено', level='warning')
+                continue
+            try:
+                translated, added_input, added_output = translate_html(source.html, language, project.text_model) or (None, 0, 0)
+            except Exception as exc:
+                log(db, project, 'translate', f'{variant}: переклад не вдався: {str(exc)[:180]}', level='error')
+                continue
+            if not translated:
+                log(db, project, 'translate', f'{variant}: перекладач не повернув результат', level='warning')
+                continue
+            project.input_tokens += added_input
+            project.output_tokens += added_output
+            if added_input or added_output:
+                project.text_request_count += 1
+            recalculate_cost(project)
+            latest = db.scalar(select(func.max(Artifact.version)).where(
+                Artifact.project_id == project.id,
+                Artifact.language == language,
+                Artifact.variant == variant,
+            )) or 0
+            db.add(Artifact(project_id=project.id, language=language, variant=variant, html=translated, version=latest + 1))
+            db.commit()
+            added_any = True
+            log(db, project, 'translate', f'{variant}: {language.upper()} v{latest + 1} готово')
+        if added_any:
+            langs = [x.strip() for x in (project.languages or '').split(',') if x.strip()]
+            if language not in langs:
+                langs.append(language)
+                project.languages = ','.join(langs)
+            log(db, project, 'translate', f'Мову {language.upper()} додано перекладом — перевірте результат перед публікацією')
+        db.commit()
+
+
+@celery.task
 def watchdog_stuck_projects():
     """Fail projects stuck in processing/queued beyond the limit and alert about them.
 

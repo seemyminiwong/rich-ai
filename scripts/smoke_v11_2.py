@@ -171,7 +171,7 @@ checks = {
     'assets are immutable': 'max-age=31536000, immutable' in nginx,
     'security headers repeated where add_header breaks inheritance': nginx.count('X-Content-Type-Options') == 3,
     'frontend crashes reach the alert channel': "addEventListener('error'" in web and "@app.post('/api/client-error')" in main,
-    'close buttons are labelled': web.count('aria-label="Закрити"') == 7,
+    'close buttons are labelled': web.count('aria-label="Закрити"') == web.count('>×</button>'),
     'refuses to boot on shipped secrets': 'def check_secrets' in main and 'check_secrets()' in main and 'SHIPPED_DEFAULTS' in config,
     'jwt secret has a length floor': "len(self.jwt_secret) < 32" in config,
     'postgres password warns but never blocks': 'def warn_secrets' in config and 'postgres_password' not in config.split('def insecure_secrets')[1].split('def warn_secrets')[0],
