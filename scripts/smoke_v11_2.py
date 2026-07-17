@@ -199,6 +199,9 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'no function shadows a dialog element id': not [i for i in ('translateDialog', 'rerunProjectDialog', 'probeBox', 'presetInfo', 'newProject', 'styleGenerator', 'inviteDialog', 'createUserDialog') if f'function {i}(' in web],
+    'toasts surface above open dialogs': "document.querySelector('dialog[open]')||toastStack()" in web,
+    'version check script shipped': (root / 'scripts/version-check.sh').exists(),
     'showcase is protected in the ui too': "'ARTLINE Showcase'" in web.split('MANAGED_STYLE_NAMES=')[1].split(']')[0],
     'preset picker is a slider with in-place updates': 'function slidePreset' in web and 'type="range"' in web and 'pickPreset' not in web,
     'page probe is free and permissioned': "@app.post('/api/projects/probe')" in main,

@@ -231,8 +231,8 @@ optgroup{font-weight:800}
 .verdict{font-size:11px;font-weight:900;padding:4px 9px;border-radius:8px;background:#EEF1F3;color:#555}
 .verdict.ok{background:#E8F8F0;color:#14784A}
 .verdict.bad{background:#FDECEC;color:#B42D2D}
-.probe-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:8px}
-.frame{position:relative;padding:0;border:2px solid transparent;border-radius:10px;overflow:hidden;background:#fff;cursor:pointer;aspect-ratio:1;transition:.15s}
+.probe-grid{display:flex;flex-wrap:wrap;gap:8px}
+.frame{position:relative;flex:0 0 74px;width:74px;height:74px;padding:0;border:2px solid transparent;border-radius:10px;overflow:hidden;background:#fff;cursor:pointer;transition:.15s}
 .frame img{width:100%;height:100%;object-fit:cover;display:block}
 .frame:hover{border-color:var(--silver)}
 .frame.off img{opacity:.28;filter:grayscale(1)}
