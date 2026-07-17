@@ -188,6 +188,9 @@ class UserCreate(BaseModel):
     role: Role = Role.viewer
 class ProbeIn(BaseModel):
     source_url: HttpUrl
+class AdoptItem(BaseModel):
+    project_id: str
+    label: str
 class TranslateIn(BaseModel):
     language: str = Field(min_length=2, max_length=10)
 class ProjectIn(BaseModel):
@@ -199,6 +202,7 @@ class ProjectIn(BaseModel):
     gallery: list[str] = Field(default_factory=list, max_length=10)
     reuse_images_from: str = ''
     reuse_labels: list[str] = Field(default_factory=list, max_length=10)
+    adopt_images: list[AdoptItem] = Field(default_factory=list, max_length=10)
 class StyleIn(BaseModel):
     name: str
     description: str = ''
@@ -669,20 +673,20 @@ def probe_product_page(payload: ProbeIn, user=Depends(require_perm('project.crea
     frames = gallery_urls(images, limit=10)
     prior = None
     with SessionLocal() as db:
-        # Images are the expensive part of a run; if an earlier project for this
-        # exact URL already generated them, offer them for adoption.
-        siblings = db.scalars(select(Project).where(Project.source_url == url).order_by(Project.created_at.desc()).limit(5)).all()
+        # Images are the expensive part of a run. Aggregate per label across ALL
+        # recent sibling projects: the newest run may hold only a Feature while
+        # the Heroes live two runs back - the operator should get all of them.
+        siblings = db.scalars(select(Project).where(Project.source_url == url).order_by(Project.created_at.desc()).limit(10)).all()
+        found: dict[str, dict] = {}
         for sibling in siblings:
-            assets = db.scalars(select(Asset).where(Asset.project_id == sibling.id, Asset.kind == 'image', Asset.label.in_(ADOPTABLE_IMAGE_LABELS))).all()
-            reusable = [a for a in assets if a.label != 'product-reference']
-            if reusable:
-                prior = {
-                    'project_id': sibling.id,
-                    'project_name': sibling.name,
-                    'created_at': sibling.created_at.isoformat() if sibling.created_at else None,
-                    'images': [{'label': a.label, 'url': a.url} for a in reusable],
-                }
-                break
+            assets = db.scalars(select(Asset).where(Asset.project_id == sibling.id, Asset.kind == 'image', Asset.label.in_(ADOPTABLE_IMAGE_LABELS)).order_by(Asset.created_at.desc())).all()
+            for asset in assets:
+                if asset.label == 'product-reference' or asset.label in found:
+                    continue
+                found[asset.label] = {'label': asset.label, 'url': asset.url, 'project_id': sibling.id, 'project_name': sibling.name}
+        if found:
+            order = {label: index for index, label in enumerate(ADOPTABLE_IMAGE_LABELS)}
+            prior = {'images': sorted(found.values(), key=lambda x: order.get(x['label'], 99))}
     return {'name': title, 'gallery': frames, 'count': len(frames), 'prior': prior}
 
 
@@ -699,7 +703,13 @@ def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depen
                 text_model=payload.text_model or settings.openai_text_model, image_model=payload.image_model or settings.openai_image_model, image_quality=payload.image_quality if payload.image_quality in {'low', 'medium', 'high'} else 'medium', custom_hero_url=payload.custom_hero_url.strip(), custom_feature_url=payload.custom_feature_url.strip(), gallery_json=json.dumps([u.strip() for u in payload.gallery if is_public_http_url(u.strip())][:10]), status=Status.queued, stage='queued')
     db.add(p); db.flush()
     adopted = 0
-    if payload.reuse_images_from:
+    if payload.adopt_images:
+        by_source: dict[str, list[str]] = {}
+        for item in payload.adopt_images:
+            by_source.setdefault(item.project_id, []).append(item.label)
+        for source_id, labels in by_source.items():
+            adopted += _adopt_images(db, p, source_id, labels=labels)
+    elif payload.reuse_images_from:
         adopted = _adopt_images(db, p, payload.reuse_images_from, labels=payload.reuse_labels or None)
     audit(db, user, 'project.create', 'project', p.id, {'adopted_images': adopted} if adopted else None)
     db.commit(); db.refresh(p)
