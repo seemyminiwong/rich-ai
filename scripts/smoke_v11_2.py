@@ -200,6 +200,11 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'fallback is recorded on the artifact': 'fallback_reason=fallback_reason' in tasks and 'fallback_reason' in models,
+    'fallback escalates to error, alert and project.error': "level='error'" in tasks and 'send_alert(f\'Rich Studio: аварійний шаблон' in tasks and 'аварійний шаблон замість обраного стилю' in tasks,
+    'fallback is loud in the ui': 'function fallbackBanner' in web and 'Це не обраний стиль' in web,
+    'fallback pages cannot be approved': 'anyFallback' in web,
+    'fallback column migrated': (root / 'apps/api/alembic/versions/0004_artifact_fallback.py').exists(),
     'language check tolerates a preserved foreign name': 'ua_specific <= max(6, total * 0.04)' in pipeline and 'a preserved brand or model name' in pipeline,
     'preview audits its own media files': 'function auditPreviewMedia' in web and 'mediaAudit' in web and 'проблема у сховищі медіа' in web,
     'showcase is the managed default': "'name': SHOWCASE_STYLE_NAME,\n        'default': True," in main and "'name': ENGINEERING_STYLE_NAME,\n        'default': False," in main,
