@@ -201,6 +201,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'every content image gets rounded corners mechanically': 'def _round_image_corners' in pipeline and '_round_image_corners(output)' in pipeline,
     'progress bar tweens through a memo, not a dead transition': 'PROGRESS_MEMO' in web and 'function animateProgressBars' in web and web.count('animateProgressBars()') >= 3,
     'only active runs animate': "['processing','queued'].includes(p.status)" in web and '.progress.run i::after' in css,
     'progress respects reduced motion': '.progress.run i::after,.progress .phead{animation:none}' in css,
