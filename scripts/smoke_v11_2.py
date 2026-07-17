@@ -204,6 +204,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'github oauth: invite-gated, csrf state, hash handoff': "@app.get('/api/auth/github/callback')" in main and 'def _github_state_ok' in main and 'немає запрошення' in main and 'github_client_secret' in config and 'gh_token=' in web and 'loadAuthMethods' in web and "'user:email'" in main,
     'playwright e2e is the primary frontend insurance': (root / 'tests/e2e/test_studio_flow.py').exists() and 'pageerror' in (root / 'tests/e2e/test_studio_flow.py').read_text(encoding='utf-8') and 'playwright install' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8') and 'needs: [checks, e2e]' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8'),
     'health endpoint hides the version from anonymous callers': "def health(): return {'status': 'ok'}" in main,
     'progress memo capped at 100 entries': 'mk.length-100' in web,
