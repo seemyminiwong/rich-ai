@@ -20,9 +20,14 @@ def image_bytes(size=(600, 600), color=(245, 245, 245)):
 class FakeResponse:
     def __init__(self, content):
         self.content = content
+        self.headers = {'content-length': str(len(content))}
 
     def raise_for_status(self):
         return None
+
+    def iter_bytes(self, chunk_size=65536):
+        for start in range(0, len(self.content), chunk_size):
+            yield self.content[start:start + chunk_size]
 
 
 class FakeClient:
@@ -39,6 +44,19 @@ class FakeClient:
 
     def get(self, url):
         return FakeResponse(self.payloads[url])
+
+    def stream(self, method, url, **kwargs):
+        # Context-manager form used by fetch_bytes_capped (the 30 MB ceiling).
+        response = FakeResponse(self.payloads[url])
+
+        class _Stream:
+            def __enter__(self_inner):
+                return response
+
+            def __exit__(self_inner, *args):
+                return False
+
+        return _Stream()
 
 
 def test_primary_gallery_identity_wins_even_when_file_is_smaller_than_20kb():
@@ -255,7 +273,9 @@ def test_gemini_model_routes_to_gemini_and_never_calls_openai(tmp_path):
         )
 
     assert generated is True, error
-    assert url == '/media/project/feature.webp'
+    from app.media import strip_media_query
+    assert strip_media_query(url) == '/media/project/feature.webp'
+    assert '?t=' in url, 'media URL must carry the HMAC token' 
     assert calls[0]['model'] == 'gemini-2.5-flash-image'
     assert 'STRICT REFERENCE-IMAGE EDIT' in calls[0]['prompt']
     # Gemini answers in PNG; the page contract is webp like the OpenAI path.

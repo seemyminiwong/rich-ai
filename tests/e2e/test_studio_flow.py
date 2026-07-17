@@ -31,7 +31,16 @@ def browser_page():
         page = browser.new_page()
         errors = []
         page.on('pageerror', lambda exc: errors.append(str(exc)))
+        console = []
+        page.on('console', lambda msg: console.append(f'[{msg.type}] {msg.text}'))
         yield page, errors
+        # Post-mortem for CI: whatever the page looked like when the test ended.
+        try:
+            page.screenshot(path='/tmp/e2e-last-state.png', full_page=True)
+            with open('/tmp/e2e-console.log', 'w') as fh:
+                fh.write('\n'.join(console[-200:]))
+        except Exception:
+            pass
         browser.close()
 
 
