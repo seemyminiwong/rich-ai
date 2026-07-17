@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.19"
+BASE_STYLE_VERSION = "12.20"
 BASE_STYLE_NAME = "ARTLINE Base"
 ENGINEERING_STYLE_NAME = "ARTLINE Engineering"
 
@@ -644,3 +644,45 @@ SHOWCASE_HERO_PROMPT = ENGINEERING_HERO_PROMPT
 SHOWCASE_FEATURE_PROMPT = ENGINEERING_FEATURE_PROMPT
 
 SHOWCASE_NEGATIVE_PROMPT = ENGINEERING_NEGATIVE_PROMPT
+
+
+# --- ARTLINE Podium ----------------------------------------------------------
+# Showcase without the dark photo hero: opens on a light "stage" with the real
+# product render floating over a soft floor shadow. The artline editor strips
+# <style>, so all depth comes from inline filter:drop-shadow - no animation.
+# Derived from SHOWCASE_STYLE_PROMPT by section surgery; sanity-checked at import
+# so a silently failed replace can never ship again.
+
+PODIUM_STYLE_NAME = 'ARTLINE Podium'
+
+_PODIUM_SECTION = """1. PODIUM - light product stage
+- Wrapper: background:#FFFFFF;border:1px solid #D0D7DE;border-radius:32px;padding:46px;box-sizing:border-box. No dark canvas and no photo background here.
+- Top block, centered, max-width:820px;margin:0 auto;text-align:center: pill badge (brand + category, cyan border on white), one h2 46-52px/950 (brand + model code only), one subtitle 20-22px in #157985 with the commercial descriptors as " · " specs, then a chip row of 3 dark pills (#1A2128) with the strongest confirmed values.
+- The stage below: the hero asset as <img style="display:block;max-width:78%;max-height:520px;width:auto;height:auto;margin:18px auto 0;object-fit:contain;filter:drop-shadow(0 34px 42px rgba(16,16,16,.22))"> - the render must NEVER be cropped.
+- Under the image one soft floor: <div style="width:56%;height:26px;margin:-6px auto 0;background:radial-gradient(closest-side,rgba(16,16,16,.16),transparent);border-radius:50%"></div>.
+- The hero asset here is the real product photograph supplied in the request; treat it as a studio render on a light stage.
+"""
+
+_showcase_hero_start = 'SECTION SET, IN ORDER\n1. HERO - dark, full-bleed photograph'
+_showcase_hero_end = '2. SPEC STRIP'
+_i = SHOWCASE_STYLE_PROMPT.index(_showcase_hero_start)
+_j = SHOWCASE_STYLE_PROMPT.index(_showcase_hero_end)
+PODIUM_STYLE_PROMPT = (
+    SHOWCASE_STYLE_PROMPT[:_i]
+    + 'SECTION SET, IN ORDER\n' + _PODIUM_SECTION
+    + SHOWCASE_STYLE_PROMPT[_j:]
+)
+PODIUM_STYLE_PROMPT = PODIUM_STYLE_PROMPT.replace(
+    '- Rhythm rule: strictly alternate section canvases - dark, light, dark, light. Two same-tone sections may never touch.',
+    '- Rhythm rule: the Podium opens LIGHT; from section 3 onward strictly alternate dark and light canvases.'
+)
+PODIUM_STYLE_PROMPT = PODIUM_STYLE_PROMPT.replace(
+    '- the Hero wrapper carries the hero URL as background (center/cover) AND its first child is the same URL as <img> (position:absolute;inset:0) with NO opacity; the overlay fades to transparent over the product so the photo is visible; text above the overlay;',
+    '- the Podium shows the hero asset as an uncropped contained <img> with a drop-shadow and a soft radial floor under it; no dark hero, no photo background;'
+)
+
+for _needle, _must in ((_showcase_hero_start.split('\n')[1], False), ('PODIUM - light product stage', True), ('drop-shadow', True)):
+    if (_needle in PODIUM_STYLE_PROMPT) is not _must:
+        raise RuntimeError(f'PODIUM style derivation failed on: {_needle}')
+
+PODIUM_NEGATIVE_PROMPT = ENGINEERING_NEGATIVE_PROMPT
