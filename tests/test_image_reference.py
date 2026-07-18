@@ -465,4 +465,7 @@ def test_podium3d_prompt_contract():
     p = PODIUM3D_STYLE_PROMPT
     assert 'PODIUM-3D-SPIN' in p
     assert 'do NOT write any CSS animation' in p
-    assert 'exactly six sections' in p.lower()
+    # Showcase-гілка описує склад сторінки як 'SECTION SET, IN ORDER' (без слова
+    # 'six') - саме на цьому впав перший деплой Podium 3D.
+    assert 'SECTION SET, IN ORDER' in p
+    assert 'PODIUM - light product stage' in p

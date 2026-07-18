@@ -204,6 +204,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'prompts module executes without raising (import-time asserts)': (lambda: (exec(compile(prompts, 'prompts.py', 'exec'), {'__name__': 'app.prompts'}) or True))(),
     'podium 3d: server-made css spin, sanitizer allows inert style only': "PODIUM3D_STYLE_NAME = 'ARTLINE Podium 3D'" in prompts and 'def _apply_podium_spin' in pipeline and 'backface-visibility:hidden' in pipeline and '_apply_podium_spin(relaid, hero)' in tasks and "'ARTLINE Podium 3D'" in web and "any(bad in css for bad in ('url(', '@import'" in pipeline,
     'multi-column rows wrap on any width (all styles)': 'def _responsive_grids' in pipeline and '_responsive_grids(sanitize_html' in pipeline and 'auto-fit,minmax(150px,1fr)' in pipeline,
     'uploaded photo can be pinned as hero or feature': "upload_hero: str = ''" in main and 'p.custom_hero_url = url' in main and 'function setUploadRole' in web and "u.role==='hero'" in web and 'role-chip' in web,

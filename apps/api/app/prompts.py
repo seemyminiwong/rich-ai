@@ -703,6 +703,6 @@ PODIUM-3D-SPIN
 - Keep exactly ONE hero <img> on the stage of section 1 and do NOT write any CSS animation, @keyframes or <style> yourself.
 """
 
-if 'PODIUM-3D-SPIN' not in PODIUM3D_STYLE_PROMPT or 'exactly six sections' not in PODIUM3D_STYLE_PROMPT.lower():
+if 'PODIUM-3D-SPIN' not in PODIUM3D_STYLE_PROMPT or 'SECTION SET, IN ORDER' not in PODIUM3D_STYLE_PROMPT:
     raise RuntimeError('PODIUM 3D style derivation failed')
 
