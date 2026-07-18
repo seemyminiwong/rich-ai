@@ -176,7 +176,7 @@ checks = {
     'security headers repeated where add_header breaks inheritance': nginx.count('X-Content-Type-Options') == 4,
     'media is embeddable from any context': 'Cross-Origin-Resource-Policy "cross-origin"' in nginx,
     'frontend crashes reach the alert channel': "addEventListener('error'" in web and "@app.post('/api/client-error')" in main,
-    'close buttons are labelled': web.count('aria-label="Закрити"') == web.count('>×</button>'),
+    'close buttons are labelled': web.count('aria-label="Закрити"') + web.count('aria-label="Прибрати"') == web.count('>×</button>'),
     'refuses to boot on shipped secrets': 'def check_secrets' in main and 'check_secrets()' in main and 'SHIPPED_DEFAULTS' in config,
     'jwt secret has a length floor': "len(self.jwt_secret) < 32" in config,
     'postgres password warns but never blocks': 'def warn_secrets' in config and 'postgres_password' not in config.split('def insecure_secrets')[1].split('def warn_secrets')[0],
@@ -204,6 +204,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'operator photo uploads: optional, per-photo toggle, gallery merge': "@app.post('/api/uploads/image')" in main and "startswith('/media/uploads/')" in main and 'uploaded_frames' in tasks and 'function uploadRefs' in web and 'toggleUpload(' in web and "uploads:(state.uploads||[]).filter(u=>u.on&&u.url)" in web,
     'pixel field behind login and boot screens': 'function startPixelField' in web and web.count("startPixelField(document.querySelector") >= 2 and 'image-rendering:pixelated' in (root / 'apps/web/styles.css').read_text(encoding='utf-8') and 'prefers-reduced-motion' in web,
     'github oauth: invite-gated, csrf state, hash handoff': "@app.get('/api/auth/github/callback')" in main and 'def _github_state_ok' in main and 'немає запрошення' in main and 'github_client_secret' in config and 'gh_token=' in web and 'loadAuthMethods' in web and "'user:email'" in main,
     'playwright e2e is the primary frontend insurance': (root / 'tests/e2e/test_studio_flow.py').exists() and 'pageerror' in (root / 'tests/e2e/test_studio_flow.py').read_text(encoding='utf-8') and 'playwright install' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8') and 'needs: [checks, e2e]' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8'),
@@ -262,7 +263,7 @@ checks.update({
     'reference always rides along for regeneration': "wanted.add('product-reference')" in main,
     'facts critic checks identifiers, not the verbatim commercial name': 'Product identifiers missing' in pipeline and "'Product name is missing'" not in pipeline,
     'showcase wears artline colours': '#19BCC9' in prompts.split('SHOWCASE_STYLE_PROMPT')[1].split('SHOWCASE_HERO_PROMPT')[0] and '#ffd47a' not in prompts and '#050505' not in prompts,
-    'auto gallery survives a liveness check': 'def validated_gallery_urls' in pipeline and 'chosen_gallery or validated_gallery_urls(images)' in tasks,
+    'auto gallery survives a liveness check': 'def validated_gallery_urls' in pipeline and 'curated_cdn or validated_gallery_urls(images)' in tasks,
     'probe offers images from a sibling project': "'prior': prior" in main and 'ADOPTABLE_IMAGE_LABELS' in main,
     'adopted images are copied, not referenced': 'def _adopt_images' in main and 'shutil.copy2' in main and "json.dumps({'adopted_from': source.id}" in main,
     'adoption locked to the same product url': 'source.source_url != new_project.source_url' in main,

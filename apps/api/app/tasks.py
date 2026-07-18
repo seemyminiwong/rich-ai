@@ -170,7 +170,12 @@ def process_project(self, project_id, reuse_images=False):
             chosen_gallery = [u for u in json.loads(project.gallery_json or '[]') if isinstance(u, str) and u.strip()]
             # Manual picks were already vetted by the operator's browser;
             # the automatic pick must survive a liveness check against the CDN.
-            page_gallery = chosen_gallery or validated_gallery_urls(images)
+            # Завантажені оператором фото (/media/...) - ДОДАТОК до галереї:
+            # вони не мають вимикати автопідбір кадрів з CDN, коли кадри вручну
+            # не куруватись.
+            uploaded_frames = [u for u in chosen_gallery if u.startswith('/media/')]
+            curated_cdn = [u for u in chosen_gallery if not u.startswith('/media/')]
+            page_gallery = (curated_cdn or validated_gallery_urls(images)) + uploaded_frames
             if chosen_gallery:
                 log(db, project, 'scrape', f'Використовується галерея, обрана вручну ({len(chosen_gallery)} кадрів)', 6)
             db.commit()
