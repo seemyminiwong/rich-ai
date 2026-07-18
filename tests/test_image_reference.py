@@ -426,3 +426,17 @@ def test_fallback_reason_never_leaks_raw_exception_text():
     assert 'ключ' in reason
     assert public_fallback_reason(RuntimeError('Generated content did not pass language validation for ru')) == 'згенерований текст не пройшов мовну перевірку'
     assert 'RuntimeError' in public_fallback_reason(RuntimeError('some totally novel failure'))
+
+
+def test_multicolumn_rows_wrap_on_narrow_widths():
+    from app.pipeline import _responsive_grids
+
+    html = ('<section><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px"><i>1</i><i>2</i><i>3</i><i>4</i></div>'
+            '<div style="display:grid;grid-template-columns:1.1fr 0.9fr"><i>a</i><i>b</i></div>'
+            '<div style="display:flex;gap:8px"><i>1</i><i>2</i><i>3</i></div>'
+            '<div style="display:flex;gap:8px"><i>1</i><i>2</i></div></section>')
+    out = _responsive_grids(html)
+    assert 'repeat(auto-fit,minmax(150px,1fr))' in out, 'ряд із 4 колонок мусить стати auto-fit'
+    assert '1.1fr 0.9fr' in out, 'двоколонкову сітку героя чіпати не можна'
+    assert out.count('flex-wrap:wrap') == 1, 'wrap лише для flex-рядів із 3+ дітьми'
+    assert out.count('auto-fit') == 1
