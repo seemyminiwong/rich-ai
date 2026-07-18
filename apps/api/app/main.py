@@ -37,6 +37,8 @@ from app.prompts import (
     PODIUM_NEGATIVE_PROMPT,
     PODIUM_STYLE_NAME,
     PODIUM_STYLE_PROMPT,
+    PODIUM3D_STYLE_NAME,
+    PODIUM3D_STYLE_PROMPT,
     SHOWCASE_FEATURE_PROMPT,
     SHOWCASE_HERO_PROMPT,
     SHOWCASE_NEGATIVE_PROMPT,
@@ -106,6 +108,17 @@ MANAGED_STYLES = [
             'prompt': PODIUM_STYLE_PROMPT,
             # No AI imagery at all: the stage uses the real product render, the
             # feature slot uses a real gallery frame. Image cost is zero.
+            'hero_prompt': '',
+            'feature_prompt': '',
+            'negative_prompt': PODIUM_NEGATIVE_PROMPT,
+        },
+    },
+    {
+        'name': PODIUM3D_STYLE_NAME,
+        'default': False,
+        'values': {
+            'description': 'Подіум, де товар ОБЕРТАЄТЬСЯ: справжнє CSS-3D «монетне» обертання реального фото на світлій сцені. Нуль AI-зображень; анімацію вставляє сервер.',
+            'prompt': PODIUM3D_STYLE_PROMPT,
             'hero_prompt': '',
             'feature_prompt': '',
             'negative_prompt': PODIUM_NEGATIVE_PROMPT,

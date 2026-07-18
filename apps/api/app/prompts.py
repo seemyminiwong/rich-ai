@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.20"
+BASE_STYLE_VERSION = "12.30"
 BASE_STYLE_NAME = "ARTLINE Base"
 ENGINEERING_STYLE_NAME = "ARTLINE Engineering"
 
@@ -686,3 +686,23 @@ for _needle, _must in ((_showcase_hero_start.split('\n')[1], False), ('PODIUM - 
         raise RuntimeError(f'PODIUM style derivation failed on: {_needle}')
 
 PODIUM_NEGATIVE_PROMPT = ENGINEERING_NEGATIVE_PROMPT
+
+# --- ARTLINE Podium 3D -------------------------------------------------------
+# Той самий Подіум, але сцена ОБЕРТАЄТЬСЯ. Живий тест у редакторі artline
+# показав, що <style> з @keyframes ЗБЕРІГАЄТЬСЯ - легальна CSS-анімація
+# можлива. AI при цьому не пише жодного CSS-3D: розмітку обертання вставляє
+# сервер механічно (_apply_podium_spin у pipeline) ПІСЛЯ санітизації. Промпту
+# лишається одне - поставити hero-<img> на сцену. Маркер PODIUM-3D-SPIN нижче
+# вмикає цю механіку; він мусить лишатися в промпті стилю.
+
+PODIUM3D_STYLE_NAME = 'ARTLINE Podium 3D'
+PODIUM3D_STYLE_PROMPT = PODIUM_STYLE_PROMPT + """
+
+PODIUM-3D-SPIN
+- The stage <img> will be wrapped by the SERVER into a rotating 3D podium after generation.
+- Keep exactly ONE hero <img> on the stage of section 1 and do NOT write any CSS animation, @keyframes or <style> yourself.
+"""
+
+if 'PODIUM-3D-SPIN' not in PODIUM3D_STYLE_PROMPT or 'exactly six sections' not in PODIUM3D_STYLE_PROMPT.lower():
+    raise RuntimeError('PODIUM 3D style derivation failed')
+
