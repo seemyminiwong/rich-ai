@@ -204,6 +204,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'uploaded photo can be pinned as hero or feature': "upload_hero: str = ''" in main and 'p.custom_hero_url = url' in main and 'function setUploadRole' in web and "u.role==='hero'" in web and 'role-chip' in web,
     'operator photo uploads: optional, per-photo toggle, gallery merge': "@app.post('/api/uploads/image')" in main and "startswith('/media/uploads/')" in main and 'uploaded_frames' in tasks and 'function uploadRefs' in web and 'toggleUpload(' in web and "uploads:(state.uploads||[]).filter(u=>u.on&&u.url)" in web,
     'pixel field behind login and boot screens': 'function startPixelField' in web and web.count("startPixelField(document.querySelector") >= 2 and 'image-rendering:pixelated' in (root / 'apps/web/styles.css').read_text(encoding='utf-8') and 'prefers-reduced-motion' in web,
     'github oauth: invite-gated, csrf state, hash handoff': "@app.get('/api/auth/github/callback')" in main and 'def _github_state_ok' in main and 'немає запрошення' in main and 'github_client_secret' in config and 'gh_token=' in web and 'loadAuthMethods' in web and "'user:email'" in main,
