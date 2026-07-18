@@ -1324,6 +1324,44 @@ def generate_image(
                 pass
 
 
+def _responsive_grids(markup: str) -> str:
+    """Багатоколонкові ряди мусять ПЕРЕНОСИТИСЬ на вузьких ширинах - у всіх стилях.
+
+    Редактор artline вирізає <style>, тож медіа-запити недоступні: верстка живе
+    лише в inline-CSS. Ряд із grid-template-columns:repeat(4,1fr) вилазить за
+    край будь-якого екрана, вужчого за суму карток (живий приклад: ряд
+    показників у блоці 2 обрізався на телефоні). Механічне правило: сітка з 3+
+    колонок стає repeat(auto-fit,minmax(150px,1fr)) - на широкому екрані вигляд
+    той самий, на вузькому картки складаються 2x2; flex-ряд із 3+ дітьми
+    отримує flex-wrap:wrap. Двоколонкові сітки (герой: фото+текст) не чіпаємо.
+    """
+    soup = BeautifulSoup(markup or '', 'html.parser')
+    changed = False
+    for node in soup.find_all(style=True):
+        style = node.get('style') or ''
+        compact = re.sub(r'\s+', '', style.lower())
+        match = re.search(r'grid-template-columns\s*:\s*([^;]+)', style, flags=re.I)
+        if match:
+            value = match.group(1).strip()
+            if 'auto-fit' in value or 'auto-fill' in value:
+                continue
+            repeated = re.fullmatch(r'repeat\(\s*(\d+)\s*,.*\)', value, flags=re.I)
+            if repeated:
+                tracks = int(repeated.group(1))
+            else:
+                # прибрати пробіли всередині дужок (minmax(150px, 1fr)) і порахувати треки
+                flat = re.sub(r'\([^)]*\)', lambda m: m.group(0).replace(' ', ''), value)
+                tracks = len(flat.split())
+            if tracks >= 3:
+                node['style'] = style[:match.start(1)] + 'repeat(auto-fit,minmax(150px,1fr))' + style[match.end(1):]
+                changed = True
+        elif 'display:flex' in compact and 'flex-wrap' not in compact and 'flex-direction:column' not in compact:
+            if len(node.find_all(recursive=False)) >= 3:
+                node['style'] = style.rstrip().rstrip(';') + ';flex-wrap:wrap'
+                changed = True
+    return str(soup) if changed else markup
+
+
 def _html_only(text: str) -> str:
     value = (text or '').strip().replace('```html', '').replace('```', '')
     # Product pages already own the document-level H1. Rich content is an embedded
@@ -1333,7 +1371,7 @@ def _html_only(text: str) -> str:
     start, end = value.find('<section'), value.rfind('</section>')
     if start < 0 or end < start:
         raise RuntimeError('AI did not return a complete <section> block')
-    return sanitize_html(value[start:end + len('</section>')])
+    return _responsive_grids(sanitize_html(value[start:end + len('</section>')]))
 
 
 def _section_count(markup: str) -> int:
@@ -1368,7 +1406,7 @@ Product JSON: {json.dumps(product, ensure_ascii=False)}"""
 def _deterministic_html(product, style, language, variant, hero, feature):
     labels = LANG_LABELS.get(language, LANG_LABELS['en'])
     width = '480px' if variant == 'mobile' else '1240px'
-    columns = '1fr' if variant == 'mobile' else 'repeat(3,1fr)'
+    columns = '1fr' if variant == 'mobile' else 'repeat(auto-fit,minmax(150px,1fr))'
     feature_columns = '1fr' if variant == 'mobile' else '1.15fr .85fr'
     name = html_lib.escape(product.get('name') or 'Product')
     brand = html_lib.escape(product.get('brand') or 'ARTLINE')
