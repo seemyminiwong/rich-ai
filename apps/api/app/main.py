@@ -26,7 +26,7 @@ from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, P
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
 from app.tasks import process_project, translate_project
 from app.limits import check_action, check_budget, check_login, client_ip, today_spend
-from app.media import media_url, strip_media_query, verify_media_token
+from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
 from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, is_public_http_url, parse_page, safe_client, sanitize_html, style_image_prompt, text_client
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.version import __version__
@@ -1354,6 +1354,7 @@ def system_status(db: Session = Depends(get_db), user=Depends(require_perm('sett
         'watchdog_minutes': settings.stuck_project_minutes,
         'daily_budget_usd': float(settings.daily_budget_usd or 0),
         'today_spend_usd': round(today_spend(), 4),
+        'code_graph_url': ('/api/system/graph?t=' + sign_media_path('/api/system/graph')) if (is_root_admin(user) and _GRAPH_FILE.is_file()) else '',
         'alerts_telegram': bool(settings.telegram_bot_token and settings.telegram_chat_id),
         'alerts_webhook': bool(settings.alert_webhook_url),
         'media_files': media_files,
@@ -1364,6 +1365,23 @@ def system_status(db: Session = Depends(get_db), user=Depends(require_perm('sett
         'styles': db.scalar(select(func.count(Style.id))) or 0,
         'users': db.scalar(select(func.count(User.id))) or 0,
     }
+
+
+_GRAPH_FILE = Path(__file__).resolve().parent.parent / 'graph' / 'graph.html'
+
+
+@app.get('/api/system/graph')
+def code_graph(t: str = ''):
+    """Мапа кодової бази (Graphify) для root-адміна.
+
+    Capability-посилання в стилі /media: HMAC-токен у query, бо клік по
+    посиланню в новій вкладці не несе Authorization-заголовка. Токен видається
+    лише root-адміну через /api/system."""
+    if not verify_media_token('/api/system/graph', t):
+        raise HTTPException(403, 'Посилання недійсне')
+    if not _GRAPH_FILE.is_file():
+        raise HTTPException(404, 'Мапу ще не згенеровано: /graphify . → sh scripts/update-graph.sh → deploy')
+    return FileResponse(_GRAPH_FILE, media_type='text/html')
 
 
 def require_root(user=Depends(current)):

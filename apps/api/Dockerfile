@@ -5,6 +5,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY alembic.ini .
+COPY graph ./graph
 COPY alembic ./alembic
 RUN mkdir -p /app/media
 EXPOSE 8000
