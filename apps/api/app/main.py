@@ -254,6 +254,9 @@ class ProjectIn(BaseModel):
     reuse_labels: list[str] = Field(default_factory=list, max_length=10)
     adopt_images: list[AdoptItem] = Field(default_factory=list, max_length=10)
     uploads: list[str] = Field(default_factory=list, max_length=10)
+    # URL із uploads, призначений головним Hero / Feature (порожньо = генерувати AI).
+    upload_hero: str = ''
+    upload_feature: str = ''
 class StyleIn(BaseModel):
     name: str
     description: str = ''
@@ -892,8 +895,18 @@ def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depen
         target_name = f'upload-{index}.webp'
         shutil.copyfile(source, project_dir / target_name)
         url = media_url(p.id, target_name)
-        upload_urls.append(url)
-        db.add(Asset(project_id=p.id, kind='upload', label=f'Завантажене фото {index}', url=url))
+        role_hero = raw == payload.upload_hero
+        role_feature = raw == payload.upload_feature
+        if role_hero:
+            # Обране фото СТАЄ Hero: та сама гілка, що й custom_hero_url -
+            # генерація зображення для цього слота не запускається.
+            p.custom_hero_url = url
+        if role_feature:
+            p.custom_feature_url = url
+        if not (role_hero or role_feature):
+            upload_urls.append(url)
+        role_note = ' - Hero' if role_hero else (' - Feature' if role_feature else '')
+        db.add(Asset(project_id=p.id, kind='upload', label=f'Завантажене фото {index}{role_note}', url=url))
     if upload_urls:
         p.gallery_json = json.dumps(json.loads(p.gallery_json or '[]') + upload_urls)
     adopted = 0
