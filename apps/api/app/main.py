@@ -253,6 +253,7 @@ class ProjectIn(BaseModel):
     reuse_images_from: str = ''
     reuse_labels: list[str] = Field(default_factory=list, max_length=10)
     adopt_images: list[AdoptItem] = Field(default_factory=list, max_length=10)
+    uploads: list[str] = Field(default_factory=list, max_length=10)
 class StyleIn(BaseModel):
     name: str
     description: str = ''
@@ -831,6 +832,38 @@ def probe_product_page(payload: ProbeIn, user=Depends(require_perm('project.crea
     return {'name': title, 'gallery': frames, 'count': len(frames), 'prior': prior}
 
 
+@app.post('/api/uploads/image')
+async def upload_reference_image(request: Request, user=Depends(require_perm('project.create'))):
+    """Прийняти власне фото для майбутнього проєкту.
+
+    Сирі байти замість multipart: без нової залежності python-multipart.
+    Файл нормалізується у WebP і лежить у media/uploads/ до створення проєкту,
+    де його копія стає кадром галереї конкретного проєкту.
+    """
+    check_action(user.id, 'upload', 30)
+    cap = 30 * 1024 * 1024
+    if int(request.headers.get('content-length') or 0) > cap:
+        raise HTTPException(413, 'Файл більший за 30 МБ')
+    data = await request.body()
+    if len(data) > cap:
+        raise HTTPException(413, 'Файл більший за 30 МБ')
+    if len(data) < 256:
+        raise HTTPException(400, 'Порожній файл')
+    from PIL import Image as PILImage, ImageOps as PILOps
+    try:
+        image = PILImage.open(io.BytesIO(data))
+        image.load()
+    except Exception:
+        raise HTTPException(400, 'Файл не схожий на зображення')
+    if image.width < 320 or image.height < 320:
+        raise HTTPException(400, f'Замале зображення ({image.width}×{image.height}): потрібно від 320px по кожній стороні')
+    name = f'{secrets.token_hex(16)}.webp'
+    target_dir = Path(settings.media_dir) / 'uploads'
+    target_dir.mkdir(parents=True, exist_ok=True)
+    PILOps.exif_transpose(image).convert('RGB').save(target_dir / name, format='WEBP', quality=88)
+    return {'url': media_url('uploads', name), 'width': image.width, 'height': image.height}
+
+
 @app.post('/api/projects')
 def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
     check_action(user.id, 'create', 6); check_budget()
@@ -844,6 +877,25 @@ def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depen
     p = Project(name=payload.name.strip() or 'Определение товара…', source_url=str(payload.source_url), style_id=style.id, owner_id=user.id, languages=','.join(dict.fromkeys(langs)), variants=','.join(dict.fromkeys(vars)),
                 text_model=payload.text_model or settings.openai_text_model, image_model=payload.image_model or settings.openai_image_model, image_quality=payload.image_quality if payload.image_quality in {'low', 'medium', 'high'} else 'medium', custom_hero_url=payload.custom_hero_url.strip(), custom_feature_url=payload.custom_feature_url.strip(), gallery_json=json.dumps([u.strip() for u in payload.gallery if is_public_http_url(u.strip())][:10]), status=Status.queued, stage='queued')
     db.add(p); db.flush()
+    # Власні фото оператора: копія з media/uploads стає кадром галереї проєкту.
+    upload_urls = []
+    media_root = Path(settings.media_dir).resolve()
+    for index, raw in enumerate(payload.uploads[:10], start=1):
+        name = strip_media_query(raw).rsplit('/', 1)[-1]
+        if not strip_media_query(raw).startswith('/media/uploads/') or not _MEDIA_NAME.fullmatch(name):
+            continue
+        source = (media_root / 'uploads' / name).resolve()
+        if media_root not in source.parents or not source.is_file():
+            continue
+        project_dir = media_root / p.id
+        project_dir.mkdir(parents=True, exist_ok=True)
+        target_name = f'upload-{index}.webp'
+        shutil.copyfile(source, project_dir / target_name)
+        url = media_url(p.id, target_name)
+        upload_urls.append(url)
+        db.add(Asset(project_id=p.id, kind='upload', label=f'Завантажене фото {index}', url=url))
+    if upload_urls:
+        p.gallery_json = json.dumps(json.loads(p.gallery_json or '[]') + upload_urls)
     adopted = 0
     if payload.adopt_images:
         by_source: dict[str, list[str]] = {}
