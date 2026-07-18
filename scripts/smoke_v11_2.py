@@ -83,7 +83,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.20"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.30"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 2 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -204,6 +204,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'podium 3d: server-made css spin, sanitizer allows inert style only': "PODIUM3D_STYLE_NAME = 'ARTLINE Podium 3D'" in prompts and 'def _apply_podium_spin' in pipeline and 'backface-visibility:hidden' in pipeline and '_apply_podium_spin(relaid, hero)' in tasks and "'ARTLINE Podium 3D'" in web and "any(bad in css for bad in ('url(', '@import'" in pipeline,
     'multi-column rows wrap on any width (all styles)': 'def _responsive_grids' in pipeline and '_responsive_grids(sanitize_html' in pipeline and 'auto-fit,minmax(150px,1fr)' in pipeline,
     'uploaded photo can be pinned as hero or feature': "upload_hero: str = ''" in main and 'p.custom_hero_url = url' in main and 'function setUploadRole' in web and "u.role==='hero'" in web and 'role-chip' in web,
     'operator photo uploads: optional, per-photo toggle, gallery merge': "@app.post('/api/uploads/image')" in main and "startswith('/media/uploads/')" in main and 'uploaded_frames' in tasks and 'function uploadRefs' in web and 'toggleUpload(' in web and "uploads:(state.uploads||[]).filter(u=>u.on&&u.url)" in web,

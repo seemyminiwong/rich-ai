@@ -440,3 +440,29 @@ def test_multicolumn_rows_wrap_on_narrow_widths():
     assert '1.1fr 0.9fr' in out, 'двоколонкову сітку героя чіпати не можна'
     assert out.count('flex-wrap:wrap') == 1, 'wrap лише для flex-рядів із 3+ дітьми'
     assert out.count('auto-fit') == 1
+
+
+def test_podium_spin_wraps_hero_and_is_idempotent():
+    from app.pipeline import _apply_podium_spin, sanitize_html
+
+    hero = '/media/p1/upload-1.webp?t=abc123'
+    html = f'<section><div><img src="{hero}" alt="Генератор" style="display:block"></div></section>'
+    spun = _apply_podium_spin(html, hero)
+    assert 'arspin' in spun and 'preserve-3d' in spun
+    assert spun.count('backface-visibility:hidden') == 2, 'мусить бути лице і тил'
+    assert 'rotateY(180deg) scaleX(-1)' in spun, 'тил не має бути дзеркальним'
+    assert 'prefers-reduced-motion' in spun
+    assert _apply_podium_spin(spun, hero) == spun, 'повторне застосування - no-op'
+    # Санітизація зберігає інертний <style> і вбиває CSS з url()/@import.
+    assert 'arspin' in sanitize_html(spun)
+    dirty = '<section><style>body{background:url(https://evil.example/x)}</style><p>t</p></section>'
+    assert 'url(' not in sanitize_html(dirty)
+
+
+def test_podium3d_prompt_contract():
+    from app.prompts import PODIUM3D_STYLE_PROMPT
+
+    p = PODIUM3D_STYLE_PROMPT
+    assert 'PODIUM-3D-SPIN' in p
+    assert 'do NOT write any CSS animation' in p
+    assert 'exactly six sections' in p.lower()

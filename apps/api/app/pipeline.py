@@ -214,7 +214,7 @@ def _with_retry(call, attempts=3, base_delay=1.5):
 # (scripts, event handlers, javascript: URLs) before it is stored or shown.
 _ALLOWED_TAGS = {
     'section', 'div', 'h2', 'h3', 'h4', 'p', 'ul', 'ol', 'li',
-    'img', 'strong', 'span', 'em', 'b', 'i', 'br', 'small',
+    'img', 'strong', 'span', 'em', 'b', 'i', 'br', 'small', 'style',
 }
 _ALLOWED_ATTRS = {'style', 'src', 'alt', 'title', 'width', 'height', 'loading', 'class'}
 _URL_SAFE_SCHEMES = ('http://', 'https://', '/media/', '/')
@@ -223,8 +223,14 @@ _URL_SAFE_SCHEMES = ('http://', 'https://', '/media/', '/')
 def sanitize_html(markup: str) -> str:
     """Return the HTML with only safe presentational tags and attributes."""
     soup = BeautifulSoup(markup or '', 'html.parser')
-    for dangerous in soup(['script', 'style', 'iframe', 'object', 'embed', 'link', 'meta', 'form', 'input', 'button', 'svg', 'noscript', 'base']):
+    for dangerous in soup(['script', 'iframe', 'object', 'embed', 'link', 'meta', 'form', 'input', 'button', 'svg', 'noscript', 'base']):
         dangerous.decompose()
+    # <style> дозволено ЛИШЕ з інертним CSS (анімації Подіум 3D тощо): жодних
+    # url()/@import/expression - ані завантажень, ані екзфільтрації через CSS.
+    for style_tag in soup.find_all('style'):
+        css = (style_tag.string or style_tag.get_text() or '').lower()
+        if not css.strip() or any(bad in css for bad in ('url(', '@import', 'expression', '<', 'javascript')):
+            style_tag.decompose()
     for tag in list(soup.find_all(True)):
         if tag.name not in _ALLOWED_TAGS:
             tag.unwrap()
@@ -1324,6 +1330,49 @@ def generate_image(
                 pass
 
 
+_PODIUM_SPIN_MARKER = 'PODIUM-3D-SPIN'
+
+_SPIN_STYLE = ('@keyframes arspin{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}'
+               '@media (prefers-reduced-motion:reduce){.ar3d{animation:none!important}}')
+
+
+def _apply_podium_spin(markup: str, hero_url: str) -> str:
+    """Обгорнути сценічний hero-<img> Подіума у справжнє CSS-3D обертання.
+
+    Два шари ОДНОГО фото: лице та тил (rotateY(180deg) scaleX(-1) робить тил
+    незеркальним), обидва з backface-visibility:hidden на preserve-3d осі -
+    класичне "монетне" обертання, що читається як товар на поворотному подіумі.
+    CSS пише сервер, не модель: анімація детермінована і проходить санітизацію.
+    Ідемпотентно: повторний виклик (мобільний relayout) нічого не ламає.
+    """
+    if not markup or 'arspin' in markup:
+        return markup
+    hero_path = (hero_url or '').split('?', 1)[0]
+    if not hero_path:
+        return markup
+    soup = BeautifulSoup(markup, 'html.parser')
+    target = None
+    for img in soup.find_all('img'):
+        if hero_path in (img.get('src') or ''):
+            target = img
+            break
+    if target is None:
+        return markup
+    src = target.get('src') or hero_url
+    alt = target.get('alt') or ''
+    wrap = BeautifulSoup(
+        f'<div style="perspective:1100px;max-width:78%;margin:18px auto 0">'
+        f'<style>{_SPIN_STYLE}</style>'
+        f'<div class="ar3d" style="position:relative;transform-style:preserve-3d;animation:arspin 10s linear infinite">'
+        f'<img src="{src}" alt="{alt}" style="display:block;width:100%;max-height:520px;object-fit:contain;'
+        f'backface-visibility:hidden;filter:drop-shadow(0 30px 38px rgba(16,16,16,.22))">'
+        f'<img src="{src}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;'
+        f'backface-visibility:hidden;transform:rotateY(180deg) scaleX(-1)">'
+        f'</div></div>', 'html.parser')
+    target.replace_with(wrap)
+    return str(soup)
+
+
 def _responsive_grids(markup: str) -> str:
     """Багатоколонкові ряди мусять ПЕРЕНОСИТИСЬ на вузьких ширинах - у всіх стилях.
 
@@ -1717,6 +1766,8 @@ HTML:
         output = _restore_image_urls(output, hero, feature, variant, img_hero='THE FIRST CHILD of the wrapper' in (style.prompt or ''))
         output = _enforce_image_whitelist(output, [hero, feature] + list(gallery or []), spares=list(gallery or []))
         output = _round_image_corners(output)
+        if _PODIUM_SPIN_MARKER in (style.prompt or ''):
+            output = _apply_podium_spin(output, hero)
         return output, input_tokens, output_tokens, ''
     except Exception as exc:
         logger.exception('generate_html fell back to deterministic template for %s/%s', language, variant)

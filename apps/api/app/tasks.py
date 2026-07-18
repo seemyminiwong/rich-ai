@@ -12,6 +12,7 @@ from app.models import Artifact, Asset, CriticReport, Event, Project, Status, St
 from app.limits import add_spend
 from app.media import media_url
 from app.prompts import BASE_STYLE_VERSION
+from app.pipeline import _PODIUM_SPIN_MARKER, _apply_podium_spin
 from app.pipeline import (
     _image_urls_of,
     hero_environment,
@@ -426,6 +427,10 @@ def process_project(self, project_id, reuse_images=False):
                                 mobile_hero = hero_by_variant.get('mobile')
                                 if desktop_hero and mobile_hero and desktop_hero != mobile_hero:
                                     relaid = relaid.replace(desktop_hero, mobile_hero)
+                                # Модель могла загубити <style> обертання при перекомпонуванні -
+                                # повторне застосування ідемпотентне.
+                                if _PODIUM_SPIN_MARKER in (style.prompt or ''):
+                                    relaid = _apply_podium_spin(relaid, hero)
                                 rich_html, fallback_reason = relaid, ''
                             else:
                                 # A failed relayout still billed tokens; keep them and
