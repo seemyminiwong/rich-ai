@@ -280,7 +280,7 @@ class ProjectIn(BaseModel):
     reuse_images_from: str = ''
     reuse_labels: list[str] = Field(default_factory=list, max_length=10)
     adopt_images: list[AdoptItem] = Field(default_factory=list, max_length=10)
-    uploads: list[str] = Field(default_factory=list, max_length=36)
+    uploads: list[str] = Field(default_factory=list, max_length=200)
     # URL із uploads, призначений головним Hero / Feature (порожньо = генерувати AI).
     upload_hero: str = ''
     upload_feature: str = ''
@@ -864,6 +864,13 @@ def probe_product_page(payload: ProbeIn, user=Depends(require_perm('project.crea
     return {'name': title, 'gallery': frames, 'count': len(frames), 'prior': prior}
 
 
+def _pick_even(items: list, limit: int) -> list:
+    """Рівномірно відібрати limit елементів, зберігши перший і крок по колу."""
+    if len(items) <= limit:
+        return list(items)
+    return [items[round(i * len(items) / limit)] for i in range(limit)]
+
+
 @app.post('/api/uploads/image')
 async def upload_reference_image(request: Request, user=Depends(require_perm('project.create'))):
     """Прийняти власне фото для майбутнього проєкту.
@@ -872,7 +879,7 @@ async def upload_reference_image(request: Request, user=Depends(require_perm('pr
     Файл нормалізується у WebP і лежить у media/uploads/ до створення проєкту,
     де його копія стає кадром галереї конкретного проєкту.
     """
-    check_action(user.id, 'upload', 30)
+    check_action(user.id, 'upload', 300)
     cap = 30 * 1024 * 1024
     if int(request.headers.get('content-length') or 0) > cap:
         raise HTTPException(413, 'Файл більший за 30 МБ')
@@ -913,7 +920,12 @@ def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depen
     upload_urls = []
     media_root = Path(settings.media_dir).resolve()
     rotation_urls = []
-    for index, raw in enumerate(payload.uploads[:36], start=1):
+    uploads_seq = payload.uploads[:200]
+    if payload.uploads_360:
+        # 197 кадрів у сторінку не покладеш: рівномірно проріджуємо до 48 -
+        # крок ~7.5 градуса, обертання плавне, вага сторінки під контролем.
+        uploads_seq = _pick_even(uploads_seq, 48)
+    for index, raw in enumerate(uploads_seq, start=1):
         name = strip_media_query(raw).rsplit('/', 1)[-1]
         if not strip_media_query(raw).startswith('/media/uploads/') or not _MEDIA_NAME.fullmatch(name):
             continue
@@ -923,7 +935,19 @@ def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depen
         project_dir = media_root / p.id
         project_dir.mkdir(parents=True, exist_ok=True)
         target_name = f'upload-{index}.webp'
-        shutil.copyfile(source, project_dir / target_name)
+        if payload.uploads_360:
+            # Кадр каруселі показується <=800px: тиснемо до 1000px webp, щоб
+            # 48 кадрів важили мегабайти, а не десятки.
+            from PIL import Image as PILImage, ImageOps as PILOps
+            try:
+                frame = PILImage.open(source)
+                frame = PILOps.exif_transpose(frame).convert('RGB')
+                frame.thumbnail((1000, 1000), PILImage.Resampling.LANCZOS)
+                frame.save(project_dir / target_name, format='WEBP', quality=82)
+            except Exception:
+                shutil.copyfile(source, project_dir / target_name)
+        else:
+            shutil.copyfile(source, project_dir / target_name)
         url = media_url(p.id, target_name)
         if payload.uploads_360:
             rotation_urls.append(url)
