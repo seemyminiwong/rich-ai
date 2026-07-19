@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.30"
+BASE_STYLE_VERSION = "12.40"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -712,4 +712,22 @@ PODIUM-3D-SPIN
 
 if 'PODIUM-3D-SPIN' not in PODIUM3D_STYLE_PROMPT or 'SECTION SET, IN ORDER' not in PODIUM3D_STYLE_PROMPT:
     raise RuntimeError('PODIUM 3D style derivation failed')
+
+
+# --- ARTLINE Podium 3D 360 ---------------------------------------------------
+# СПРАВЖНЄ 360°: оператор завантажує серію кадрів по колу, сервер збирає з них
+# покадрову CSS-анімацію (стопка <img>, кожен кадр має своє вікно видимості в
+# циклі; hover ставить обертання на паузу). Без серії стиль поводиться як
+# Podium 3D (монетне обертання одного фото). AI знову не пише жодного CSS.
+
+PODIUM360_STYLE_NAME = 'ARTLINE Podium 3D 360'
+PODIUM360_STYLE_PROMPT = PODIUM_STYLE_PROMPT + '''
+
+PODIUM-3D-360
+- The stage <img> will be replaced by the SERVER with a real 360-degree turntable built from operator-uploaded frames.
+- Keep exactly ONE hero <img> on the stage of section 1 and do NOT write any CSS animation, @keyframes or <style> yourself.
+'''
+
+if 'PODIUM-3D-360' not in PODIUM360_STYLE_PROMPT or 'SECTION SET, IN ORDER' not in PODIUM360_STYLE_PROMPT:
+    raise RuntimeError('PODIUM 3D 360 style derivation failed')
 

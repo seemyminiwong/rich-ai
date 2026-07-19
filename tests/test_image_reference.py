@@ -489,3 +489,23 @@ def test_license_comment_is_a_valid_invisible_html_tail():
     # Санітизація редактора не зриває хвіст, покупець його не бачить.
     assert 'Правовласник' in sanitize_html(page)
     assert 'Правовласник' not in _visible_text(page)
+
+
+def test_podium_360_builds_frame_turntable_and_falls_back_to_coin_spin():
+    from app.pipeline import _apply_podium_spin360
+
+    hero = '/media/p1/product-reference.png?t=abc'
+    frames = [f'/media/p1/upload-{i}.webp?t=x{i}' for i in range(1, 13)]
+    html = f'<section><img src="{hero}" alt="Товар"></section>'
+    out = _apply_podium_spin360(html, hero, frames)
+    # 'animation:' і '-webkit-animation:' — по два входження на кадр.
+    assert out.count('animation:ar360') == 24, 'кожен кадр анімується (з -webkit-парою)'
+    assert 'animation-play-state:paused' in out, 'hover-пауза'
+    assert 'prefers-reduced-motion' in out
+    assert out.count('@keyframes ar360') == 1
+    assert 'opacity:1' in out and 'animation-delay:-0.000s' not in out.replace('animation-delay:0.000s', '')
+    # Ідемпотентність: повторний прохід розбирає і збирає те саме.
+    assert _apply_podium_spin360(out, hero, frames) == out
+    # Без серії (0-1 кадр) - чесний відкат до монетного обертання.
+    coin = _apply_podium_spin360(html, hero, [])
+    assert 'arspin' in coin and 'ar360' not in coin

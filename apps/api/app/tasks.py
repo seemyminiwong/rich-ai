@@ -12,7 +12,7 @@ from app.models import Artifact, Asset, CriticReport, Event, Project, Status, St
 from app.limits import add_spend
 from app.media import media_url
 from app.prompts import BASE_STYLE_VERSION, LICENSE_COMMENT
-from app.pipeline import _PODIUM_SPIN_MARKER, _apply_podium_spin
+from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360
 from app.pipeline import (
     _image_urls_of,
     hero_environment,
@@ -169,6 +169,7 @@ def process_project(self, project_id, reuse_images=False):
             jsonld, images, title, clean_text = parse_page(page_html, project.source_url)
             project.source_images = json.dumps(images, ensure_ascii=False)
             chosen_gallery = [u for u in json.loads(project.gallery_json or '[]') if isinstance(u, str) and u.strip()]
+            rotation_frames = [u for u in json.loads(getattr(project, 'rotation_json', None) or '[]') if isinstance(u, str) and u.strip()]
             # Manual picks were already vetted by the operator's browser;
             # the automatic pick must survive a liveness check against the CDN.
             # Завантажені оператором фото (/media/...) - ДОДАТОК до галереї:
@@ -429,7 +430,10 @@ def process_project(self, project_id, reuse_images=False):
                                     relaid = relaid.replace(desktop_hero, mobile_hero)
                                 # Модель могла загубити <style> обертання при перекомпонуванні -
                                 # повторне застосування ідемпотентне.
-                                if _PODIUM_SPIN_MARKER in (style.prompt or ''):
+                                prompt_text = style.prompt or ''
+                                if _PODIUM_360_MARKER in prompt_text:
+                                    relaid = _apply_podium_spin360(relaid, hero, rotation_frames)
+                                elif _PODIUM_SPIN_MARKER in prompt_text:
                                     relaid = _apply_podium_spin(relaid, hero)
                                 rich_html, fallback_reason = relaid, ''
                             else:
@@ -439,7 +443,7 @@ def process_project(self, project_id, reuse_images=False):
                         if rich_html is None:
                             log(db, project, 'content', f'Створення майстер-макета {master_language.upper()} / {variant} · {project.text_model}', progress)
                             rich_html, generated_in, generated_out, fallback_reason = generate_html(
-                                product, style, master_language, variant, hero, feature, project.text_model, gallery=page_gallery
+                                product, style, master_language, variant, hero, feature, project.text_model, gallery=page_gallery, rotation=rotation_frames
                             )
                             added_input += generated_in
                             added_output += generated_out
@@ -510,7 +514,7 @@ def process_project(self, project_id, reuse_images=False):
                             # Offline/no-key fallback still uses the deterministic
                             # template, whose structure is identical for all languages.
                             rich_html, added_input, added_output, fallback_reason = generate_html(
-                                product, style, language, variant, hero, feature, project.text_model, gallery=page_gallery
+                                product, style, language, variant, hero, feature, project.text_model, gallery=page_gallery, rotation=rotation_frames
                             )
                             if fallback_reason and settings.openai_api_key:
                                 fallback_hits.append(f'{language.upper()}/{variant}: {fallback_reason}')

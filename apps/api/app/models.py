@@ -96,6 +96,8 @@ class Project(Base):
     source_images: Mapped[str] = mapped_column(Text, default='[]')
     # Operator-curated gallery frames from the probe dialog; empty = auto-pick.
     gallery_json: Mapped[str] = mapped_column(Text, default='[]')
+    # Кадри 360°-серії (Podium 3D 360): підписані /media-URL по колу, за порядком.
+    rotation_json: Mapped[str] = mapped_column(Text, default='[]')
     error: Mapped[str] = mapped_column(Text, default='')
     duration_seconds: Mapped[float] = mapped_column(Float, default=0)
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)

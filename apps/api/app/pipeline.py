@@ -1331,34 +1331,25 @@ def generate_image(
 
 
 _PODIUM_SPIN_MARKER = 'PODIUM-3D-SPIN'
+_PODIUM_360_MARKER = 'PODIUM-3D-360'
 
 _SPIN_STYLE = ('@keyframes arspin{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}'
                '@-webkit-keyframes arspin{0%{-webkit-transform:rotateY(0deg)}100%{-webkit-transform:rotateY(360deg)}}'
                '@media (prefers-reduced-motion:reduce){.ar3d{animation:none!important;-webkit-animation:none!important}}')
 
 
-def _apply_podium_spin(markup: str, hero_url: str) -> str:
-    """Обгорнути сценічний hero-<img> Подіума у справжнє CSS-3D обертання.
+def _strip_podium_spin(soup) -> None:
+    """Прибрати БУДЬ-ЯКИЙ слід обертання (монетного чи 360) до плаского <img>.
 
-    Два шари ОДНОГО фото: лице та тил (rotateY(180deg) scaleX(-1) робить тил
-    незеркальним), обидва з backface-visibility:hidden на preserve-3d осі -
-    класичне "монетне" обертання. CSS пише сервер, не модель.
-
-    НЕ довіряємо наявній розмітці: мобільний relayout может дотягнути шматок
-    обертання (маркер є, структура зламана - перше живе тестування впіймало
-    саме нерухомий мобайл). Тому будь-який слід обертання спочатку РОЗБИРАЄТЬСЯ
-    до плаского <img>, і структура збирається заново - детерміновано.
+    Механіка вставки не довіряє наявній розмітці: relayout або редактор могли
+    дотягнути шматок - маркер є, структура зламана. Розбираємо і збираємо заново.
     """
-    if not markup:
-        return markup
-    hero_path = (hero_url or '').split('?', 1)[0]
-    if not hero_path:
-        return markup
-    soup = BeautifulSoup(markup, 'html.parser')
     for st in list(soup.find_all('style')):
-        if 'arspin' in (st.string or st.get_text() or ''):
+        if any(k in (st.string or st.get_text() or '') for k in ('arspin', 'ar360')):
             st.decompose()
-    for spin in list(soup.select('.ar3d')):
+    for spin in list(soup.select('.arwrap, .ar3d, .ar360')):
+        if spin.find_parent(class_='arwrap') is not None:
+            continue
         holder = spin
         parent = spin.parent
         if parent is not None and parent.name == 'div' and 'perspective' in (parent.get('style') or ''):
@@ -1369,20 +1360,44 @@ def _apply_podium_spin(markup: str, hero_url: str) -> str:
             plain['src'] = face.get('src') or ''
             plain['alt'] = face.get('alt') or ''
             plain['style'] = 'display:block;max-width:78%;max-height:520px;width:auto;height:auto;margin:18px auto 0;object-fit:contain'
+            # Мітка сцени: у 360-стопці src першого кадра НЕ збігається з hero,
+            # тож повторний прохід шукає сцену за цією міткою (в артефакт вона
+            # не потрапляє - або замінюється обгорткою, або чиститься нижче).
+            plain['data-arstage'] = '1'
             holder.replace_with(plain)
         else:
             holder.decompose()
-    target = None
-    for img in soup.find_all('img'):
-        if hero_path in (img.get('src') or ''):
-            target = img
-            break
+
+
+def _find_hero_img(soup, hero_url: str):
+    hero_path = (hero_url or '').split('?', 1)[0]
+    if hero_path:
+        for img in soup.find_all('img'):
+            if hero_path in (img.get('src') or ''):
+                return img
+    return soup.find('img', attrs={'data-arstage': '1'})
+
+
+def _clear_stage_marks(soup) -> None:
+    for img in soup.find_all('img', attrs={'data-arstage': '1'}):
+        del img['data-arstage']
+
+
+def _apply_podium_spin(markup: str, hero_url: str) -> str:
+    """Монетне CSS-3D обертання одного фото (стиль ARTLINE Podium 3D)."""
+    if not markup:
+        return markup
+    soup = BeautifulSoup(markup, 'html.parser')
+    _strip_podium_spin(soup)
+    target = _find_hero_img(soup, hero_url)
     if target is None:
+        _clear_stage_marks(soup)
         return str(soup)
     src = target.get('src') or hero_url
     alt = target.get('alt') or ''
+    _clear_stage_marks(soup)
     wrap = BeautifulSoup(
-        f'<div style="perspective:1100px;-webkit-perspective:1100px;max-width:78%;margin:18px auto 0">'
+        f'<div class="arwrap" style="perspective:1100px;-webkit-perspective:1100px;max-width:78%;margin:18px auto 0">'
         f'<style>{_SPIN_STYLE}</style>'
         f'<div class="ar3d" style="position:relative;transform-style:preserve-3d;-webkit-transform-style:preserve-3d;'
         f'animation:arspin 10s linear infinite;-webkit-animation:arspin 10s linear infinite">'
@@ -1393,6 +1408,51 @@ def _apply_podium_spin(markup: str, hero_url: str) -> str:
         f'border-radius:18px;backface-visibility:hidden;-webkit-backface-visibility:hidden;'
         f'transform:rotateY(180deg) scaleX(-1);-webkit-transform:rotateY(180deg) scaleX(-1)">'
         f'</div></div>', 'html.parser')
+    target.replace_with(wrap)
+    return str(soup)
+
+
+def _apply_podium_spin360(markup: str, hero_url: str, frames: list[str]) -> str:
+    """СПРАВЖНЄ 360°: покадрова CSS-анімація зі стопки реальних кадрів по колу.
+
+    Всі кадри лежать один на одному; спільний цикл ділиться на N вікон, кожен
+    кадр видимий лише у своєму вікні (opacity через keyframes зі зсувом
+    animation-delay). Жодного JS - редактор artline це зберігає. Hover ставить
+    обертання на паузу, prefers-reduced-motion показує перший кадр статично.
+    """
+    frames = [f for f in (frames or []) if f]
+    if not markup or len(frames) < 2:
+        return _apply_podium_spin(markup, hero_url)
+    soup = BeautifulSoup(markup, 'html.parser')
+    _strip_podium_spin(soup)
+    target = _find_hero_img(soup, hero_url)
+    if target is None:
+        _clear_stage_marks(soup)
+        return str(soup)
+    alt = target.get('alt') or ''
+    _clear_stage_marks(soup)
+    count = len(frames)
+    duration = max(3.5, round(count * 0.22, 2))  # ~0.22с на кадр: плавно і без поспіху
+    window = 100.0 / count
+    css = (f'@keyframes ar360{{0%{{opacity:1}}{window:.3f}%{{opacity:1}}{min(window + 0.02, 99.9):.3f}%{{opacity:0}}100%{{opacity:0}}}}'
+           '.ar360:hover img{animation-play-state:paused!important}'
+           '@media (prefers-reduced-motion:reduce){.ar360 img{animation:none!important}}')
+    imgs = []
+    for index, url in enumerate(frames):
+        delay = -duration * index / count
+        position = 'position:relative' if index == 0 else 'position:absolute;inset:0'
+        base_opacity = 'opacity:1' if index == 0 else 'opacity:0'
+        imgs.append(
+            f'<img src="{url}" alt="{alt if index == 0 else ""}" loading="lazy" '
+            f'style="{position};display:block;width:100%;max-height:520px;object-fit:contain;'
+            f'border-radius:18px;{base_opacity};'
+            f'animation:ar360 {duration}s linear infinite;animation-delay:{delay:.3f}s;'
+            f'-webkit-animation:ar360 {duration}s linear infinite;-webkit-animation-delay:{delay:.3f}s">')
+    wrap = BeautifulSoup(
+        f'<div class="arwrap" style="max-width:78%;margin:18px auto 0">'
+        f'<style>{css}</style>'
+        f'<div class="ar360" style="position:relative">{"".join(imgs)}</div>'
+        f'</div>', 'html.parser')
     target.replace_with(wrap)
     return str(soup)
 
@@ -1747,7 +1807,7 @@ def public_fallback_reason(exc: Exception) -> str:
     return f'внутрішня помилка генерації ({type(exc).__name__})'
 
 
-def generate_html(product, style, language, variant, hero, feature, model: str, gallery=None):
+def generate_html(product, style, language, variant, hero, feature, model: str, gallery=None, rotation=None):
     """Return (html, input_tokens, output_tokens, fallback_reason).
 
     fallback_reason is '' when the AI response was used, otherwise a short reason
@@ -1790,7 +1850,10 @@ HTML:
         output = _restore_image_urls(output, hero, feature, variant, img_hero='THE FIRST CHILD of the wrapper' in (style.prompt or ''))
         output = _enforce_image_whitelist(output, [hero, feature] + list(gallery or []), spares=list(gallery or []))
         output = _round_image_corners(output)
-        if _PODIUM_SPIN_MARKER in (style.prompt or ''):
+        prompt_text = style.prompt or ''
+        if _PODIUM_360_MARKER in prompt_text:
+            output = _apply_podium_spin360(output, hero, rotation or [])
+        elif _PODIUM_SPIN_MARKER in prompt_text:
             output = _apply_podium_spin(output, hero)
         return output, input_tokens, output_tokens, ''
     except Exception as exc:

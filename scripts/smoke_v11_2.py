@@ -83,7 +83,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.30"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.40"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 2 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -204,6 +204,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'podium 3d 360: frame turntable from operator uploads': "PODIUM360_STYLE_NAME = 'ARTLINE Podium 3D 360'" in prompts and 'def _apply_podium_spin360' in pipeline and 'rotation_json' in main and 'rotation=rotation_frames' in tasks and 'uploads_360' in web and '0005_rotation_frames' in ' '.join(str(x) for x in (root / 'apps/api/alembic/versions').iterdir()),
     'usage page filters by period and user': 'def usage(days: int = 0' in main and "'by_user'" in main and "'by_day'" in main and 'function setUsageFilter' in web and 'usageChart()' in web and 'usageUserTable()' in web,
     'every artifact ends with tool and license info': 'LICENSE_COMMENT' in prompts and 'Правовласник — Copyright 2026 seemyminiwong' in prompts and 'marker + rich_html + LICENSE_COMMENT' in tasks and tasks.count('LICENSE_COMMENT') >= 3 and main.count('LICENSE_COMMENT') >= 2,
     'graphify map served to root via capability link': "@app.get('/api/system/graph')" in main and "verify_media_token('/api/system/graph', t)" in main and 'code_graph_url' in main and 'code_graph_url' in web and 'COPY graph ./graph' in (root / 'apps/api/Dockerfile').read_text(encoding='utf-8'),
