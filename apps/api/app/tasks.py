@@ -12,7 +12,7 @@ from app.models import Artifact, Asset, CriticReport, Event, Project, Status, St
 from app.limits import add_spend
 from app.media import media_url
 from app.prompts import BASE_STYLE_VERSION, LICENSE_COMMENT
-from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360
+from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll
 from app.pipeline import (
     _image_urls_of,
     hero_environment,
@@ -431,7 +431,9 @@ def process_project(self, project_id, reuse_images=False):
                                 # Модель могла загубити <style> обертання при перекомпонуванні -
                                 # повторне застосування ідемпотентне.
                                 prompt_text = style.prompt or ''
-                                if _PODIUM_360_MARKER in prompt_text:
+                                if _PODIUM_SCROLL_MARKER in prompt_text:
+                                    relaid = _apply_podium_scroll(relaid, hero, rotation_frames)
+                                elif _PODIUM_360_MARKER in prompt_text:
                                     relaid = _apply_podium_spin360(relaid, hero, rotation_frames)
                                 elif _PODIUM_SPIN_MARKER in prompt_text:
                                     relaid = _apply_podium_spin(relaid, hero)

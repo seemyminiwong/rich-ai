@@ -509,3 +509,18 @@ def test_podium_360_builds_frame_turntable_and_falls_back_to_coin_spin():
     # Без серії (0-1 кадр) - чесний відкат до монетного обертання.
     coin = _apply_podium_spin360(html, hero, [])
     assert 'arspin' in coin and 'ar360' not in coin
+
+
+def test_podium_scroll_ties_rotation_to_viewport_with_autoplay_fallback():
+    from app.pipeline import _apply_podium_scroll
+
+    hero = '/media/p1/product-reference.png?t=abc'
+    frames = [f'/media/p1/upload-{i}.webp?t=x{i}' for i in range(1, 9)]
+    html = f'<section><img src="{hero}" alt="Товар"></section>'
+    out = _apply_podium_scroll(html, hero, frames)
+    assert out.count('animation-timeline:view(') == 8, 'кожен кадр веде скрол'
+    assert '@supports (animation-timeline: view())' in out, 'фолбек-огорожа'
+    assert out.count('@keyframes arw') == 8
+    assert 'prefers-reduced-motion' in out
+    assert _apply_podium_scroll(out, hero, frames) == out, 'детермінований no-op'
+    assert 'arspin' in _apply_podium_scroll(html, hero, []), 'без серії - монетне обертання'

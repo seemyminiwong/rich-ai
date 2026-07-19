@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.40"
+BASE_STYLE_VERSION = "12.50"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -730,4 +730,22 @@ PODIUM-3D-360
 
 if 'PODIUM-3D-360' not in PODIUM360_STYLE_PROMPT or 'SECTION SET, IN ORDER' not in PODIUM360_STYLE_PROMPT:
     raise RuntimeError('PODIUM 3D 360 style derivation failed')
+
+
+# --- ARTLINE Podium 3D Scroll ------------------------------------------------
+# Обертання, привʼязане до СКРОЛУ (CSS scroll-driven animations,
+# animation-timeline: view()): поки блок їде через вʼюпорт, товар робить повний
+# оберт. Браузери без підтримки бачать автоплей-карусель (@supports-фолбек).
+# Кадри - ті самі, що для 3D 360; жодного JS.
+
+PODIUMSCROLL_STYLE_NAME = 'ARTLINE Podium 3D Scroll'
+PODIUMSCROLL_STYLE_PROMPT = PODIUM_STYLE_PROMPT + '''
+
+PODIUM-3D-SCROLL
+- The stage <img> will be replaced by the SERVER with a scroll-driven 360 turntable built from operator-uploaded frames.
+- Keep exactly ONE hero <img> on the stage of section 1 and do NOT write any CSS animation, @keyframes or <style> yourself.
+'''
+
+if 'PODIUM-3D-SCROLL' not in PODIUMSCROLL_STYLE_PROMPT or 'SECTION SET, IN ORDER' not in PODIUMSCROLL_STYLE_PROMPT:
+    raise RuntimeError('PODIUM 3D Scroll style derivation failed')
 

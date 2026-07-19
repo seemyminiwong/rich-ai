@@ -1332,6 +1332,7 @@ def generate_image(
 
 _PODIUM_SPIN_MARKER = 'PODIUM-3D-SPIN'
 _PODIUM_360_MARKER = 'PODIUM-3D-360'
+_PODIUM_SCROLL_MARKER = 'PODIUM-3D-SCROLL'
 
 _SPIN_STYLE = ('@keyframes arspin{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}'
                '@-webkit-keyframes arspin{0%{-webkit-transform:rotateY(0deg)}100%{-webkit-transform:rotateY(360deg)}}'
@@ -1345,9 +1346,9 @@ def _strip_podium_spin(soup) -> None:
     дотягнути шматок - маркер є, структура зламана. Розбираємо і збираємо заново.
     """
     for st in list(soup.find_all('style')):
-        if any(k in (st.string or st.get_text() or '') for k in ('arspin', 'ar360')):
+        if any(k in (st.string or st.get_text() or '') for k in ('arspin', 'ar360', '.arsc')):
             st.decompose()
-    for spin in list(soup.select('.arwrap, .ar3d, .ar360')):
+    for spin in list(soup.select('.arwrap, .ar3d, .ar360, .arsc')):
         if spin.find_parent(class_='arwrap') is not None:
             continue
         holder = spin
@@ -1455,6 +1456,60 @@ def _apply_podium_spin360(markup: str, hero_url: str, frames: list[str]) -> str:
         f'</div>', 'html.parser')
     target.replace_with(wrap)
     return str(soup)
+
+def _apply_podium_scroll(markup: str, hero_url: str, frames: list[str]) -> str:
+    """Обертання, привʼязане до скролу: animation-timeline: view().
+
+    Ті самі покадрові "вікна" видимості, що в 360, але прогрес анімації веде не
+    час, а положення блока у вʼюпорті - гортаєш сторінку, товар обертається.
+    Браузер без підтримки scroll-driven animations (@supports) отримує звичайну
+    автоплей-карусель. Жодного JS: редактор artline зберігає це як є.
+    """
+    frames = [f for f in (frames or []) if f]
+    if not markup or len(frames) < 2:
+        return _apply_podium_spin(markup, hero_url)
+    soup = BeautifulSoup(markup, 'html.parser')
+    _strip_podium_spin(soup)
+    target = _find_hero_img(soup, hero_url)
+    if target is None:
+        _clear_stage_marks(soup)
+        return str(soup)
+    alt = target.get('alt') or ''
+    _clear_stage_marks(soup)
+    count = len(frames)
+    duration = max(3.5, round(count * 0.22, 2))
+    window = 100.0 / count
+    css_parts = []
+    for index in range(count):
+        lo = window * index
+        hi = window * (index + 1)
+        edges = []
+        if index > 0:
+            edges.append(f'0%,{lo:.3f}%{{opacity:0}}')
+        edges.append(f'{min(lo + 0.02, 99.9):.3f}%,{max(hi - 0.02, 0.1):.3f}%{{opacity:1}}')
+        if index < count - 1:
+            edges.append(f'{hi:.3f}%,100%{{opacity:0}}')
+        css_parts.append(f'@keyframes arw{index}{{{"".join(edges)}}}')
+        css_parts.append(f'.arsc .arf{index}{{animation:arw{index} {duration}s linear infinite}}')
+    css_parts.append('@supports (animation-timeline: view()){'
+                     + ''.join(f'.arsc .arf{i}{{animation:arw{i} auto linear both;animation-timeline:view(block 25% 25%)}}' for i in range(count))
+                     + '}')
+    css_parts.append('@media (prefers-reduced-motion:reduce){.arsc img{animation:none!important}}')
+    imgs = []
+    for index, url in enumerate(frames):
+        position = 'position:relative' if index == 0 else 'position:absolute;inset:0'
+        base_opacity = 'opacity:1' if index == 0 else 'opacity:0'
+        imgs.append(f'<img class="arf{index}" src="{url}" alt="{alt if index == 0 else ""}" loading="lazy" '
+                    f'style="{position};display:block;width:100%;max-height:520px;object-fit:contain;'
+                    f'border-radius:18px;{base_opacity}">')
+    wrap = BeautifulSoup(
+        f'<div class="arwrap" style="max-width:78%;margin:18px auto 0">'
+        f'<style>{"".join(css_parts)}</style>'
+        f'<div class="arsc" style="position:relative">{"".join(imgs)}</div>'
+        f'</div>', 'html.parser')
+    target.replace_with(wrap)
+    return str(soup)
+
 
 
 def _responsive_grids(markup: str) -> str:
@@ -1851,7 +1906,9 @@ HTML:
         output = _enforce_image_whitelist(output, [hero, feature] + list(gallery or []), spares=list(gallery or []))
         output = _round_image_corners(output)
         prompt_text = style.prompt or ''
-        if _PODIUM_360_MARKER in prompt_text:
+        if _PODIUM_SCROLL_MARKER in prompt_text:
+            output = _apply_podium_scroll(output, hero, rotation or [])
+        elif _PODIUM_360_MARKER in prompt_text:
             output = _apply_podium_spin360(output, hero, rotation or [])
         elif _PODIUM_SPIN_MARKER in prompt_text:
             output = _apply_podium_spin(output, hero)
