@@ -1333,7 +1333,8 @@ def generate_image(
 _PODIUM_SPIN_MARKER = 'PODIUM-3D-SPIN'
 
 _SPIN_STYLE = ('@keyframes arspin{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}'
-               '@media (prefers-reduced-motion:reduce){.ar3d{animation:none!important}}')
+               '@-webkit-keyframes arspin{0%{-webkit-transform:rotateY(0deg)}100%{-webkit-transform:rotateY(360deg)}}'
+               '@media (prefers-reduced-motion:reduce){.ar3d{animation:none!important;-webkit-animation:none!important}}')
 
 
 def _apply_podium_spin(markup: str, hero_url: str) -> str:
@@ -1341,33 +1342,56 @@ def _apply_podium_spin(markup: str, hero_url: str) -> str:
 
     Два шари ОДНОГО фото: лице та тил (rotateY(180deg) scaleX(-1) робить тил
     незеркальним), обидва з backface-visibility:hidden на preserve-3d осі -
-    класичне "монетне" обертання, що читається як товар на поворотному подіумі.
-    CSS пише сервер, не модель: анімація детермінована і проходить санітизацію.
-    Ідемпотентно: повторний виклик (мобільний relayout) нічого не ламає.
+    класичне "монетне" обертання. CSS пише сервер, не модель.
+
+    НЕ довіряємо наявній розмітці: мобільний relayout может дотягнути шматок
+    обертання (маркер є, структура зламана - перше живе тестування впіймало
+    саме нерухомий мобайл). Тому будь-який слід обертання спочатку РОЗБИРАЄТЬСЯ
+    до плаского <img>, і структура збирається заново - детерміновано.
     """
-    if not markup or 'arspin' in markup:
+    if not markup:
         return markup
     hero_path = (hero_url or '').split('?', 1)[0]
     if not hero_path:
         return markup
     soup = BeautifulSoup(markup, 'html.parser')
+    for st in list(soup.find_all('style')):
+        if 'arspin' in (st.string or st.get_text() or ''):
+            st.decompose()
+    for spin in list(soup.select('.ar3d')):
+        holder = spin
+        parent = spin.parent
+        if parent is not None and parent.name == 'div' and 'perspective' in (parent.get('style') or ''):
+            holder = parent
+        face = spin.find('img')
+        if face is not None:
+            plain = soup.new_tag('img')
+            plain['src'] = face.get('src') or ''
+            plain['alt'] = face.get('alt') or ''
+            plain['style'] = 'display:block;max-width:78%;max-height:520px;width:auto;height:auto;margin:18px auto 0;object-fit:contain'
+            holder.replace_with(plain)
+        else:
+            holder.decompose()
     target = None
     for img in soup.find_all('img'):
         if hero_path in (img.get('src') or ''):
             target = img
             break
     if target is None:
-        return markup
+        return str(soup)
     src = target.get('src') or hero_url
     alt = target.get('alt') or ''
     wrap = BeautifulSoup(
-        f'<div style="perspective:1100px;max-width:78%;margin:18px auto 0">'
+        f'<div style="perspective:1100px;-webkit-perspective:1100px;max-width:78%;margin:18px auto 0">'
         f'<style>{_SPIN_STYLE}</style>'
-        f'<div class="ar3d" style="position:relative;transform-style:preserve-3d;animation:arspin 10s linear infinite">'
+        f'<div class="ar3d" style="position:relative;transform-style:preserve-3d;-webkit-transform-style:preserve-3d;'
+        f'animation:arspin 10s linear infinite;-webkit-animation:arspin 10s linear infinite">'
         f'<img src="{src}" alt="{alt}" style="display:block;width:100%;max-height:520px;object-fit:contain;'
-        f'backface-visibility:hidden;filter:drop-shadow(0 30px 38px rgba(16,16,16,.22))">'
+        f'border-radius:18px;backface-visibility:hidden;-webkit-backface-visibility:hidden;'
+        f'filter:drop-shadow(0 30px 38px rgba(16,16,16,.22))">'
         f'<img src="{src}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;'
-        f'backface-visibility:hidden;transform:rotateY(180deg) scaleX(-1)">'
+        f'border-radius:18px;backface-visibility:hidden;-webkit-backface-visibility:hidden;'
+        f'transform:rotateY(180deg) scaleX(-1);-webkit-transform:rotateY(180deg) scaleX(-1)">'
         f'</div></div>', 'html.parser')
     target.replace_with(wrap)
     return str(soup)
