@@ -469,3 +469,16 @@ def test_podium3d_prompt_contract():
     # 'six') - саме на цьому впав перший деплой Podium 3D.
     assert 'SECTION SET, IN ORDER' in p
     assert 'PODIUM - light product stage' in p
+
+
+def test_license_comment_is_a_valid_invisible_html_tail():
+    from app.prompts import LICENSE_COMMENT
+    from app.pipeline import sanitize_html, _visible_text
+
+    assert LICENSE_COMMENT.startswith('\n<!--') and LICENSE_COMMENT.endswith('-->')
+    assert 'Copyright 2026 seemyminiwong' in LICENSE_COMMENT
+    assert 'PolyForm Noncommercial' in LICENSE_COMMENT
+    page = '<section><p>Текст</p></section>' + LICENSE_COMMENT
+    # Санітизація редактора не зриває хвіст, покупець його не бачить.
+    assert 'Правовласник' in sanitize_html(page)
+    assert 'Правовласник' not in _visible_text(page)

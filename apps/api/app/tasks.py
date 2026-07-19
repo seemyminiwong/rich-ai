@@ -11,7 +11,7 @@ from app.db import SessionLocal
 from app.models import Artifact, Asset, CriticReport, Event, Project, Status, Style
 from app.limits import add_spend
 from app.media import media_url
-from app.prompts import BASE_STYLE_VERSION
+from app.prompts import BASE_STYLE_VERSION, LICENSE_COMMENT
 from app.pipeline import _PODIUM_SPIN_MARKER, _apply_podium_spin
 from app.pipeline import (
     _image_urls_of,
@@ -536,7 +536,7 @@ def process_project(self, project_id, reuse_images=False):
                         project_id=project.id,
                         language=language,
                         variant=variant,
-                        html=marker + rich_html,
+                        html=marker + rich_html + LICENSE_COMMENT,
                         version=latest_version + 1,
                         fallback_reason=fallback_reason or '',
                     ))
@@ -647,7 +647,7 @@ def translate_project(project_id: str, language: str):
                 Artifact.language == language,
                 Artifact.variant == variant,
             )) or 0
-            db.add(Artifact(project_id=project.id, language=language, variant=variant, html=translated, version=latest + 1))
+            db.add(Artifact(project_id=project.id, language=language, variant=variant, html=(translated if 'Правовласник' in translated else translated + LICENSE_COMMENT), version=latest + 1))
             db.commit()
             added_any = True
             log(db, project, 'translate', f'{variant}: {language.upper()} v{latest + 1} готово')
