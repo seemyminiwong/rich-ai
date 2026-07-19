@@ -308,3 +308,9 @@ optgroup[disabled]{color:var(--gray-3)}
 .role-row{display:flex;gap:4px}
 .role-chip{flex:1;border:1px solid var(--border);background:#fff;border-radius:8px;padding:3px 0;font-size:10px;font-weight:900;color:var(--muted)}
 .role-chip.active{background:var(--cyan);border-color:var(--cyan);color:#101010}
+.ubars{display:flex;align-items:flex-end;gap:6px;height:150px;overflow-x:auto;padding-bottom:4px}
+.ubar-wrap{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%;flex:1 0 26px}
+.ubar{width:100%;max-width:38px;background:linear-gradient(180deg,var(--cyan),var(--blue));border-radius:6px 6px 2px 2px;min-height:3px}
+.ubar-wrap small{color:var(--muted);font-size:10px;white-space:nowrap}
+tr.urow-active td{background:#E9F8FA}
+.table-wrap tbody tr{cursor:pointer}
