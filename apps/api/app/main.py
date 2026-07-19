@@ -1532,19 +1532,31 @@ def client_error(body: ClientErrorIn, db: Session = Depends(get_db), user=Depend
 
 
 @app.get('/api/usage')
-def usage(db: Session = Depends(get_db), user=Depends(require_perm('usage.view'))):
-    rows = db.scalars(select(Project)).all(); total = sum(x.estimated_cost for x in rows)
+def usage(days: int = 0, user_id: str = '', db: Session = Depends(get_db), user=Depends(require_perm('usage.view'))):
+    """Використання з фільтрами: період (days, 0 = весь час) і користувач.
+
+    by_user рахується по всьому ПЕРІОДУ незалежно від фільтра користувача -
+    таблиця людей лишається повною, фільтр звужує лише картки й графік.
+    """
+    since = datetime.utcnow() - timedelta(days=days) if days and days > 0 else None
+    period_query = select(Project)
+    if since is not None:
+        period_query = period_query.where(Project.created_at >= since)
+    period_rows = db.scalars(period_query).all()
+    rows = [p for p in period_rows if not user_id or p.owner_id == user_id]
+    ids = {p.id for p in rows}
+    total = sum(x.estimated_cost for x in rows)
     # Quality signal: does the team trust the output? A project counts as
     # "approved clean" when its review history contains an approval and never a
     # change request; manual HTML edits are artifact versions above v1.
-    reviews = db.scalars(select(Review)).all()
     decisions = defaultdict(set)
-    for r in reviews:
+    for r in db.scalars(select(Review)).all():
         decisions[r.project_id].add(r.decision)
     reviewed = [p for p in rows if decisions.get(p.id)]
     approved = [p for p in reviewed if 'approve' in decisions[p.id]]
     approved_clean = [p for p in approved if 'request_changes' not in decisions[p.id]]
-    manual_edits = db.scalar(select(func.count(Artifact.id)).where(Artifact.version > 1, Artifact.created_by.isnot(None))) or 0
+    manual_edits = (db.scalar(select(func.count(Artifact.id)).where(
+        Artifact.version > 1, Artifact.created_by.isnot(None), Artifact.project_id.in_(ids))) or 0) if ids else 0
     finished = [p for p in rows if p.status in (Status.review, Status.approved, Status.done, Status.changes_requested)]
     quality = {
         'reviewed_projects': len(reviewed),
@@ -1555,6 +1567,30 @@ def usage(db: Session = Depends(get_db), user=Depends(require_perm('usage.view')
         'manual_html_edits': manual_edits,
         'generated_pages': sum(len([a for a in p.artifacts if a.version == 1]) for p in finished),
     }
+    users_by_id = {u.id: (u.name or u.email) for u in db.scalars(select(User)).all()}
+    per_user = {}
+    for p in period_rows:
+        key = p.owner_id or ''
+        entry = per_user.setdefault(key, {'user_id': key, 'name': users_by_id.get(key, 'Без власника'),
+                                          'projects': 0, 'cost': 0.0, 'input_tokens': 0, 'output_tokens': 0,
+                                          'images': 0, 'approved': 0})
+        entry['projects'] += 1
+        entry['cost'] += float(p.estimated_cost or 0)
+        entry['input_tokens'] += p.input_tokens or 0
+        entry['output_tokens'] += p.output_tokens or 0
+        entry['images'] += p.image_count or 0
+        if 'approve' in decisions.get(p.id, set()):
+            entry['approved'] += 1
+    by_user = sorted(per_user.values(), key=lambda x: -x['cost'])
+    # Динаміка: по днях для коротких періодів, по місяцях для року/всього часу.
+    bucket_fmt = '%Y-%m-%d' if days and days <= 92 else '%Y-%m'
+    buckets = {}
+    for p in rows:
+        key = p.created_at.strftime(bucket_fmt)
+        b = buckets.setdefault(key, {'day': key, 'cost': 0.0, 'projects': 0})
+        b['cost'] += float(p.estimated_cost or 0)
+        b['projects'] += 1
+    by_day = sorted(buckets.values(), key=lambda x: x['day'])
     return {'total_cost': total, 'projects': len(rows), 'input_tokens': sum(x.input_tokens for x in rows), 'output_tokens': sum(x.output_tokens for x in rows), 'images': sum(x.image_count for x in rows), 'average_cost': total / len(rows) if rows else 0,
-            'quality': quality,
+            'days': days, 'user_id': user_id, 'quality': quality, 'by_user': by_user, 'by_day': by_day,
             'by_project': [{'id': x.id, 'name': x.name, 'cost': x.estimated_cost, 'created_at': x.created_at} for x in sorted(rows, key=lambda x: x.created_at, reverse=True)[:20]]}
