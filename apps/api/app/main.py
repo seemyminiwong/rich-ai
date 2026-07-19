@@ -41,6 +41,8 @@ from app.prompts import (
     PODIUM3D_STYLE_PROMPT,
     PODIUM360_STYLE_NAME,
     PODIUM360_STYLE_PROMPT,
+    PODIUMSCROLL_STYLE_NAME,
+    PODIUMSCROLL_STYLE_PROMPT,
     LICENSE_COMMENT,
     SHOWCASE_FEATURE_PROMPT,
     SHOWCASE_HERO_PROMPT,
@@ -133,6 +135,17 @@ MANAGED_STYLES = [
         'values': {
             'description': 'Справжнє 360°: завантажте серію кадрів по колу в діалозі створення і позначте «360-серія» — сервер збере покадрове обертання (hover ставить на паузу). Без серії поводиться як Podium 3D.',
             'prompt': PODIUM360_STYLE_PROMPT,
+            'hero_prompt': '',
+            'feature_prompt': '',
+            'negative_prompt': PODIUM_NEGATIVE_PROMPT,
+        },
+    },
+    {
+        'name': PODIUMSCROLL_STYLE_NAME,
+        'default': False,
+        'values': {
+            'description': 'Обертання, привʼязане до СКРОЛУ: поки покупець гортає сторінку, товар прокручується по колу (Chrome/Edge/Safari; інші бачать автоплей). Кадри — ті самі, що для 3D 360.',
+            'prompt': PODIUMSCROLL_STYLE_PROMPT,
             'hero_prompt': '',
             'feature_prompt': '',
             'negative_prompt': PODIUM_NEGATIVE_PROMPT,
