@@ -452,7 +452,14 @@ def test_podium_spin_wraps_hero_and_is_idempotent():
     assert spun.count('backface-visibility:hidden') == 2, 'мусить бути лице і тил'
     assert 'rotateY(180deg) scaleX(-1)' in spun, 'тил не має бути дзеркальним'
     assert 'prefers-reduced-motion' in spun
-    assert _apply_podium_spin(spun, hero) == spun, 'повторне застосування - no-op'
+    assert spun.count('border-radius:18px') == 2, 'обидва шари зі скругленням'
+    assert '-webkit-backface-visibility:hidden' in spun, 'iOS-префікси обовʼязкові'
+    assert _apply_podium_spin(spun, hero) == spun, 'повторне застосування - детермінований no-op'
+    # Модель дотягнула ЗЛАМАНИЙ шматок обертання (без <style>) - мусить зібратися заново.
+    mangled = spun.replace('<style>', '<s>').replace('</style>', '</s>').replace('animation:arspin 10s linear infinite;', '')
+    repaired = _apply_podium_spin(mangled, hero)
+    assert 'animation:arspin 10s linear infinite' in repaired
+    assert repaired.count('@keyframes arspin') == 1
     # Санітизація зберігає інертний <style> і вбиває CSS з url()/@import.
     assert 'arspin' in sanitize_html(spun)
     dirty = '<section><style>body{background:url(https://evil.example/x)}</style><p>t</p></section>'
