@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     github_client_secret: str = ''
     # Явний callback, коли авто-визначення не годиться (TLS за Caddy тощо).
     github_callback_url: str = ''
+    # Google OAuth (порожньо = кнопку вимкнено). Client ID/Secret з Google Cloud Console.
+    google_client_id: str = ''
+    google_client_secret: str = ''
+    google_callback_url: str = ''
+    # Реєстрація паролем за інвайт-токеном; типово вимкнена - нові користувачі
+    # заходять ЛИШЕ через GitHub/Google за запрошенням.
+    allow_password_registration: bool = False
     # 'shared' (усі редагують усе) або 'owner' (змінює лише власник або admin).
     project_ownership: str = 'shared'
     request_timeout_seconds: int = 75

@@ -439,6 +439,9 @@ def login(request: Request, payload: Login, db: Session = Depends(get_db)):
 
 @app.post('/api/auth/register')
 def register(payload: RegisterIn, db: Session = Depends(get_db)):
+    if not settings.allow_password_registration:
+        raise HTTPException(403, 'Реєстрація паролем вимкнена: увійдіть через GitHub або Google — '
+                                 'обліковий запис створиться автоматично за запрошенням')
     h = hashlib.sha256(payload.token.encode()).hexdigest(); inv = db.scalar(select(Invite).where(Invite.token_hash == h))
     if not inv or inv.accepted_at or inv.expires_at < datetime.utcnow(): raise HTTPException(400, 'Запрошення недійсне або прострочене')
     if db.scalar(select(User).where(User.email == inv.email)): raise HTTPException(409, 'Користувач уже існує')
@@ -477,7 +480,8 @@ def _github_state_ok(value: str) -> bool:
 @app.get('/api/auth/methods')
 def auth_methods():
     """Публічний: які способи входу увімкнено (екран логіна показує кнопки)."""
-    return {'github': bool(settings.github_client_id and settings.github_client_secret)}
+    return {'github': bool(settings.github_client_id and settings.github_client_secret),
+            'google': bool(settings.google_client_id and settings.google_client_secret)}
 
 
 @app.get('/api/auth/github')
@@ -525,6 +529,14 @@ def github_callback(request: Request, code: str = '', state: str = '', db: Sessi
              or (profile.get('email') or '')).strip().lower()
     if not email:
         return bounce('GitHub не віддав підтвердженого email. Додайте і підтвердьте email у GitHub')
+    return _oauth_complete(db, email, (profile.get('name') or profile.get('login') or ''), 'github',
+                           {'github_login': profile.get('login')}, bounce)
+
+
+def _oauth_complete(db, email: str, name: str, provider: str, meta: dict, bounce):
+    """Спільне завершення OAuth-входу: наявний користувач - вхід; чинне
+    запрошення на цей email - реєстрація з роллю із запрошення; інакше відмова.
+    Реєстрація в системі МОЖЛИВА лише цим шляхом (GitHub/Google), паролем - ні."""
     user = db.scalar(select(User).where(func.lower(User.email) == email))
     if user is None:
         invite = db.scalar(select(Invite).where(func.lower(Invite.email) == email,
@@ -532,14 +544,62 @@ def github_callback(request: Request, code: str = '', state: str = '', db: Sessi
                                                 Invite.expires_at > datetime.utcnow()))
         if invite is None:
             return bounce(f'Для {email} немає запрошення. Попросіть адміністратора запросити вас')
-        user = User(email=email, name=(profile.get('name') or profile.get('login') or ''),
-                    password_hash=hash_password(secrets.token_urlsafe(24)), role=invite.role, active=True)
+        user = User(email=email, name=name or '', password_hash=hash_password(secrets.token_urlsafe(24)),
+                    role=invite.role, active=True)
         db.add(user); invite.accepted_at = datetime.utcnow(); db.flush()
-        audit(db, user, 'auth.register_github', 'user', user.id, {'github_login': profile.get('login')})
+        audit(db, user, f'auth.register_{provider}', 'user', user.id, meta)
     if not user.active:
         return bounce('Обліковий запис деактивовано')
-    user.last_login_at = datetime.utcnow(); audit(db, user, 'auth.login_github', 'user', user.id); db.commit()
+    user.last_login_at = datetime.utcnow(); audit(db, user, f'auth.login_{provider}', 'user', user.id); db.commit()
     return RedirectResponse('/#gh_token=' + quote(token(user)))
+
+
+def _google_redirect_uri(request: Request) -> str:
+    return settings.google_callback_url or str(request.base_url).rstrip('/') + '/api/auth/google/callback'
+
+
+@app.get('/api/auth/google')
+def google_start(request: Request):
+    if not (settings.google_client_id and settings.google_client_secret):
+        raise HTTPException(404, 'Google-вхід не налаштовано')
+    return RedirectResponse('https://accounts.google.com/o/oauth2/v2/auth?' + urlencode({
+        'client_id': settings.google_client_id,
+        'redirect_uri': _google_redirect_uri(request),
+        'response_type': 'code',
+        'scope': 'openid email profile',
+        'state': _github_state(),
+    }))
+
+
+@app.get('/api/auth/google/callback')
+def google_callback(request: Request, code: str = '', state: str = '', db: Session = Depends(get_db)):
+    def bounce(message: str):
+        return RedirectResponse('/#gh_error=' + quote(message))
+
+    if not (settings.google_client_id and settings.google_client_secret):
+        return bounce('Google-вхід не налаштовано')
+    if not code or not _github_state_ok(state):
+        return bounce('Google-вхід: недійсний або протермінований запит. Спробуйте ще раз')
+    try:
+        with safe_client(timeout=15) as http:
+            exchange = http.post('https://oauth2.googleapis.com/token',
+                                 data={'client_id': settings.google_client_id,
+                                       'client_secret': settings.google_client_secret,
+                                       'code': code,
+                                       'grant_type': 'authorization_code',
+                                       'redirect_uri': _google_redirect_uri(request)})
+            access = exchange.json().get('access_token') if exchange.status_code == 200 else None
+            if not access:
+                return bounce('Google не підтвердив авторизацію')
+            profile = http.get('https://openidconnect.googleapis.com/v1/userinfo',
+                               headers={'Authorization': f'Bearer {access}'}).json()
+    except Exception:
+        logger.exception('Google OAuth exchange failed')
+        return bounce('Google недоступний. Спробуйте пізніше')
+    email = (profile.get('email') or '').strip().lower()
+    if not email or not profile.get('email_verified'):
+        return bounce('Google не віддав підтвердженого email')
+    return _oauth_complete(db, email, profile.get('name') or '', 'google', {'google_sub': profile.get('sub')}, bounce)
 
 
 @app.get('/api/me')
@@ -565,7 +625,7 @@ def create_invite(payload: InviteIn, db: Session = Depends(get_db), user=Depends
     if db.scalar(select(User).where(User.email == payload.email)): raise HTTPException(409, 'Користувач уже існує')
     raw = secrets.token_urlsafe(32); inv = Invite(email=payload.email, role=payload.role, token_hash=hashlib.sha256(raw.encode()).hexdigest(), created_by=user.id, expires_at=datetime.utcnow() + timedelta(days=7))
     db.add(inv); audit(db, user, 'invite.create', 'invite', inv.id, {'email': payload.email, 'role': payload.role.value}); db.commit()
-    return {'token': raw, 'register_path': f'/register?token={raw}', 'expires_at': inv.expires_at}
+    return {'token': raw, 'email': inv.email, 'register_path': f'/register?token={raw}', 'expires_at': inv.expires_at}
 
 
 @app.patch('/api/users/{user_id}')
