@@ -6,6 +6,13 @@ from these constants during application startup.
 """
 
 BASE_STYLE_VERSION = "12.30"
+
+# Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
+# його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
+LICENSE_COMMENT = ('\n<!-- Згенеровано ARTLINE Rich Studio · https://github.com/seemyminiwong/rich-ai · '
+                   'Ліцензія: PolyForm Noncommercial 1.0.0. '
+                   'Правовласник — Copyright 2026 seemyminiwong. '
+                   'Для комерційної ліцензії звертайтеся до правовласника. -->')
 BASE_STYLE_NAME = "ARTLINE Base"
 ENGINEERING_STYLE_NAME = "ARTLINE Engineering"
 

@@ -39,6 +39,7 @@ from app.prompts import (
     PODIUM_STYLE_PROMPT,
     PODIUM3D_STYLE_NAME,
     PODIUM3D_STYLE_PROMPT,
+    LICENSE_COMMENT,
     SHOWCASE_FEATURE_PROMPT,
     SHOWCASE_HERO_PROMPT,
     SHOWCASE_NEGATIVE_PROMPT,
@@ -1192,6 +1193,8 @@ def save_artifact(artifact_id: str, payload: HtmlIn, db: Session = Depends(get_d
     clean = sanitize_html(payload.html)
     if '<section' not in clean:
         raise HTTPException(400, 'HTML має містити принаймні один <section> блок')
+    if 'Правовласник' not in clean:
+        clean += LICENSE_COMMENT
     try:
         # Serialize version allocation for one project. The UI blocks double clicks,
         # while this lock also protects simultaneous saves from different users.
