@@ -126,7 +126,7 @@ function collectLanguages(form){const values=[...form.querySelectorAll('[name=la
 const PRESETS={
   eco:{name:'Економний',note:'Чернетка: подивитись на структуру й текст, не платячи за картинки',text:['gpt-5-mini','gpt-4.1-mini'],image:['gpt-image-1-mini','gemini-2.5-flash-image','gpt-image-1'],quality:'low'},
   std:{name:'Стандарт',note:'Робочий режим для більшості карток',text:['gpt-5-mini','gpt-4.1-mini'],image:['gemini-2.5-flash-image','gpt-image-1'],quality:'medium'},
-  max:{name:'Максимум',note:'Флагманські товари, максимальна деталізація',text:['gpt-5','gpt-5-mini'],image:['gpt-image-1','gemini-3-pro-image-preview'],quality:'high'},
+  max:{name:'Максимум',note:'Флагманські товари, максимальна деталізація',text:['gpt-5','gpt-5-mini'],image:['gpt-image-2','gpt-image-1','gemini-3-pro-image-preview'],quality:'high'},
 };
 // A run bills roughly this many tokens; used only to price the dialog, never to charge.
 const EST_TOKENS={input:30000,output:14000};
