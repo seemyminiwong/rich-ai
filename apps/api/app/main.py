@@ -39,6 +39,8 @@ from app.prompts import (
     PODIUM_STYLE_PROMPT,
     PODIUM3D_STYLE_NAME,
     PODIUM3D_STYLE_PROMPT,
+    PODIUM360_STYLE_NAME,
+    PODIUM360_STYLE_PROMPT,
     LICENSE_COMMENT,
     SHOWCASE_FEATURE_PROMPT,
     SHOWCASE_HERO_PROMPT,
@@ -120,6 +122,17 @@ MANAGED_STYLES = [
         'values': {
             'description': 'Подіум, де товар ОБЕРТАЄТЬСЯ: справжнє CSS-3D «монетне» обертання реального фото на світлій сцені. Нуль AI-зображень; анімацію вставляє сервер.',
             'prompt': PODIUM3D_STYLE_PROMPT,
+            'hero_prompt': '',
+            'feature_prompt': '',
+            'negative_prompt': PODIUM_NEGATIVE_PROMPT,
+        },
+    },
+    {
+        'name': PODIUM360_STYLE_NAME,
+        'default': False,
+        'values': {
+            'description': 'Справжнє 360°: завантажте серію кадрів по колу в діалозі створення і позначте «360-серія» — сервер збере покадрове обертання (hover ставить на паузу). Без серії поводиться як Podium 3D.',
+            'prompt': PODIUM360_STYLE_PROMPT,
             'hero_prompt': '',
             'feature_prompt': '',
             'negative_prompt': PODIUM_NEGATIVE_PROMPT,
@@ -267,10 +280,12 @@ class ProjectIn(BaseModel):
     reuse_images_from: str = ''
     reuse_labels: list[str] = Field(default_factory=list, max_length=10)
     adopt_images: list[AdoptItem] = Field(default_factory=list, max_length=10)
-    uploads: list[str] = Field(default_factory=list, max_length=10)
+    uploads: list[str] = Field(default_factory=list, max_length=36)
     # URL із uploads, призначений головним Hero / Feature (порожньо = генерувати AI).
     upload_hero: str = ''
     upload_feature: str = ''
+    # 360-серія: усі uploads стають кадрами обертання (за порядком), а не галереєю.
+    uploads_360: bool = False
 class StyleIn(BaseModel):
     name: str
     description: str = ''
@@ -897,7 +912,8 @@ def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depen
     # Власні фото оператора: копія з media/uploads стає кадром галереї проєкту.
     upload_urls = []
     media_root = Path(settings.media_dir).resolve()
-    for index, raw in enumerate(payload.uploads[:10], start=1):
+    rotation_urls = []
+    for index, raw in enumerate(payload.uploads[:36], start=1):
         name = strip_media_query(raw).rsplit('/', 1)[-1]
         if not strip_media_query(raw).startswith('/media/uploads/') or not _MEDIA_NAME.fullmatch(name):
             continue
@@ -909,6 +925,10 @@ def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depen
         target_name = f'upload-{index}.webp'
         shutil.copyfile(source, project_dir / target_name)
         url = media_url(p.id, target_name)
+        if payload.uploads_360:
+            rotation_urls.append(url)
+            db.add(Asset(project_id=p.id, kind='upload', label=f'Кадр 360 №{index}', url=url))
+            continue
         role_hero = raw == payload.upload_hero
         role_feature = raw == payload.upload_feature
         if role_hero:
@@ -923,6 +943,8 @@ def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depen
         db.add(Asset(project_id=p.id, kind='upload', label=f'Завантажене фото {index}{role_note}', url=url))
     if upload_urls:
         p.gallery_json = json.dumps(json.loads(p.gallery_json or '[]') + upload_urls)
+    if rotation_urls:
+        p.rotation_json = json.dumps(rotation_urls)
     adopted = 0
     if payload.adopt_images:
         by_source: dict[str, list[str]] = {}
