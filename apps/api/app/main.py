@@ -1365,7 +1365,7 @@ def system_status(db: Session = Depends(get_db), user=Depends(require_perm('sett
                 media_bytes += f.stat().st_size
     except Exception:
         pass
-    return {
+    payload = {
         'version': APP_VERSION,
         'openai_configured': bool(runtime_config()['openai_api_key']),
         'gemini_configured': bool(runtime_config()['gemini_api_key']),
@@ -1390,6 +1390,12 @@ def system_status(db: Session = Depends(get_db), user=Depends(require_perm('sett
         'styles': db.scalar(select(func.count(Style.id))) or 0,
         'users': db.scalar(select(func.count(User.id))) or 0,
     }
+    if not is_root_admin(user):
+        # Інфраструктурні поля - лише root-адміну: схема БД, диск і версія білда
+        # описують нутрощі проєкту, а сторінку бачить будь-хто з settings.view.
+        for infra_key in ('db_schema', 'disk_free_bytes', 'disk_total_bytes', 'version'):
+            payload.pop(infra_key, None)
+    return payload
 
 
 _GRAPH_FILE = Path(__file__).resolve().parent.parent / 'graph' / 'graph.html'
