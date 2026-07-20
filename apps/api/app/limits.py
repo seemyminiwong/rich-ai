@@ -104,3 +104,39 @@ def check_budget() -> None:
     if spent >= cap:
         raise HTTPException(429, f'Денний бюджет вичерпано: витрачено ${spent:.2f} із ${cap:.2f}. '
                                  'Нові генерації зупинено до завтра; ліміт задається DAILY_BUDGET_USD у .env')
+
+
+# --- Особистий денний бюджет користувача -------------------------------------
+
+def _user_budget_key(user_id: str) -> str:
+    return f'budget:user:{user_id}:' + datetime.now(timezone.utc).strftime('%Y-%m-%d')
+
+
+def add_user_spend(user_id: str, amount_usd: float) -> None:
+    if not user_id or amount_usd <= 0:
+        return
+    try:
+        r = _client()
+        key = _user_budget_key(user_id)
+        r.incrbyfloat(key, round(amount_usd, 6))
+        r.expire(key, 3 * 86400, nx=True)
+    except Exception as exc:
+        logger.warning('User budget storage unavailable: %s', exc)
+
+
+def user_today_spend(user_id: str) -> float:
+    try:
+        return float(_client().get(_user_budget_key(user_id)) or 0.0)
+    except Exception:
+        return 0.0
+
+
+def check_user_budget(user) -> None:
+    """Особистий ліміт поверх глобального: 0 = вимкнено для цього користувача."""
+    cap = float(getattr(user, 'daily_budget_usd', 0) or 0)
+    if cap <= 0:
+        return
+    spent = user_today_spend(user.id)
+    if spent >= cap:
+        raise HTTPException(429, f'Ваш особистий денний ліміт вичерпано: витрачено ${spent:.2f} із ${cap:.2f}. '
+                                 'Нові генерації - завтра, або попросіть адміністратора підняти ліміт')

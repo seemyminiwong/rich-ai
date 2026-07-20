@@ -9,7 +9,7 @@ from app.celery_app import celery
 from app.config import DEFAULT_IMAGE_PRICING, DEFAULT_TEXT_PRICING, settings
 from app.db import SessionLocal
 from app.models import Artifact, Asset, CriticReport, Event, Project, Status, Style
-from app.limits import add_spend
+from app.limits import add_spend, add_user_spend
 from app.media import media_url
 from app.prompts import BASE_STYLE_VERSION, LICENSE_COMMENT
 from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll
@@ -578,6 +578,7 @@ def process_project(self, project_id, reuse_images=False):
                 send_alert(f'Rich Studio: аварійний шаблон замість стилю\nПроєкт: {project.name}\n{summary}')
             # Feed the daily budget with the REAL delta this run cost.
             add_spend(float(project.estimated_cost or 0) - cost_at_start)
+            add_user_spend(project.owner_id or '', float(project.estimated_cost or 0) - cost_at_start)
             project.status = Status.review
             project.stage = 'review'
             project.progress = 100
@@ -659,6 +660,7 @@ def translate_project(project_id: str, language: str):
             log(db, project, 'translate', f'{variant}: {language.upper()} v{latest + 1} готово')
         if added_any:
             add_spend(float(project.estimated_cost or 0) - cost_before_translate)
+            add_user_spend(project.owner_id or '', float(project.estimated_cost or 0) - cost_before_translate)
             langs = [x.strip() for x in (project.languages or '').split(',') if x.strip()]
             if language not in langs:
                 langs.append(language)
