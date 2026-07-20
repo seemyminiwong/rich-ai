@@ -293,6 +293,9 @@ class ClientErrorIn(BaseModel):
     agent: str = Field(default='', max_length=300)
 class SecretsIn(BaseModel):
     llm_provider: str | None = None
+    local_base_url: str | None = None
+    local_api_key: str | None = None
+    local_text_models: str | None = None
     openai_api_key: str | None = None
     gemini_api_key: str | None = None
     openrouter_api_key: str | None = None
@@ -1443,6 +1446,11 @@ def available_models(user=Depends(current)):
     """
     cfg = runtime_config()
     text_models = list(settings.text_models)
+    if cfg['llm_provider'] == 'local' and cfg.get('local_base_url'):
+        local_list = [x.strip() for x in (cfg.get('local_text_models') or '').split(',') if x.strip()]
+        if local_list:
+            # Хмарні моделі локальний сервер не запустить - меню чесно показує його моделі.
+            text_models = local_list
     image_models = list(settings.image_models)
     if cfg['gemini_api_key']:
         image_models = list(dict.fromkeys(list(settings.gemini_models) + image_models))
@@ -1635,6 +1643,9 @@ def _secrets_view():
         'openrouter_api_key': mask(cfg['openrouter_api_key']),
         'openrouter_api_key_source': cfg['openrouter_api_key_source'],
         'openrouter_text_model': cfg['openrouter_text_model'],
+        'local_base_url': cfg.get('local_base_url', ''),
+        'local_api_key': mask(cfg.get('local_api_key', '')),
+        'local_text_models': cfg.get('local_text_models', ''),
     }
 
 
@@ -1702,11 +1713,18 @@ def get_secrets(user=Depends(require_root)):
 @app.put('/api/secrets')
 def put_secrets(body: SecretsIn, db: Session = Depends(get_db), user=Depends(require_root)):
     values = {}
-    if body.llm_provider in ('openai', 'openrouter'):
+    if body.llm_provider in ('openai', 'openrouter', 'local'):
         values['llm_provider'] = body.llm_provider
     if body.openrouter_text_model is not None:
         values['openrouter_text_model'] = body.openrouter_text_model.strip()[:120]
-    for field in ('openai_api_key', 'gemini_api_key', 'openrouter_api_key'):
+    if body.local_base_url is not None:
+        url = body.local_base_url.strip()[:300]
+        if url and not url.startswith(('http://', 'https://')):
+            raise HTTPException(400, 'Базовий URL локального сервера має починатися з http(s)://')
+        values['local_base_url'] = url
+    if body.local_text_models is not None:
+        values['local_text_models'] = body.local_text_models.strip()[:500]
+    for field in ('openai_api_key', 'gemini_api_key', 'openrouter_api_key', 'local_api_key'):
         raw = getattr(body, field)
         if raw is None:
             continue
@@ -1812,6 +1830,23 @@ def usage(days: int = 0, user_id: str = '', db: Session = Depends(get_db), user=
             entry['approved'] += 1
     by_user = sorted(per_user.values(), key=lambda x: -x['cost'])
     # Динаміка: по днях для коротких періодів, по місяцях для року/всього часу.
+    # Куди йдуть гроші: агрегат поетапних розбивок проєктів у вибраному зрізі.
+    # 'other' - все, що поза генераційним розбором: переклади, AI-рецензії,
+    # авто-виправлення (вони збільшують вартість проєкту після завершення).
+    stage_totals = {'extract': 0.0, 'content': 0.0, 'images': 0.0, 'other': 0.0}
+    for p in rows:
+        try:
+            bd = json.loads(p.cost_breakdown_json or '{}')
+        except Exception:
+            bd = {}
+        extract = float((bd.get('extract') or {}).get('cost') or 0)
+        content = float((bd.get('content') or {}).get('cost') or 0)
+        images = float((bd.get('images') or {}).get('cost') or (p.image_cost or 0))
+        stage_totals['extract'] += extract
+        stage_totals['content'] += content
+        stage_totals['images'] += images
+        stage_totals['other'] += max(0.0, float(p.estimated_cost or 0) - extract - content - images)
+    by_stage = {k: round(v, 4) for k, v in stage_totals.items()}
     bucket_fmt = '%Y-%m-%d' if days and days <= 92 else '%Y-%m'
     buckets = {}
     for p in rows:
@@ -1821,5 +1856,5 @@ def usage(days: int = 0, user_id: str = '', db: Session = Depends(get_db), user=
         b['projects'] += 1
     by_day = sorted(buckets.values(), key=lambda x: x['day'])
     return {'total_cost': total, 'projects': len(rows), 'input_tokens': sum(x.input_tokens for x in rows), 'output_tokens': sum(x.output_tokens for x in rows), 'images': sum(x.image_count for x in rows), 'average_cost': total / len(rows) if rows else 0,
-            'days': days, 'user_id': user_id, 'quality': quality, 'by_user': by_user, 'by_day': by_day,
+            'days': days, 'user_id': user_id, 'quality': quality, 'by_user': by_user, 'by_day': by_day, 'by_stage': by_stage,
             'by_project': [{'id': x.id, 'name': x.name, 'cost': x.estimated_cost, 'created_at': x.created_at} for x in sorted(rows, key=lambda x: x.created_at, reverse=True)[:20]]}

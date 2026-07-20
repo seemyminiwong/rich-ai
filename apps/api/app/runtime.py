@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # Values with these keys are encrypted at rest. Non-secret settings (provider
 # choice, model name) stay readable - encrypting them buys nothing and makes
 # debugging blind.
-SECRET_KEYS = ('openai_api_key', 'gemini_api_key', 'openrouter_api_key')
+SECRET_KEYS = ('openai_api_key', 'gemini_api_key', 'openrouter_api_key', 'local_api_key')
 _ENC_PREFIX = 'enc:v1:'
 
 
@@ -64,12 +64,18 @@ RUNTIME_KEYS = {
     'openrouter_api_key': None,
     'openrouter_text_model': None,
     'llm_provider': None,
+    'local_base_url': 'local_llm_base_url',
+    'local_api_key': None,
+    'local_text_models': 'local_llm_models',
 }
 
 DEFAULTS = {
     'llm_provider': 'openai',
     'openrouter_api_key': '',
     'openrouter_text_model': 'openai/gpt-4o-mini',
+    'local_base_url': '',
+    'local_api_key': '',
+    'local_text_models': '',
 }
 
 _cache = {'at': 0.0, 'data': None}
@@ -92,7 +98,7 @@ def _load() -> dict:
             value = _decrypt(value)
         out[key] = value or env_value
         out[key + '_source'] = 'database' if value else ('env' if env_value else 'none')
-    if out['llm_provider'] not in ('openai', 'openrouter'):
+    if out['llm_provider'] not in ('openai', 'openrouter', 'local'):
         out['llm_provider'] = 'openai'
     return out
 

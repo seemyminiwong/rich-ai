@@ -45,6 +45,10 @@ def text_client():
     cfg = runtime_config()
     if cfg['llm_provider'] == 'openrouter' and cfg['openrouter_api_key']:
         return _client_for(cfg['openrouter_api_key'], OPENROUTER_BASE_URL), 'openrouter'
+    if cfg['llm_provider'] == 'local' and cfg.get('local_base_url'):
+        # Ollama/vLLM/LM Studio: OpenAI-сумісний Chat Completions; ключ багатьом
+        # не потрібен, але клієнт вимагає непорожній рядок.
+        return _client_for(cfg.get('local_api_key') or 'local', cfg['local_base_url']), 'local'
     return _client_for(cfg['openai_api_key']), 'openai'
 
 
@@ -158,7 +162,7 @@ def _responses_create(model: str, prompt: str, max_output_tokens: int):
     if api is None:
         raise RuntimeError('Text provider is not configured')
     effort = (settings.openai_reasoning_effort or '').strip()
-    if provider == 'openrouter':
+    if provider in ('openrouter', 'local'):
         budget = max(max_output_tokens * 2, 32000) if _is_reasoning_model(model) else max_output_tokens
         options = dict(model=model, messages=[{'role': 'user', 'content': prompt}], max_tokens=budget)
         if _is_reasoning_model(model) and effort:

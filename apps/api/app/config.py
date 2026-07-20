@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     # Реєстрація паролем за інвайт-токеном; типово вимкнена - нові користувачі
     # заходять ЛИШЕ через GitHub/Google за запрошенням.
     allow_password_registration: bool = False
+    # Локальний OpenAI-сумісний LLM-сервер (Ollama/vLLM/LM Studio): базовий URL
+    # виду http://192.168.1.50:11434/v1 і список моделей через кому.
+    local_llm_base_url: str = ''
+    local_llm_models: str = ''
     # 'shared' (усі редагують усе) або 'owner' (змінює лише власник або admin).
     project_ownership: str = 'shared'
     request_timeout_seconds: int = 75
@@ -125,6 +129,10 @@ class Settings(BaseSettings):
     @property
     def gemini_models(self):
         return [x.strip() for x in self.gemini_image_models.split(',') if x.strip()]
+
+    @property
+    def local_models(self):
+        return [x.strip() for x in self.local_llm_models.split(',') if x.strip()]
 
     @property
     def text_pricing(self):
