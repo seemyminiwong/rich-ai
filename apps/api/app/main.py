@@ -25,7 +25,7 @@ from app.db import Base, SessionLocal, engine, ensure_schema, get_db, run_migrat
 from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Project, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
 from app.tasks import process_project, translate_project
-from app.limits import check_action, check_budget, check_login, client_ip, today_spend
+from app.limits import check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
 from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, is_public_http_url, parse_page, safe_client, sanitize_html, style_image_prompt, text_client
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
@@ -285,7 +285,7 @@ def media_file(project_id: str, filename: str, t: str = ''):
 class Login(BaseModel): email: str; password: str
 class RegisterIn(BaseModel): token: str; name: str = Field(min_length=2, max_length=120); password: str = Field(min_length=8, max_length=200)
 class InviteIn(BaseModel): email: str; role: Role = Role.viewer
-class UserUpdate(BaseModel): role: Role | None = None; active: bool | None = None; name: str | None = None
+class UserUpdate(BaseModel): role: Role | None = None; active: bool | None = None; name: str | None = None; daily_budget_usd: float | None = Field(default=None, ge=0, le=10000)
 class UserPasswordIn(BaseModel): password: str = Field(min_length=8, max_length=200)
 class ClientErrorIn(BaseModel):
     text: str = Field(max_length=2000)
@@ -424,6 +424,7 @@ def user_dict(x):
     except Exception:
         overrides = {}
     return {'id': x.id, 'email': x.email, 'name': x.name, 'role': x.role.value, 'active': x.active, 'is_root': is_root_admin(x),
+            'daily_budget_usd': float(getattr(x, 'daily_budget_usd', 0) or 0), 'today_spend_usd': round(user_today_spend(x.id), 4),
             'permissions': sorted(effective_perms(x)),
             'granted': sorted(overrides.get('grant') or []), 'revoked': sorted(overrides.get('revoke') or []),
             'created_at': x.created_at, 'last_login_at': x.last_login_at}
@@ -807,7 +808,7 @@ def style_preview(style_id: str, db: Session = Depends(get_db), user=Depends(cur
 
 @app.post('/api/styles/{style_id}/preview')
 def style_preview_generate(style_id: str, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
-    check_action(user.id, 'style_ai', 4); check_budget()
+    check_action(user.id, 'style_ai', 4); check_budget(); check_user_budget(user)
     """Generate a real AI example page for this style from the demo product and save it."""
     from types import SimpleNamespace
     from app.pipeline import generate_html
@@ -857,7 +858,7 @@ def projects(db: Session = Depends(get_db), user=Depends(current)):
 
 @app.post('/api/projects/{project_id}/translate')
 def add_language(project_id: str, body: TranslateIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
-    check_action(user.id, 'translate', 6); check_budget()
+    check_action(user.id, 'translate', 6); check_budget(); check_user_budget(user)
     """Translate the newest finished variants into one more language.
 
     Unlike a rerun this touches nothing but copy: no scrape, no images, no master
@@ -1004,7 +1005,7 @@ async def upload_reference_image(request: Request, user=Depends(require_perm('pr
 
 @app.post('/api/projects')
 def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
-    check_action(user.id, 'create', 6); check_budget()
+    check_action(user.id, 'create', 6); check_budget(); check_user_budget(user)
     style = db.get(Style, payload.style_id) if payload.style_id else db.scalar(select(Style).where(Style.is_default == True))
     if not style: raise HTTPException(400, 'Немає доступного стилю')
     langs = normalize_languages(payload.languages); vars = [x for x in payload.variants if x in {'desktop', 'mobile'}]
@@ -1230,7 +1231,7 @@ manifest.json contains generation metadata.
 
 @app.post('/api/projects/{project_id}/run')
 def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
-    check_action(user.id, 'rerun', 6); check_budget()
+    check_action(user.id, 'rerun', 6); check_budget(); check_user_budget(user)
     p = db.get(Project, project_id)
     if not p: raise HTTPException(404, 'Проєкт не знайдено')
     require_project_edit(p, user)
@@ -1427,7 +1428,7 @@ Return strict JSON with keys description, style_prompt, hero_prompt, feature_pro
 
 @app.post('/api/styles/generate')
 def generate_style(payload: StyleGenerateIn, user=Depends(require_perm('style.manage'))):
-    check_action(user.id, 'style_ai', 4); check_budget()
+    check_action(user.id, 'style_ai', 4); check_budget(); check_user_budget(user)
     model = payload.model or settings.openai_text_model
     fallback = {'description': 'Згенерований ARTLINE-стиль', 'style_prompt': DEFAULT_STYLE_PROMPT + '\n' + payload.brief, 'hero_prompt': DEFAULT_HERO_PROMPT, 'feature_prompt': DEFAULT_FEATURE_PROMPT, 'negative_prompt': DEFAULT_NEGATIVE_PROMPT, 'score': {'consistency': 96, 'readability': 97, 'brand_fit': 97}, 'preview_html': '<section style="padding:32px;border-radius:12px;background:#F7F8FA;border:1px solid #D0D7DE;color:#101010;font-family:Arial;box-sizing:border-box"><div style="font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#19BCC9">ARTLINE STYLE</div><h2 style="font-size:36px;line-height:1.1;margin:12px 0;color:#101010">Premium product presentation</h2><p style="max-width:620px;margin:0;color:#555555;line-height:1.6">Unified ARTLINE visual system preview.</p></section>', 'model': model}
     if not settings.openai_api_key: return fallback
@@ -1449,7 +1450,7 @@ def generate_style(payload: StyleGenerateIn, user=Depends(require_perm('style.ma
 
 @app.post('/api/styles/{style_id}/improve')
 def improve_style(style_id: str, payload: StyleImproveIn, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
-    check_action(user.id, 'style_ai', 4); check_budget()
+    check_action(user.id, 'style_ai', 4); check_budget(); check_user_budget(user)
     s = db.get(Style, style_id)
     if not s: raise HTTPException(404, 'Стиль не знайдено')
     generated = generate_style(StyleGenerateIn(name=s.name, brief=(s.prompt + '\nImprovement request: ' + payload.instructions)[:12000], model=payload.model), user)

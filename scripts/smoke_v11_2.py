@@ -204,6 +204,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'per-user daily budget enforced and editable': 'def check_user_budget' in limits and 'add_user_spend' in tasks and main.count('check_user_budget(user)') >= 6 and 'daily_budget_usd' in (root / 'apps/api/alembic/versions/0006_user_daily_budget.py').read_text(encoding='utf-8') and "Ліміт $/день" in web,
     'dark editions: showcase and 360 stage': "SHOWCASE_DARK_STYLE_NAME = 'ARTLINE Showcase Dark'" in prompts and "PODIUM360DARK_STYLE_NAME = 'ARTLINE Podium 3D 360 Dark'" in prompts and 'DARK EDITION OVERRIDES' in prompts and "'ARTLINE Showcase Dark'" in web and "'ARTLINE Podium 3D 360 Dark'" in web and 'SHOWCASE_DARK_STYLE_PROMPT' in main and 'PODIUM360DARK_STYLE_PROMPT' in main,
     'cloudflare tunnel profile ready': 'cloudflared' in (root / 'docker-compose.yml').read_text(encoding='utf-8') and 'CLOUDFLARE_TUNNEL_TOKEN' in (root / '.env.example').read_text(encoding='utf-8') and 'Cloudflare Tunnel' in (root / 'docs/DEPLOY.md').read_text(encoding='utf-8'),
     'google oauth mirrors github; registration is oauth-only': "@app.get('/api/auth/google/callback')" in main and 'def _oauth_complete' in main and 'email_verified' in main and 'allow_password_registration' in main and "'google': bool(settings.google_client_id" in main and 'Увійти через Google' in web and 'ALLOW_PASSWORD_REGISTRATION' in (root / '.env.example').read_text(encoding='utf-8'),

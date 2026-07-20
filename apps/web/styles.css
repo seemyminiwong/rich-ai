@@ -326,3 +326,6 @@ tr.urow-active td{background:#E9F8FA}
 .frame-num{position:absolute;left:3px;top:3px;background:rgba(16,16,16,.72);color:#fff;font-size:10px;font-weight:900;border-radius:6px;padding:1px 5px;line-height:1.4}
 .upload-360{margin-top:10px}
 #upload360Hint p{margin:8px 0 0}
+.budget-cell{display:grid;gap:3px;min-width:92px}
+.budget-cell input{width:92px;padding:7px 9px}
+.budget-cell small{color:var(--muted);font-size:10px;white-space:nowrap}

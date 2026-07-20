@@ -44,6 +44,8 @@ class User(Base):
     role: Mapped[Role] = mapped_column(Enum(Role), default=Role.viewer)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     permissions_json: Mapped[str] = mapped_column(Text, default='{}')
+    # Особистий денний бюджет $ (0 = без особистого ліміту; глобальний діє завжди).
+    daily_budget_usd: Mapped[float] = mapped_column(Float, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
