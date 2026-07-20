@@ -559,3 +559,28 @@ def test_critic_tolerates_server_animations_and_scales_brand_threshold():
     four = [one] * 4
     _, _, issues4, _ = critic_html(four, 'marketing', {})
     assert not any('бренду' in i for i in issues4) or one.html.count('ARTLINE') * 4 > 48, 'поріг масштабується на кількість сторінок'
+
+
+def test_llm_critic_parses_review_and_reports_token_usage():
+    from app.pipeline import llm_critic
+
+    class FakeResponse:
+        output_text = '{"score": 82, "summary": "Гарно, але є вигадка", "issues": ["Потужність 900 Вт не з JSON"], "suggestions": ["Приберіть неперевірене число"]}'
+        usage = SimpleNamespace(input_tokens=1200, output_tokens=150)
+
+    page = SimpleNamespace(html='<section><h2>Товар</h2><p>Потужність 900 Вт</p></section>', language='ua', variant='desktop')
+    with patch('app.pipeline._responses_create', lambda model, prompt, cap: FakeResponse()), \
+         patch('app.pipeline.text_ready', lambda: True):
+        score, summary, issues, suggestions, ti, to = llm_critic([page], {'name': 'Товар'}, 'gpt-5-mini')
+    assert score == 82 and 'вигадка' in summary
+    assert issues == ['Потужність 900 Вт не з JSON'] and ti == 1200 and to == 150
+
+    class Garbage:
+        output_text = 'вибачте, не можу'
+        usage = SimpleNamespace(input_tokens=1, output_tokens=1)
+
+    import pytest as _pytest
+    with patch('app.pipeline._responses_create', lambda model, prompt, cap: Garbage()), \
+         patch('app.pipeline.text_ready', lambda: True):
+        with _pytest.raises(RuntimeError):
+            llm_critic([page], {}, 'gpt-5-mini')

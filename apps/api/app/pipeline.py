@@ -1965,6 +1965,44 @@ SEGMENTS:
     return result, input_tokens, output_tokens
 
 
+def llm_critic(artifacts, product: dict, model: str):
+    """Справжній AI-рецензент (ПЛАТНИЙ): модель читає сторінки проти product JSON.
+
+    Повертає (score, summary, issues, suggestions, input_tokens, output_tokens);
+    вартість токенів рахує і додає до проєкту викликаючий код. Евристичний
+    critic_html лишається безкоштовною першою лінією.
+    """
+    if not text_ready():
+        raise RuntimeError('Text provider is not configured')
+    pages = []
+    for a in artifacts:
+        text = _visible_text(getattr(a, 'html', ''))[:6000]
+        pages.append(f'=== {getattr(a, "language", "?")}/{getattr(a, "variant", "?")} ===\n{text}')
+    prompt = (
+        'Ти - прискіпливий рецензент ecommerce rich-контенту. Нижче PRODUCT JSON '
+        '(єдине джерело правди) і видимий текст згенерованих сторінок.\n'
+        'Знайди: (1) розбіжності зі специфікаціями - числа, одиниці, вигадані факти чи можливості; '
+        '(2) слабкі або порожні маркетингові формулювання; (3) проблеми структури подачі для покупця.\n'
+        'Поверни ЛИШЕ валідний JSON без пояснень: '
+        '{"score": <0-100 цілісна оцінка довіри>, "summary": "<один рядок українською>", '
+        '"issues": ["<конкретна проблема українською>"], "suggestions": ["<конкретна порада українською>"]}\n\n'
+        f'PRODUCT JSON:\n{json.dumps(product, ensure_ascii=False)[:4000]}\n\n'
+        + '\n\n'.join(pages)[:24000]
+    )
+    response = _responses_create(model, prompt, 3000)
+    raw = (response.output_text or '').strip()
+    match = re.search(r'\{.*\}', raw, re.S)
+    data = _safe_json(match.group(0)) if match else None
+    if not isinstance(data, dict):
+        raise RuntimeError('AI-рецензент повернув невалідний JSON')
+    input_tokens, output_tokens = _usage_counts(response, prompt, raw)
+    score = max(0.0, min(100.0, float(data.get('score') or 0)))
+    issues = [str(x) for x in (data.get('issues') or [])][:12]
+    suggestions = [str(x) for x in (data.get('suggestions') or [])][:8]
+    summary = str(data.get('summary') or ('Зауважень немає' if not issues else issues[0]))[:300]
+    return score, summary, issues, suggestions, input_tokens, output_tokens
+
+
 def critic_html(artifacts, critic_type: str, product: dict):
     html = '\n'.join(getattr(a, 'html', '') for a in artifacts)
     issues = []
