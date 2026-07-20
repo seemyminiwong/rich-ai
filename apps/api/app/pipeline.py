@@ -1965,6 +1965,51 @@ SEGMENTS:
     return result, input_tokens, output_tokens
 
 
+def llm_fix_texts(html: str, issues: list[str], product: dict, model: str, language: str):
+    """Платне авто-виправлення ЗА РЕЦЕНЗІЄЮ: правиться лише текст, DOM заморожено.
+
+    Той самий механізм, що в перекладах: _translation_template фіксує розмітку,
+    модель отримує пронумеровані сегменти і повертає нові значення тільки для
+    тих, яких стосуються зауваження. Числа й факти - строго з PRODUCT JSON.
+    Структурні зауваження (додати блок тощо) цей шлях чесно НЕ вирішує.
+    Повертає (new_html, input_tokens, output_tokens, changed_count).
+    """
+    if not text_ready():
+        raise RuntimeError('Text provider is not configured')
+    template, segments = _translation_template(html)
+    if not segments:
+        return html, 0, 0, 0
+    prompt = (
+        f'Ти - редактор ecommerce rich-контенту (мова сторінки: {language}). Нижче зауваження рецензента, '
+        'PRODUCT JSON (єдине джерело правди) і пронумеровані текстові сегменти сторінки.\n'
+        'Виправ ЛИШЕ сегменти, яких стосуються зауваження: конкретизуй порожні маркетингові фрази, '
+        'прибери мовні огріхи, виправ числа/факти строго за PRODUCT JSON. Нових фактів не вигадуй. '
+        'Довжину тримай близькою до оригіналу.\n'
+        'Поверни ЛИШЕ JSON виду {"<id>": "<новий текст>"} тільки для ЗМІНЕНИХ сегментів; якщо міняти нічого - {}.\n\n'
+        'ЗАУВАЖЕННЯ:\n- ' + '\n- '.join([str(x) for x in issues][:12])
+        + f'\n\nPRODUCT JSON:\n{json.dumps(product, ensure_ascii=False)[:4000]}'
+        + f'\n\nСЕГМЕНТИ:\n{json.dumps(segments, ensure_ascii=False)[:16000]}'
+    )
+    response = _responses_create(model, prompt, 8000)
+    raw = (response.output_text or '').strip()
+    match = re.search(r'\{.*\}', raw, re.S)
+    data = _safe_json(match.group(0)) if match else None
+    if not isinstance(data, dict):
+        raise RuntimeError('Авто-виправлення: модель повернула невалідний JSON')
+    input_tokens, output_tokens = _usage_counts(response, prompt, raw)
+    changed = 0
+    result = template
+    for key, original in segments.items():
+        replacement = data.get(key)
+        value = str(replacement).strip() if replacement is not None and str(replacement).strip() else original
+        if value != original:
+            changed += 1
+        result = result.replace(f'__ARTLINE_TEXT_{key}__', html_lib.escape(value, quote=False))
+    if changed and not _language_matches(result, language):
+        raise RuntimeError('Авто-виправлення відхилено: текст не пройшов мовну перевірку')
+    return result, input_tokens, output_tokens, changed
+
+
 def llm_critic(artifacts, product: dict, model: str):
     """Справжній AI-рецензент (ПЛАТНИЙ): модель читає сторінки проти product JSON.
 

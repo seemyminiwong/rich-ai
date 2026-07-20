@@ -1358,6 +1358,55 @@ def run_critic(project_id: str, payload: CriticIn, db: Session = Depends(get_db)
     db.add(Event(project_id=p.id, stage='critic', message=f'{user.email}: перевірку якості перезапущено')); audit(db, user, 'critic.run', 'project', p.id); db.commit(); return reports
 
 
+@app.post('/api/projects/{project_id}/critic/fix')
+def critic_fix(project_id: str, db: Session = Depends(get_db), user=Depends(require_perm('project.edit_html'))):
+    """ПЛАТНЕ авто-виправлення за AI-рецензією: текст правиться, DOM заморожено.
+
+    Створює НОВІ версії сторінок (стара лишається в історії), вартість токенів
+    додається до вартості проєкту, списується з бюджетів. Структурні зауваження
+    рецензії цей шлях чесно не вирішує - лише текст."""
+    from app.pipeline import llm_fix_texts
+    p = db.get(Project, project_id)
+    if not p: raise HTTPException(404, 'Проєкт не знайдено')
+    require_project_edit(p, user)
+    review = db.scalar(select(CriticReport).where(CriticReport.project_id == p.id, CriticReport.critic_type == 'llm'))
+    if not review: raise HTTPException(409, 'Спершу запустіть AI-рецензента - виправлення йде за його зауваженнями')
+    issues = json.loads(review.issues_json or '[]')
+    if not issues: raise HTTPException(409, 'У рецензії немає зауважень - виправляти нічого')
+    check_action(user.id, 'critic_fix', 2); check_budget(); check_user_budget(user)
+    latest = {}
+    for a in sorted(p.artifacts, key=lambda x: x.version): latest[(a.language, a.variant)] = a
+    model = p.text_model or settings.openai_text_model
+    total_in = total_out = 0
+    updated = 0
+    product = json.loads(p.product_json or '{}')
+    db.scalar(select(Project.id).where(Project.id == p.id).with_for_update())
+    for (language, variant), artifact in sorted(latest.items()):
+        try:
+            fixed, in_tok, out_tok, changed = llm_fix_texts(artifact.html, issues, product, model, language)
+        except RuntimeError as exc:
+            raise HTTPException(409, f'{language}/{variant}: {exc}')
+        total_in += in_tok; total_out += out_tok
+        if changed:
+            top = db.scalar(select(func.max(Artifact.version)).where(Artifact.project_id == p.id, Artifact.language == language, Artifact.variant == variant)) or 0
+            db.add(Artifact(project_id=p.id, language=language, variant=variant,
+                            html=fixed if 'Правовласник' in fixed else fixed + LICENSE_COMMENT,
+                            version=top + 1, created_by=user.id))
+            updated += 1
+    rate_in, rate_out = text_rate(model)
+    cost = round((total_in * rate_in + total_out * rate_out) / 1_000_000, 6)
+    p.text_cost = float(p.text_cost or 0) + cost
+    p.estimated_cost = float(p.estimated_cost or 0) + cost
+    p.input_tokens = (p.input_tokens or 0) + total_in
+    p.output_tokens = (p.output_tokens or 0) + total_out
+    p.text_request_count = (p.text_request_count or 0) + len(latest)
+    add_spend(cost); add_user_spend(user.id, cost)
+    review.auto_fixed = True
+    db.add(Event(project_id=p.id, stage='critic', message=f'{user.email}: авто-виправлення за рецензією ({model}) - оновлено {updated} стор., ${cost:.4f} додано до вартості'))
+    audit(db, user, 'critic.fix', 'project', p.id, {'model': model, 'cost': cost, 'updated': updated}); db.commit()
+    return {'updated': updated, 'cost': cost}
+
+
 @app.put('/api/artifacts/{artifact_id}')
 def save_artifact(artifact_id: str, payload: HtmlIn, db: Session = Depends(get_db), user=Depends(require_perm('project.edit_html'))):
     source = db.get(Artifact, artifact_id)

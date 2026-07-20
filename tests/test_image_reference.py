@@ -584,3 +584,35 @@ def test_llm_critic_parses_review_and_reports_token_usage():
          patch('app.pipeline.text_ready', lambda: True):
         with _pytest.raises(RuntimeError):
             llm_critic([page], {}, 'gpt-5-mini')
+
+
+def test_llm_fix_rewrites_only_flagged_text_and_freezes_dom():
+    from app.pipeline import llm_fix_texts
+
+    html = ('<section style="max-width:1240px"><!-- 1. HERO --><div style="display:grid">'
+            '<h2>Корпуса для ПК</h2><p>Продумана основа для збирання</p>'
+            '<img src="/media/p/hero.webp?t=a" alt="Кейс"></div></section>')
+
+    class FakeResponse:
+        output_text = '{"0": "Корпус для ПК", "1": "Кріплення без інструментів і кабель-менеджмент 32 мм"}'
+        usage = SimpleNamespace(input_tokens=800, output_tokens=90)
+
+    with patch('app.pipeline._responses_create', lambda m, p, c: FakeResponse()), \
+         patch('app.pipeline.text_ready', lambda: True):
+        fixed, ti, to, changed = llm_fix_texts(html, ['русизм «корпуса»', 'порожній маркетинг'], {'name': 'Кейс'}, 'gpt-5-mini', 'ua')
+
+    assert changed == 2 and ti == 800 and to == 90
+    assert 'Корпус для ПК' in fixed and 'кабель-менеджмент 32 мм' in fixed
+    # DOM недоторканний: стилі, коментар розмітки і підписаний URL на місці.
+    assert 'style="display:grid"' in fixed
+    assert '<!-- 1. HERO -->' in fixed
+    assert 'src="/media/p/hero.webp?t=a"' in fixed
+
+    class NoChanges:
+        output_text = '{}'
+        usage = SimpleNamespace(input_tokens=500, output_tokens=5)
+
+    with patch('app.pipeline._responses_create', lambda m, p, c: NoChanges()), \
+         patch('app.pipeline.text_ready', lambda: True):
+        same, _, _, changed = llm_fix_texts(html, ['дрібниця'], {}, 'gpt-5-mini', 'ua')
+    assert changed == 0 and 'Продумана основа' in same
