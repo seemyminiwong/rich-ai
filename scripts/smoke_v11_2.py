@@ -83,7 +83,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.50"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.60"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 2 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -204,6 +204,8 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'dark editions: showcase and 360 stage': "SHOWCASE_DARK_STYLE_NAME = 'ARTLINE Showcase Dark'" in prompts and "PODIUM360DARK_STYLE_NAME = 'ARTLINE Podium 3D 360 Dark'" in prompts and 'DARK EDITION OVERRIDES' in prompts and "'ARTLINE Showcase Dark'" in web and "'ARTLINE Podium 3D 360 Dark'" in web and 'SHOWCASE_DARK_STYLE_PROMPT' in main and 'PODIUM360DARK_STYLE_PROMPT' in main,
+    'cloudflare tunnel profile ready': 'cloudflared' in (root / 'docker-compose.yml').read_text(encoding='utf-8') and 'CLOUDFLARE_TUNNEL_TOKEN' in (root / '.env.example').read_text(encoding='utf-8') and 'Cloudflare Tunnel' in (root / 'docs/DEPLOY.md').read_text(encoding='utf-8'),
     'google oauth mirrors github; registration is oauth-only': "@app.get('/api/auth/google/callback')" in main and 'def _oauth_complete' in main and 'email_verified' in main and 'allow_password_registration' in main and "'google': bool(settings.google_client_id" in main and 'Увійти через Google' in web and 'ALLOW_PASSWORD_REGISTRATION' in (root / '.env.example').read_text(encoding='utf-8'),
     'podium 3d scroll: scroll-driven turntable with autoplay fallback': "PODIUMSCROLL_STYLE_NAME = 'ARTLINE Podium 3D Scroll'" in prompts and 'def _apply_podium_scroll' in pipeline and 'animation-timeline:view(' in pipeline and '@supports (animation-timeline: view())' in pipeline and '_apply_podium_scroll(relaid, hero, rotation_frames)' in tasks and "'ARTLINE Podium 3D Scroll'" in web,
     'settings internals hidden from non-root (api strips infra fields too)': 'payload.pop(infra_key, None)' in main and "'db_schema', 'disk_free_bytes', 'disk_total_bytes', 'version'" in main and "Конфігурацією керує адміністратор" in web and "state.me?.is_root?`<div><small>Схема БД" in web and "state.me?.is_root?`<div><small>Вільно на диску" in web and "state.me?.is_root?'додайте тариф" in web and 'hint(state.me?.is_root?' in web and "state.me?.is_root?`<p class=\"muted-note\">Посібник редактора" in web,

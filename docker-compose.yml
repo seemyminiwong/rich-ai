@@ -87,6 +87,17 @@ services:
 
   # TLS: started only with `docker compose --profile tls up -d`, so a deployment
   # without a domain keeps working over the LAN port untouched.
+  # Шлях Б: вихід назовні без білого IP і без відкритих портів.
+  # cloudflared сам підключається НАЗОВНІ до Cloudflare; публічний hostname і
+  # маршрут (studio.домен -> http://web:80) задаються в Zero Trust UI.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - web
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped

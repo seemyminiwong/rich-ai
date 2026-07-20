@@ -524,3 +524,18 @@ def test_podium_scroll_ties_rotation_to_viewport_with_autoplay_fallback():
     assert 'prefers-reduced-motion' in out
     assert _apply_podium_scroll(out, hero, frames) == out, 'детермінований no-op'
     assert 'arspin' in _apply_podium_scroll(html, hero, []), 'без серії - монетне обертання'
+
+
+def test_dark_editions_keep_contracts_and_never_reintroduce_light_sections():
+    from app.prompts import SHOWCASE_DARK_STYLE_PROMPT, PODIUM360DARK_STYLE_PROMPT
+
+    dark = SHOWCASE_DARK_STYLE_PROMPT
+    assert 'DARK EDITION OVERRIDES' in dark
+    assert 'dark, light, dark, light' not in dark, 'світлий ритм не має пережити деривацію'
+    assert 'stay WHITE' in dark, 'білі картки під реальні фото - єдина світла поверхня'
+    assert 'SECTION SET, IN ORDER' in dark
+
+    p360d = PODIUM360DARK_STYLE_PROMPT
+    assert 'PODIUM-3D-360' in p360d, 'маркер каруселі мусить успадкуватись'
+    assert 'background:#0D1013' in p360d and 'background:#FFFFFF' not in p360d
+    assert 'rgba(25,188,201,.28)' in p360d, 'ціанове світіння замість тіні'
