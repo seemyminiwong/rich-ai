@@ -1975,8 +1975,12 @@ def critic_html(artifacts, critic_type: str, product: dict):
             issues.append('Missing complete section wrapper'); score -= 35
         if '<script' in html.lower():
             issues.append('Script tag detected'); score -= 30
-        if '<style' in html.lower():
-            issues.append('Style tag detected; inline CSS is required'); score -= 15
+        # <style> тепер легальний для серверних анімацій (Podium 3D/360/Scroll):
+        # карати треба лише СМАЛЬЦЬОВАНИЙ css - зовнішні url()/@import.
+        style_blocks = re.findall(r'<style\b[^>]*>(.*?)</style>', html, re.I | re.S)
+        risky_css = [b for b in style_blocks if any(k in b.lower() for k in ('url(', '@import', 'expression'))]
+        if risky_css:
+            issues.append('Тег <style> із зовнішніми посиланнями (url/@import) — так не можна'); score -= 15
         if re.search(r'<h1\b', html, re.I):
             issues.append('H1 is not allowed inside embedded rich content'); score -= 25
         if len(re.findall(r'<h2\b', html, re.I)) < len(artifacts):
@@ -2015,8 +2019,10 @@ def critic_html(artifacts, critic_type: str, product: dict):
     else:
         if len(re.sub('<[^>]+>',' ',html)) < 1800:
             issues.append('Content may be too shallow'); score -= 15
-        if html.lower().count('artline') > 25:
-            issues.append('Brand repetition is excessive'); score -= 10
+        # Поріг на СТОРІНКУ, а не на суму всіх мов і варіантів разом: чотири
+        # артефакти множать згадки бренду самі по собі.
+        if html.lower().count('artline') > 12 * max(1, len(artifacts)):
+            issues.append('Забагато повторів бренду на сторінку'); score -= 10
         suggestions = ['Use specific customer benefits', 'Reduce repetitive marketing filler']
     score = max(0.0, min(100.0, score))
     summary = 'No critical issues found' if not issues else '; '.join(issues[:3])

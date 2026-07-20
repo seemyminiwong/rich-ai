@@ -539,3 +539,23 @@ def test_dark_editions_keep_contracts_and_never_reintroduce_light_sections():
     assert 'PODIUM-3D-360' in p360d, 'маркер каруселі мусить успадкуватись'
     assert 'background:#0D1013' in p360d and 'background:#FFFFFF' not in p360d
     assert 'rgba(25,188,201,.28)' in p360d, 'ціанове світіння замість тіні'
+
+
+def test_critic_tolerates_server_animations_and_scales_brand_threshold():
+    from types import SimpleNamespace
+    from app.pipeline import critic_html
+
+    spin = SimpleNamespace(html='<section><style>@keyframes arspin{0%{transform:rotateY(0)}}</style><h2>Т</h2></section>')
+    score, _, issues, _ = critic_html([spin], 'html', {})
+    assert not any('style' in i.lower() for i in issues), 'інертний <style> анімації - не порушення'
+
+    evil = SimpleNamespace(html='<section><style>body{background:url(https://x)}</style><h2>Т</h2></section>')
+    _, _, issues, _ = critic_html([evil], 'html', {})
+    assert any('url' in i for i in issues), 'css із зовнішнім url() мусить світитись'
+
+    one = SimpleNamespace(html='<section><h2>' + 'ARTLINE ' * 14 + '</h2><p>' + 'текст ' * 400 + '</p></section>')
+    _, _, issues, _ = critic_html([one], 'marketing', {})
+    assert any('бренду' in i for i in issues), '14 згадок на одну сторінку - забагато'
+    four = [one] * 4
+    _, _, issues4, _ = critic_html(four, 'marketing', {})
+    assert not any('бренду' in i for i in issues4) or one.html.count('ARTLINE') * 4 > 48, 'поріг масштабується на кількість сторінок'
