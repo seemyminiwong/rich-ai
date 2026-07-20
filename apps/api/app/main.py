@@ -24,8 +24,8 @@ from app.config import settings
 from app.db import Base, SessionLocal, engine, ensure_schema, get_db, run_migrations
 from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Project, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
-from app.tasks import process_project, translate_project
-from app.limits import check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
+from app.tasks import process_project, text_rate, translate_project
+from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
 from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, is_public_http_url, parse_page, safe_client, sanitize_html, style_image_prompt, text_client
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
@@ -360,6 +360,8 @@ class RerunIn(BaseModel):
     reuse_images: bool = False
 class CriticIn(BaseModel):
     auto_fix: bool = False
+    # Платний AI-рецензент: вартість токенів додається до вартості проєкту.
+    llm: bool = False
 class QueueIn(BaseModel):
     action: str
 
@@ -1321,7 +1323,33 @@ def run_critic(project_id: str, payload: CriticIn, db: Session = Depends(get_db)
     latest = {}
     for a in sorted(p.artifacts, key=lambda x: x.version): latest[(a.language, a.variant)] = a
     if not latest: raise HTTPException(409, 'У проєкті ще немає готового HTML для перевірки')
-    db.execute(sa_delete(CriticReport).where(CriticReport.project_id == p.id))
+    if payload.llm:
+        # ПЛАТНИЙ шлях: реальна модель читає сторінки. Вартість чесно лягає у
+        # вартість проєкту, глобальний і особистий бюджети списуються.
+        from app.pipeline import llm_critic
+        check_action(user.id, 'critic_llm', 4); check_budget(); check_user_budget(user)
+        model = p.text_model or settings.openai_text_model
+        try:
+            score, summary, issues, suggestions, in_tok, out_tok = llm_critic(list(latest.values()), json.loads(p.product_json or '{}'), model)
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc))
+        rate_in, rate_out = text_rate(model)
+        cost = round((in_tok * rate_in + out_tok * rate_out) / 1_000_000, 6)
+        p.text_cost = float(p.text_cost or 0) + cost
+        p.estimated_cost = float(p.estimated_cost or 0) + cost
+        p.input_tokens = (p.input_tokens or 0) + in_tok
+        p.output_tokens = (p.output_tokens or 0) + out_tok
+        p.text_request_count = (p.text_request_count or 0) + 1
+        add_spend(cost); add_user_spend(user.id, cost)
+        db.execute(sa_delete(CriticReport).where(CriticReport.project_id == p.id, CriticReport.critic_type == 'llm'))
+        db.add(CriticReport(project_id=p.id, critic_type='llm', score=score, summary=summary,
+                            issues_json=json.dumps(issues, ensure_ascii=False),
+                            suggestions_json=json.dumps(suggestions, ensure_ascii=False), auto_fixed=False))
+        db.add(Event(project_id=p.id, stage='critic', message=f'{user.email}: AI-рецензія ({model}) — ${cost:.4f} додано до вартості проєкту'))
+        audit(db, user, 'critic.llm', 'project', p.id, {'model': model, 'cost': cost}); db.commit()
+        return {'type': 'llm', 'score': score, 'summary': summary, 'issues': issues, 'suggestions': suggestions, 'cost': cost}
+    # Безкоштовні евристики; платну AI-рецензію не стираємо.
+    db.execute(sa_delete(CriticReport).where(CriticReport.project_id == p.id, CriticReport.critic_type != 'llm'))
     reports = []
     for kind in ('html', 'facts', 'accessibility', 'marketing'):
         score, summary, issues, suggestions = critic_html(list(latest.values()), kind, json.loads(p.product_json or '{}'))
