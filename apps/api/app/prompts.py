@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.50"
+BASE_STYLE_VERSION = "12.60"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -748,4 +748,62 @@ PODIUM-3D-SCROLL
 
 if 'PODIUM-3D-SCROLL' not in PODIUMSCROLL_STYLE_PROMPT or 'SECTION SET, IN ORDER' not in PODIUMSCROLL_STYLE_PROMPT:
     raise RuntimeError('PODIUM 3D Scroll style derivation failed')
+
+# --- ARTLINE Showcase Dark ---------------------------------------------------
+# Повністю темна редакція Showcase: жодної світлої секції, ритм тримається
+# чергуванням двох темних тонів. Виведено хірургією + трейлінг-оверрайдами
+# (модель найкраще слухає останні інструкції); санітарні перевірки нижче.
+
+SHOWCASE_DARK_STYLE_NAME = 'ARTLINE Showcase Dark'
+SHOWCASE_DARK_STYLE_PROMPT = SHOWCASE_STYLE_PROMPT.replace(
+    '- Rhythm rule: strictly alternate section canvases - dark, light, dark, light. Two same-tone sections may never touch.',
+    '- Rhythm rule: EVERY section canvas is dark; alternate the two dark tones (#0D1013 / #1A2128) so neighbouring sections still differ. A light section may never appear.'
+) + """
+
+DARK EDITION OVERRIDES (these override any earlier instruction that a section or card must be light)
+- Every section canvas is dark: alternate #0D1013 and #1A2128. No light panels anywhere.
+- Body text #F5F7FA, secondary #AFB8C1, accents and large confirmed numbers in #19BCC9.
+- Content islands are translucent dark (rgba(26,33,40,.8)) with a 1px rgba(255,255,255,.08) border.
+- The white card wrappers around REAL gallery photos stay WHITE (real photos need a neutral stage); give them border-radius:18px and generous padding - this is the only allowed light surface.
+- Contrast is non-negotiable: WCAG AA on every text block.
+"""
+
+if ('DARK EDITION OVERRIDES' not in SHOWCASE_DARK_STYLE_PROMPT
+        or 'dark, light, dark, light' in SHOWCASE_DARK_STYLE_PROMPT
+        or 'SECTION SET, IN ORDER' not in SHOWCASE_DARK_STYLE_PROMPT):
+    raise RuntimeError('SHOWCASE DARK style derivation failed')
+
+
+# --- ARTLINE Podium 3D 360 Dark ----------------------------------------------
+# Темна сцена для 360-обертання: глибокий темний подіум, ціанове світіння
+# замість тіні. Маркер PODIUM-3D-360 успадковується - серверна карусель
+# збирається так само.
+
+PODIUM360DARK_STYLE_NAME = 'ARTLINE Podium 3D 360 Dark'
+_p360d = PODIUM360_STYLE_PROMPT
+for _old, _new in (
+    ('background:#FFFFFF;border:1px solid #D0D7DE;border-radius:32px;padding:46px',
+     'background:#0D1013;border:1px solid #2F3137;border-radius:32px;padding:46px'),
+    ('No dark canvas and no photo background here.',
+     'The dark canvas IS the stage; no photo background.'),
+    ('pill badge (brand + category, cyan border on white)',
+     'pill badge (brand + category, cyan border on dark)'),
+    ('one h2 46-52px/950 (brand + model code only)',
+     'one h2 46-52px/950 in #FFFFFF (brand + model code only)'),
+    ('one subtitle 20-22px in #157985',
+     'one subtitle 20-22px in #19BCC9'),
+    ('filter:drop-shadow(0 34px 42px rgba(16,16,16,.22))',
+     'filter:drop-shadow(0 0 46px rgba(25,188,201,.30))'),
+    ('background:radial-gradient(closest-side,rgba(16,16,16,.16),transparent)',
+     'background:radial-gradient(closest-side,rgba(25,188,201,.28),transparent)'),
+    ('- Rhythm rule: the Podium opens LIGHT; from section 3 onward strictly alternate dark and light canvases.',
+     '- Rhythm rule: the page is fully dark; alternate #0D1013 and #1A2128 canvases so neighbouring sections differ.'),
+):
+    if _p360d.count(_old) != 1:
+        raise RuntimeError(f'PODIUM 360 DARK derivation failed on: {_old[:60]}')
+    _p360d = _p360d.replace(_old, _new)
+PODIUM360DARK_STYLE_PROMPT = _p360d
+
+if 'PODIUM-3D-360' not in PODIUM360DARK_STYLE_PROMPT or '#0D1013' not in PODIUM360DARK_STYLE_PROMPT:
+    raise RuntimeError('PODIUM 360 DARK style derivation failed')
 

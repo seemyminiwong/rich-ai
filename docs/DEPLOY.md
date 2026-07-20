@@ -234,3 +234,32 @@ docker run --rm -v rich-ai_backup_data:/old -v /mnt/Data/Apps/rich-studio/rich-a
 ```
 
 `.env` в бекап не потрапляє свідомо — там секрети. Збережіть його копію в менеджері паролів: без `JWT_SECRET`/`ADMIN_PASSWORD` відновлення закінчиться переналаштуванням з нуля.
+
+
+## Вихід назовні без білого IP — Cloudflare Tunnel (шлях Б)
+
+Жодного відкритого порту і жодного засвіченого домашнього IP: `cloudflared`
+сам підключається назовні до Cloudflare, TLS терминується у них.
+
+1. Купіть/перенесіть домен на Cloudflare (Registrar або зміна NS-серверів).
+2. **Zero Trust → Networks → Tunnels → Create a tunnel** (тип Cloudflared),
+   назвіть, скопіюйте **token**.
+3. На TrueNAS у `.env`: `CLOUDFLARE_TUNNEL_TOKEN=<token>`, потім:
+
+   ```sh
+   cd /mnt/Data/Apps/rich-studio/rich-ai
+   docker compose --profile tunnel up -d cloudflared
+   ```
+
+4. У майстрі тунелю → **Public hostname**: `studio.ваш-домен`,
+   Service: **HTTP**, URL: `web:80` (nginx усередині compose-мережі).
+5. OAuth: у GitHub/Google OAuth-застосунках замініть callback на
+   `https://studio.ваш-домен/api/auth/{github|google}/callback` і задайте ті ж
+   значення в `GITHUB_CALLBACK_URL` / `GOOGLE_CALLBACK_URL`.
+6. Через тиждень тиші в логах: `MEDIA_SIGNING=strict`.
+
+Опційний другий замок: **Zero Trust → Access → Applications** — поставити перед
+студією ще й Cloudflare Access (SSO-екран до того, як запит взагалі дійде до
+nginx). Безкоштовно до 50 користувачів.
+
+Профіль `tls` (Caddy) для цього шляху НЕ потрібен — не вмикайте обидва разом.
