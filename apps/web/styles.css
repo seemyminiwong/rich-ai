@@ -329,3 +329,4 @@ tr.urow-active td{background:#E9F8FA}
 .budget-cell{display:grid;gap:3px;min-width:92px}
 .budget-cell input{width:92px;padding:7px 9px}
 .budget-cell small{color:var(--muted);font-size:10px;white-space:nowrap}
+.llm-status{margin:-6px 0 14px;padding:9px 12px;border-radius:10px;background:#E9F8FA;border:1px solid rgba(25,188,201,.35)}
