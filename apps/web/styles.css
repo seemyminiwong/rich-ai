@@ -330,3 +330,11 @@ tr.urow-active td{background:#E9F8FA}
 .budget-cell input{width:92px;padding:7px 9px}
 .budget-cell small{color:var(--muted);font-size:10px;white-space:nowrap}
 .llm-status{margin:-6px 0 14px;padding:9px 12px;border-radius:10px;background:#E9F8FA;border:1px solid rgba(25,188,201,.35)}
+.stagebars{display:grid;gap:10px}
+.stagerow{display:grid;grid-template-columns:minmax(150px,220px) 1fr 78px 40px;align-items:center;gap:12px}
+.stagerow span{font-size:13px;font-weight:700}
+.stagetrack{height:12px;background:#E8ECEF;border-radius:99px;overflow:hidden}
+.stagetrack i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--blue));border-radius:99px}
+.stagerow b{text-align:right;font-size:13px}
+.stagerow small{color:var(--muted);text-align:right}
+@media(max-width:760px){.stagerow{grid-template-columns:1fr 60px}.stagetrack{grid-column:1/-1}}

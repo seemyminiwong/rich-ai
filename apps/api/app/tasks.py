@@ -74,6 +74,9 @@ def log(db, project, stage, message, progress=None, level='info'):
 
 
 def text_rate(model: str):
+    # Локальні моделі не коштують токенів - інакше кошторис брехав би.
+    if model in settings.local_models:
+        return 0.0, 0.0
     row = settings.text_pricing.get(model) or DEFAULT_TEXT_PRICING.get(model) or {'input': 1.0, 'output': 4.0}
     return float(row.get('input', 1.0) or 1.0), float(row.get('output', 4.0) or 4.0)
 
