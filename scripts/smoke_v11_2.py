@@ -204,6 +204,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'per-block png export via optional chromium service': (root / 'apps/shots/server.py').exists() and "@app.get('/api/artifacts/{artifact_id}/blocks.zip')" in main and 'shots_enabled' in main and 'downloadBlocks' in web and 'profiles: ["shots"]' in (root / 'docker-compose.yml').read_text(encoding='utf-8') and "query_selector_all(':scope" not in (root / 'apps/shots/server.py').read_text(encoding='utf-8') and 'Сервіс знімків відповів' in main,
     'contact and security policy published': 'yehorshuliak@gmail.com' in (root / 'README.md').read_text(encoding='utf-8') and (root / 'SECURITY.md').exists() and 'yehorshuliak@gmail.com' in (root / 'SECURITY.md').read_text(encoding='utf-8'),
     'contained photos are framed so the radius is visible': 'def _frame_contained_photos' in pipeline and '_frame_contained_photos(output)' in pipeline and '_frame_contained_photos(relaid)' in tasks,
     'uniform radii: photos and pills': '_DEFAULT_IMAGE_RADIUS = 16' in pipeline and 'border-radius:999px' in pipeline and 'overflow:hidden' in pipeline,

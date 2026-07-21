@@ -1440,7 +1440,13 @@ def artifact_blocks_png(artifact_id: str, db: Session = Depends(get_db), user=De
         logger.exception('Blocks render failed')
         raise HTTPException(503, 'Сервіс знімків недоступний. Перевірте: docker compose --profile shots ps')
     if reply.status_code != 200:
-        raise HTTPException(502, f'Сервіс знімків відповів {reply.status_code}')
+        detail = ''
+        try:
+            detail = (reply.json() or {}).get('detail') or ''
+        except Exception:
+            detail = reply.text[:300]
+        logger.warning('Shots service %s: %s', reply.status_code, detail)
+        raise HTTPException(502, f'Сервіс знімків відповів {reply.status_code}: {detail}'[:400])
     audit(db, user, 'artifact.blocks_png', 'artifact', artifact.id, {'variant': artifact.variant}); db.commit()
     name = _archive_name(f'{project.name if project else "rich"}-{artifact.language}-{artifact.variant}-v{artifact.version}', 'blocks')
     return StreamingResponse(io.BytesIO(reply.content), media_type='application/zip',
