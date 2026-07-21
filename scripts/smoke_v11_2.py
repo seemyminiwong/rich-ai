@@ -204,6 +204,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'run history keeps costs across reruns': 'def close_run' in tasks and 'def bill_extra' in tasks and 'lifetime_cost' in main and "p.run_index = (getattr(p, 'run_index', 1) or 1) + 1" in main and 'function runsPanel' in web and 'прогін ${a.run_index}' in web,
     'concentric radii in every style': 'def _harmonize_radii' in pipeline and 'inner = outer - padding' in pipeline and '_harmonize_radii(output)' in pipeline and '_harmonize_radii(relaid)' in tasks,
     'photo cards fill their frame on both variants': 'def _fit_photo_cards' in pipeline and '_fit_photo_cards(output, variant)' in pipeline and "_fit_photo_cards(relaid, 'mobile')" in tasks and "'3/2' if variant == 'desktop'" in pipeline and "'object-fit:cover' if scene else 'object-fit:contain'" in pipeline,
     'mobile hero shows the whole product without dead space': 'def _fit_mobile_hero' in pipeline and "variant == 'mobile'" in pipeline and 'background-size:100% auto' in pipeline and "';aspect-ratio:2/3'" not in pipeline and '_fit_mobile_hero(relaid' in tasks,

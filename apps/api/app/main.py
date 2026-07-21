@@ -24,7 +24,7 @@ from app.config import settings
 from app.db import Base, SessionLocal, engine, ensure_schema, get_db, run_migrations
 from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Project, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
-from app.tasks import process_project, text_rate, translate_project
+from app.tasks import bill_extra, process_project, text_rate, translate_project
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
 from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, is_public_http_url, parse_page, safe_client, sanitize_html, style_image_prompt, text_client
@@ -434,7 +434,7 @@ def user_dict(x):
             'granted': sorted(overrides.get('grant') or []), 'revoked': sorted(overrides.get('revoke') or []),
             'created_at': x.created_at, 'last_login_at': x.last_login_at}
 def style_dict(x): return {'id': x.id, 'name': x.name, 'description': x.description, 'prompt': x.prompt, 'hero_prompt': x.hero_prompt, 'feature_prompt': x.feature_prompt, 'negative_prompt': x.negative_prompt, 'score': json.loads(x.score_json or '{}'), 'preview_html': x.preview_html, 'is_default': x.is_default}
-def artifact_dict(x): return {'id': x.id, 'language': x.language, 'variant': x.variant, 'html': x.html, 'version': x.version, 'created_at': x.created_at, 'fallback_reason': getattr(x, 'fallback_reason', '') or ''}
+def artifact_dict(x): return {'id': x.id, 'language': x.language, 'variant': x.variant, 'html': x.html, 'version': x.version, 'created_at': x.created_at, 'fallback_reason': getattr(x, 'fallback_reason', '') or '', 'run_index': getattr(x, 'run_index', 1) or 1}
 def project_dict(p, full=False, style_name=''):
     try:
         product = json.loads(p.product_json or '{}')
@@ -444,7 +444,12 @@ def project_dict(p, full=False, style_name=''):
         breakdown = json.loads(getattr(p, 'cost_breakdown_json', None) or '{}')
     except Exception:
         breakdown = {}
+    try:
+        runs = json.loads(getattr(p, 'runs_json', None) or '[]')
+    except Exception:
+        runs = []
     r = {'id': p.id, 'name': p.name, 'source_url': p.source_url, 'style_id': p.style_id, 'style_name': style_name, 'owner_id': p.owner_id, 'status': p.status.value, 'stage': p.stage, 'progress': p.progress,
+         'lifetime_cost': float(getattr(p, 'lifetime_cost', 0) or 0), 'run_index': getattr(p, 'run_index', 1) or 1, 'runs': runs,
          'languages': [x for x in p.languages.split(',') if x], 'variants': [x for x in p.variants.split(',') if x], 'text_model': p.text_model, 'image_model': p.image_model, 'image_quality': p.image_quality,
          'custom_hero_url': p.custom_hero_url, 'custom_feature_url': p.custom_feature_url, 'product_category': p.product_category, 'sku': str(product.get('sku') or ''), 'cost_breakdown': breakdown, 'error': p.error, 'duration_seconds': p.duration_seconds, 'input_tokens': p.input_tokens, 'output_tokens': p.output_tokens,
          'image_count': p.image_count, 'text_request_count': p.text_request_count, 'image_request_count': p.image_request_count, 'text_cost': p.text_cost, 'image_cost': p.image_cost, 'estimated_cost': p.estimated_cost,
@@ -1254,6 +1259,7 @@ def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends
         variants = list(dict.fromkeys(variants))
         if not variants: raise HTTPException(400, 'Оберіть щонайменше один формат')
         p.variants = ','.join(variants)
+    p.run_index = (getattr(p, 'run_index', 1) or 1) + 1
     p.status = Status.queued; p.stage = 'queued'; p.progress = 0; p.error = ''; p.input_tokens = 0; p.output_tokens = 0; p.image_count = 0; p.text_request_count = 0; p.image_request_count = 0; p.text_cost = 0; p.image_cost = 0; p.estimated_cost = 0
     reuse = bool(payload and payload.reuse_images)
     audit(db, user, 'project.rerun', 'project', p.id, {'style_id': p.style_id, 'languages': p.languages, 'variants': p.variants, 'reuse_images': reuse}); db.commit()
@@ -1343,7 +1349,7 @@ def run_critic(project_id: str, payload: CriticIn, db: Session = Depends(get_db)
         p.input_tokens = (p.input_tokens or 0) + in_tok
         p.output_tokens = (p.output_tokens or 0) + out_tok
         p.text_request_count = (p.text_request_count or 0) + 1
-        add_spend(cost); add_user_spend(user.id, cost)
+        add_spend(cost); add_user_spend(user.id, cost); bill_extra(db, p, cost)
         db.execute(sa_delete(CriticReport).where(CriticReport.project_id == p.id, CriticReport.critic_type == 'llm'))
         db.add(CriticReport(project_id=p.id, critic_type='llm', score=score, summary=summary,
                             issues_json=json.dumps(issues, ensure_ascii=False),
@@ -1403,7 +1409,7 @@ def critic_fix(project_id: str, db: Session = Depends(get_db), user=Depends(requ
     p.input_tokens = (p.input_tokens or 0) + total_in
     p.output_tokens = (p.output_tokens or 0) + total_out
     p.text_request_count = (p.text_request_count or 0) + len(latest)
-    add_spend(cost); add_user_spend(user.id, cost)
+    add_spend(cost); add_user_spend(user.id, cost); bill_extra(db, p, cost)
     review.auto_fixed = True
     db.add(Event(project_id=p.id, stage='critic', message=f'{user.email}: авто-виправлення за рецензією ({model}) - оновлено {updated} стор., ${cost:.4f} додано до вартості'))
     audit(db, user, 'critic.fix', 'project', p.id, {'model': model, 'cost': cost, 'updated': updated}); db.commit()
@@ -1426,7 +1432,7 @@ def save_artifact(artifact_id: str, payload: HtmlIn, db: Session = Depends(get_d
         # while this lock also protects simultaneous saves from different users.
         db.scalar(select(Project.id).where(Project.id == source.project_id).with_for_update())
         latest_version = db.scalar(select(func.max(Artifact.version)).where(Artifact.project_id == source.project_id, Artifact.language == source.language, Artifact.variant == source.variant)) or 0
-        new = Artifact(project_id=source.project_id, language=source.language, variant=source.variant, html=clean, version=latest_version + 1, created_by=user.id)
+        new = Artifact(project_id=source.project_id, language=source.language, variant=source.variant, html=clean, version=latest_version + 1, created_by=user.id, run_index=getattr(source, 'run_index', 1) or 1)
         db.add(new); db.flush(); audit(db, user, 'artifact.version', 'artifact', new.id); db.commit(); db.refresh(new); return artifact_dict(new)
     except Exception as exc:
         db.rollback()

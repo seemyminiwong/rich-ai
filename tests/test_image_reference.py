@@ -749,3 +749,26 @@ def test_product_frames_are_never_cropped_inside_cards():
     assert 'object-fit:cover' in out_scene, 'згенерована сцена - це фон, її можна кадрувати'
     # спільна рамка лишається в обох випадках
     assert 'aspect-ratio:4/3' in out_gallery and 'aspect-ratio:4/3' in out_scene
+
+
+def test_run_history_survives_reruns_and_extra_work():
+    import json as _json
+    from app.tasks import close_run, bill_extra
+
+    project = SimpleNamespace(runs_json='[]', run_index=1, estimated_cost=0.20, input_tokens=1000,
+                              output_tokens=500, image_count=2, style_id='s1', text_model='gpt-5',
+                              image_model='gpt-image-2', duration_seconds=180.0, lifetime_cost=0)
+    close_run(None, project, 'review')
+    assert project.lifetime_cost == 0.2 and len(_json.loads(project.runs_json)) == 1
+
+    bill_extra(None, project, 0.03)
+    assert project.lifetime_cost == 0.23
+    assert _json.loads(project.runs_json)[-1]['extra'] == 0.03
+
+    project.run_index = 2
+    project.estimated_cost = 0.15
+    close_run(None, project, 'review')
+    runs = _json.loads(project.runs_json)
+    assert [r['index'] for r in runs] == [1, 2]
+    assert runs[0]['cost'] == 0.23 and runs[1]['cost'] == 0.15
+    assert project.lifetime_cost == 0.38, 'вартість попередніх прогонів не має зникати'

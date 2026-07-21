@@ -109,6 +109,53 @@ def cost_breakdown(project, extract_in, extract_out, content_in, content_out):
     }
 
 
+
+def close_run(db, project, status: str = 'done') -> None:
+    """Записати підсумок прогону в історію і додати його вартість до сумарної.
+
+    estimated_cost обнуляється при кожному перезапуску (це вартість ПОТОЧНОГО
+    прогону) - без цієї історії гроші за попередні спроби просто зникали з
+    картки проєкту, а зіставити версію сторінки з її ціною було неможливо.
+    """
+    try:
+        runs = json.loads(getattr(project, 'runs_json', None) or '[]')
+    except Exception:
+        runs = []
+    index = getattr(project, 'run_index', 1) or 1
+    entry = {
+        'index': index,
+        'status': status,
+        'cost': round(float(project.estimated_cost or 0), 6),
+        'input_tokens': project.input_tokens or 0,
+        'output_tokens': project.output_tokens or 0,
+        'images': project.image_count or 0,
+        'style_id': project.style_id,
+        'text_model': project.text_model,
+        'image_model': project.image_model,
+        'finished_at': datetime.utcnow().isoformat() + 'Z',
+        'duration_seconds': round(float(project.duration_seconds or 0), 1),
+    }
+    runs = [r for r in runs if r.get('index') != index] + [entry]
+    project.runs_json = json.dumps(runs[-50:], ensure_ascii=False)
+    project.lifetime_cost = round(sum(float(r.get('cost') or 0) for r in runs[-50:]), 6)
+
+
+def bill_extra(db, project, amount: float) -> None:
+    """Доплата поза прогоном (переклад, AI-рецензія, авто-виправлення)."""
+    amount = round(float(amount or 0), 6)
+    if amount <= 0:
+        return
+    project.lifetime_cost = round(float(getattr(project, 'lifetime_cost', 0) or 0) + amount, 6)
+    try:
+        runs = json.loads(getattr(project, 'runs_json', None) or '[]')
+    except Exception:
+        runs = []
+    if runs:
+        runs[-1]['cost'] = round(float(runs[-1].get('cost') or 0) + amount, 6)
+        runs[-1]['extra'] = round(float(runs[-1].get('extra') or 0) + amount, 6)
+        project.runs_json = json.dumps(runs, ensure_ascii=False)
+
+
 def _aborted(db, project) -> bool:
     """Re-read the row so a Pause/Cancel issued from the API stops the worker cleanly."""
     db.refresh(project)
@@ -553,6 +600,7 @@ def process_project(self, project_id, reuse_images=False):
                         html=marker + rich_html + LICENSE_COMMENT,
                         version=latest_version + 1,
                         fallback_reason=fallback_reason or '',
+                        run_index=getattr(project, 'run_index', 1) or 1,
                     ))
                     db.commit()
                     completed_outputs += 1
@@ -592,6 +640,7 @@ def process_project(self, project_id, reuse_images=False):
             project.progress = 100
             project.finished_at = now()
             project.duration_seconds = time.time() - started
+            close_run(db, project, 'review')
             db.add(Event(
                 project_id=project.id,
                 stage='review',
@@ -662,13 +711,15 @@ def translate_project(project_id: str, language: str):
                 Artifact.language == language,
                 Artifact.variant == variant,
             )) or 0
-            db.add(Artifact(project_id=project.id, language=language, variant=variant, html=(translated if 'Правовласник' in translated else translated + LICENSE_COMMENT), version=latest + 1))
+            db.add(Artifact(project_id=project.id, language=language, variant=variant, html=(translated if 'Правовласник' in translated else translated + LICENSE_COMMENT), version=latest + 1, run_index=getattr(project, 'run_index', 1) or 1))
             db.commit()
             added_any = True
             log(db, project, 'translate', f'{variant}: {language.upper()} v{latest + 1} готово')
         if added_any:
-            add_spend(float(project.estimated_cost or 0) - cost_before_translate)
-            add_user_spend(project.owner_id or '', float(project.estimated_cost or 0) - cost_before_translate)
+            translate_cost = float(project.estimated_cost or 0) - cost_before_translate
+            add_spend(translate_cost)
+            add_user_spend(project.owner_id or '', translate_cost)
+            bill_extra(db, project, translate_cost)
             langs = [x.strip() for x in (project.languages or '').split(',') if x.strip()]
             if language not in langs:
                 langs.append(language)
