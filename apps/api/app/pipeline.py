@@ -1604,15 +1604,15 @@ def _fit_photo_cards(markup: str, variant: str = 'mobile') -> str:
 
 
 def _fit_mobile_hero(markup: str, hero_url: str) -> str:
-    """Мобільний Hero не має різати товар.
+    """Мобільний Hero: товар цілий, порожнечі немає.
 
-    Мобільний кадр - портрет 2:3, а модель верстає блок фіксованою висотою
-    (min-height:600px) з background-size:cover: на 480px ширини кадр
-    масштабується до 720px і ~120px зрізається зверху і знизу - у живому
-    прикладі 3D-сканеру відрізало голову приладу. Механічно: даємо обгортці
-    aspect-ratio:2/3 (висота сама дорівнює кадру - обрізати нічого) і
-    прив'язуємо фон до верхнього краю, бо товар за контрактом стоїть угорі.
-    Те саме для <img>-шару Showcase: object-position:center top.
+    Кадр портретний 2:3, а блок живе висотою свого тексту. Два хибних шляхи:
+    background-size:cover ріже товар зверху (перша скарга), aspect-ratio:2/3
+    розтягує блок до висоти кадру і лишає пів екрана порожнечі (друга скарга).
+    Правильно: масштабувати фон ПО ШИРИНІ (100% auto) і прикріпити до верхнього
+    краю - товар за контрактом стоїть угорі, тож він видимий повністю, а знизу
+    обрізається лише фон рівно там, де закінчився текст. Висоту блока далі
+    визначає контент.
     """
     if not markup:
         return markup
@@ -1625,24 +1625,26 @@ def _fit_mobile_hero(markup: str, hero_url: str) -> str:
         style = node.get('style') or ''
         if hero_path not in style or 'url(' not in style:
             continue
-        if 'aspect-ratio' not in style:
-            style = style.rstrip().rstrip(';') + ';aspect-ratio:2/3'
-        style = re.sub(r'background-position\s*:[^;]+', 'background-position:center top', style, flags=re.I)
-        if 'background-position' not in style.lower():
-            style = style.rstrip().rstrip(';') + ';background-position:center top'
-        node['style'] = style
-        changed = True
+        # Прибираємо сліди попередніх проходів і власні розміри фону моделі,
+        # щоб фінальні дві властивості були єдиними і застосування було ідемпотентним.
+        cleaned = re.sub(r'aspect-ratio\s*:[^;]+;?', '', style, flags=re.I)
+        cleaned = re.sub(r'background-(?:size|position)\s*:[^;]+;?', '', cleaned, flags=re.I)
+        cleaned = cleaned.rstrip().rstrip(';')
+        updated = cleaned + ';background-position:center top;background-size:100% auto'
+        if updated != style:
+            node['style'] = updated
+            changed = True
     for img in soup.find_all('img'):
         if hero_path not in (img.get('src') or ''):
             continue
         style = img.get('style') or ''
         if 'object-fit:cover' not in style.replace(' ', ''):
             continue
-        style = re.sub(r'object-position\s*:[^;]+', 'object-position:center top', style, flags=re.I)
-        if 'object-position' not in style.lower():
-            style = style.rstrip().rstrip(';') + ';object-position:center top'
-        img['style'] = style
-        changed = True
+        cleaned = re.sub(r'object-position\s*:[^;]+;?', '', style, flags=re.I).rstrip().rstrip(';')
+        updated = cleaned + ';object-position:center top'
+        if updated != style:
+            img['style'] = updated
+            changed = True
     return str(soup) if changed else markup
 
 

@@ -633,6 +633,41 @@ def test_short_bordered_pills_hug_their_text():
     assert 'Лёгкий корпус</small></div>' in out and 'блочним абзацом</p>' in out
 
 
+def test_mobile_hero_shows_the_whole_product_without_dead_space():
+    from app.pipeline import _fit_mobile_hero
+
+    hero = '/media/p1/hero-mobile.webp?t=abc'
+    html = (f'<section><div style="background:url({hero}) center/cover;min-height:600px;padding:320px 18px 26px">'
+            f'<img src="{hero}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">'
+            '<h2>Товар</h2></div></section>')
+    out = _fit_mobile_hero(html, hero)
+    # фон по ширині від верхнього краю: товар угорі видно повністю
+    assert 'background-size:100% auto' in out and 'background-position:center top' in out
+    # блок лишається заввишки зі свій контент - без порожнього низу
+    assert 'aspect-ratio' not in out, 'фіксовані пропорції створювали пусте місце'
+    assert 'min-height:600px' in out
+    assert 'object-position:center top' in out
+    assert _fit_mobile_hero(out, hero) == out, 'повторне застосування - no-op'
+    # чужі зображення не чіпаються
+    other = '<section><img src="https://cdn/x.webp" style="object-fit:cover"></section>'
+    assert _fit_mobile_hero(other, hero) == other
+
+
+def test_short_bordered_pills_hug_their_text():
+    from app.pipeline import _shrink_pills
+
+    html = ('<section><div style="display:grid;gap:12px">'
+            '<div style="border:1px solid #19BCC9;border-radius:8px;padding:6px 12px;font-size:11px">ПРОИЗВОДИТЕЛЬНОСТЬ</div>'
+            '<div style="background:#1A2128;border:1px solid #2F3137;border-radius:14px;padding:16px"><b>0.53 кг</b><small>Лёгкий корпус</small></div>'
+            '<p style="border:1px solid #ccc;border-radius:10px">' + 'Довгий текст пояснення, який точно не є пігулкою і має лишитись блочним абзацом' + '</p>'
+            '</div></section>')
+    out = _shrink_pills(html)
+    assert out.count('width:fit-content') == 1, 'лише коротка пігулка без дітей'
+    assert 'ПРОИЗВОДИТЕЛЬНОСТЬ' in out
+    # картка з дітьми і довгий абзац - недоторкані
+    assert 'Лёгкий корпус</small></div>' in out and 'блочним абзацом</p>' in out
+
+
 def test_mobile_hero_matches_the_portrait_frame_instead_of_cropping_it():
     from app.pipeline import _fit_mobile_hero
 
