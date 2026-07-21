@@ -1516,6 +1516,47 @@ def _apply_podium_scroll(markup: str, hero_url: str, frames: list[str]) -> str:
 
 
 
+def _fit_mobile_photo_cards(markup: str) -> str:
+    """На вузькому екрані фото має заповнювати картку, а не плавати в ній.
+
+    Модель верстає картку з padding і кладе всередину <img> у власних
+    пропорціях: на десктопі це виглядає повітряно, а на 480px виходить фото
+    з нерівними білими полями і різною висотою в сусідніх картках. Механічно:
+    якщо картка (border-radius + фон) містить ЛИШЕ зображення - прибираємо
+    падінги, розтягуємо фото на всю ширину і задаємо спільні пропорції 4:3
+    з object-fit:cover. Картки з текстом (число + підпис) не чіпаємо.
+    """
+    soup = BeautifulSoup(markup or '', 'html.parser')
+    changed = False
+    for card in soup.find_all(['div', 'figure']):
+        style = card.get('style') or ''
+        low = style.replace(' ', '').lower()
+        if 'border-radius' not in low or 'padding' not in low:
+            continue
+        if 'url(' in low:
+            continue
+        images = card.find_all('img')
+        if len(images) != 1:
+            continue
+        if card.get_text(strip=True):
+            continue
+        img = images[0]
+        img_style = img.get('style') or ''
+        if 'position:absolute' in img_style.replace(' ', '').lower():
+            continue
+        card['style'] = re.sub(r'padding[a-z-]*\s*:[^;]+;?', '', style, flags=re.I).rstrip(';') + ';overflow:hidden'
+        keep = [d for d in img_style.split(';') if d.strip() and not re.match(
+            r'\s*(width|height|max-width|max-height|border-radius|object-fit|object-position|display|margin)\s*:', d, re.I)]
+        keep.append('display:block')
+        keep.append('width:100%')
+        keep.append('aspect-ratio:4/3')
+        keep.append('object-fit:cover')
+        keep.append('object-position:center')
+        img['style'] = ';'.join(x.strip() for x in keep)
+        changed = True
+    return str(soup) if changed else markup
+
+
 def _fit_mobile_hero(markup: str, hero_url: str) -> str:
     """Мобільний Hero не має різати товар.
 
@@ -1982,6 +2023,7 @@ HTML:
         output = _round_image_corners(output)
         if variant == 'mobile':
             output = _fit_mobile_hero(output, hero)
+            output = _fit_mobile_photo_cards(output)
         prompt_text = style.prompt or ''
         if _PODIUM_SCROLL_MARKER in prompt_text:
             output = _apply_podium_scroll(output, hero, rotation or [])

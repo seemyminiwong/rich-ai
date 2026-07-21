@@ -204,6 +204,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'mobile photo cards fill their frame': 'def _fit_mobile_photo_cards' in pipeline and '_fit_mobile_photo_cards(output)' in pipeline and '_fit_mobile_photo_cards(relaid)' in tasks,
     'mobile hero fits the portrait frame': 'def _fit_mobile_hero' in pipeline and "variant == 'mobile'" in pipeline and 'aspect-ratio:2/3' in pipeline and '_fit_mobile_hero(relaid' in tasks,
     'short pills hug their text in every style': 'def _shrink_pills' in pipeline and '_shrink_pills(_responsive_grids(' in pipeline and 'width:fit-content' in pipeline,
     'usage shows per-stage spend breakdown': "'by_stage': by_stage" in main and 'usageStagePanel' in web and 'Куди йдуть гроші' in web and "stage_totals['other']" in main,
