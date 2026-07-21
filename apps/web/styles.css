@@ -338,3 +338,5 @@ tr.urow-active td{background:#E9F8FA}
 .stagerow b{text-align:right;font-size:13px}
 .stagerow small{color:var(--muted);text-align:right}
 @media(max-width:760px){.stagerow{grid-template-columns:1fr 60px}.stagetrack{grid-column:1/-1}}
+.metrics b .lifetime{display:block;margin-top:3px;color:var(--muted);font-size:11px;font-weight:700}
+.table-wrap td small{display:block;color:var(--muted);font-size:10px;margin-top:2px}

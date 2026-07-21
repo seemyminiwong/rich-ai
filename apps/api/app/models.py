@@ -110,6 +110,11 @@ class Project(Base):
     text_cost: Mapped[float] = mapped_column(Float, default=0)
     image_cost: Mapped[float] = mapped_column(Float, default=0)
     estimated_cost: Mapped[float] = mapped_column(Float, default=0)
+    # Вартість ПОТОЧНОГО прогону обнуляється при перезапуску, тому сумарна
+    # вартість проєкту живе окремо і не втрачається ніколи.
+    lifetime_cost: Mapped[float] = mapped_column(Float, default=0)
+    run_index: Mapped[int] = mapped_column(Integer, default=1)
+    runs_json: Mapped[str] = mapped_column(Text, default='[]')
     cost_breakdown_json: Mapped[str] = mapped_column(Text, default='{}')
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -128,6 +133,8 @@ class Artifact(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
     # Non-empty when this page is the emergency template, not AI output.
     fallback_reason: Mapped[str] = mapped_column(Text, default='')
+    # Номер прогону, у якому зʼявилась ця версія.
+    run_index: Mapped[int] = mapped_column(Integer, default=1)
     created_by: Mapped[str | None] = mapped_column(ForeignKey(f'{settings.db_schema}.users.id'), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     project: Mapped[Project] = relationship(back_populates='artifacts')
