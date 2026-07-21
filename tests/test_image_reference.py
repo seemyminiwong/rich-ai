@@ -485,6 +485,7 @@ def test_license_comment_is_a_valid_invisible_html_tail():
     assert LICENSE_COMMENT.startswith('\n<!--') and LICENSE_COMMENT.endswith('-->')
     assert 'Copyright 2026 seemyminiwong' in LICENSE_COMMENT
     assert 'PolyForm Noncommercial' in LICENSE_COMMENT
+    assert 'yehorshuliak@gmail.com' in LICENSE_COMMENT
     page = '<section><p>Текст</p></section>' + LICENSE_COMMENT
     # Санітизація редактора не зриває хвіст, покупець його не бачить.
     assert 'Правовласник' in sanitize_html(page)
