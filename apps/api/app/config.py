@@ -81,6 +81,8 @@ class Settings(BaseSettings):
     # виду http://192.168.1.50:11434/v1 і список моделей через кому.
     local_llm_base_url: str = ''
     local_llm_models: str = ''
+    # Сервіс знімків блоків (профіль compose `shots`); порожньо = кнопка прихована.
+    shots_url: str = 'http://shots:8080'
     # 'shared' (усі редагують усе) або 'owner' (змінює лише власник або admin).
     project_ownership: str = 'shared'
     request_timeout_seconds: int = 75
