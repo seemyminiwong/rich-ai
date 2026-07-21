@@ -204,6 +204,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'short pills hug their text in every style': 'def _shrink_pills' in pipeline and '_shrink_pills(_responsive_grids(' in pipeline and 'width:fit-content' in pipeline,
     'usage shows per-stage spend breakdown': "'by_stage': by_stage" in main and 'usageStagePanel' in web and 'Куди йдуть гроші' in web and "stage_totals['other']" in main,
     'local llm provider: openai-compatible, free pricing, own model list': "'local_base_url': 'local_llm_base_url'" in runtime_src and "cfg['llm_provider'] == 'local'" in pipeline and "provider in ('openrouter', 'local')" in pipeline and 'settings.local_models' in tasks and "'local','Локальний сервер'" in web and 'LOCAL_LLM_BASE_URL' in (root / '.env.example').read_text(encoding='utf-8'),
     'llm review status visible: when run and whether fixed': 'llm-status' in web and 'AI-рецензію виконано' in web and 'авто-виправлення застосовано' in web and 'Повторити AI-рецензію' in web,
