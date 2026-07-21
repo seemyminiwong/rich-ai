@@ -12,7 +12,7 @@ BASE_STYLE_VERSION = "12.60"
 LICENSE_COMMENT = ('\n<!-- Згенеровано ARTLINE Rich Studio · https://github.com/seemyminiwong/rich-ai · '
                    'Ліцензія: PolyForm Noncommercial 1.0.0. '
                    'Правовласник — Copyright 2026 seemyminiwong. '
-                   'Для комерційної ліцензії звертайтеся до правовласника. -->')
+                   'Для комерційної ліцензії: yehorshuliak@gmail.com. -->')
 BASE_STYLE_NAME = "ARTLINE Base"
 ENGINEERING_STYLE_NAME = "ARTLINE Engineering"
 
