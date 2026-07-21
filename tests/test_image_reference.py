@@ -627,7 +627,8 @@ def test_short_bordered_pills_hug_their_text():
             '<p style="border:1px solid #ccc;border-radius:10px">' + 'Довгий текст пояснення, який точно не є пігулкою і має лишитись блочним абзацом' + '</p>'
             '</div></section>')
     out = _shrink_pills(html)
-    assert out.count('width:fit-content') == 1, 'лише коротка пігулка без дітей'
+    assert out.count('width:fit-content') == 1, 'лише коротка пігулка'
+    assert 'border-radius:999px' in out, 'усі лейбли - однакова капсула'
     assert 'ПРОИЗВОДИТЕЛЬНОСТЬ' in out
     # картка з дітьми і довгий абзац - недоторкані
     assert 'Лёгкий корпус</small></div>' in out and 'блочним абзацом</p>' in out
@@ -662,7 +663,8 @@ def test_short_bordered_pills_hug_their_text():
             '<p style="border:1px solid #ccc;border-radius:10px">' + 'Довгий текст пояснення, який точно не є пігулкою і має лишитись блочним абзацом' + '</p>'
             '</div></section>')
     out = _shrink_pills(html)
-    assert out.count('width:fit-content') == 1, 'лише коротка пігулка без дітей'
+    assert out.count('width:fit-content') == 1, 'лише коротка пігулка'
+    assert 'border-radius:999px' in out, 'усі лейбли - однакова капсула'
     assert 'ПРОИЗВОДИТЕЛЬНОСТЬ' in out
     # картка з дітьми і довгий абзац - недоторкані
     assert 'Лёгкий корпус</small></div>' in out and 'блочним абзацом</p>' in out
@@ -790,3 +792,35 @@ def test_product_photos_are_never_cropped_in_any_layout():
     # згенерована сцена лишається cover
     assert 'hero-desktop.webp?t=x" style="width:100%;height:420px;object-fit:cover' in out
     assert _never_crop_product_photos(out) == out, 'повторне застосування - no-op'
+
+
+def test_every_photo_gets_a_consistent_radius():
+    from app.pipeline import _round_image_corners
+
+    html = ('<section>'
+            '<div style="border-radius:24px;padding:8px"><img src="/media/a.webp"></div>'
+            '<div style="border-radius:20px"><img src="/media/b.webp"></div>'
+            '<img src="/media/c.webp" style="border-radius:4px">'
+            '<div style="position:relative"><img src="/media/hero.webp" style="position:absolute;inset:0"></div>'
+            '</section>')
+    out = _round_image_corners(html)
+    assert 'border-radius:16px' in out, 'фото поза карткою - спільний дефолт'
+    # концентрично: 24 - 8 = 16; фото врівень з карткою повторює її радіус + клип
+    assert out.count('border-radius:16px') >= 2
+    assert 'border-radius:20px' in out and 'overflow:hidden' in out
+    # шар Hero не чіпаємо
+    assert 'src="/media/hero.webp" style="position:absolute;inset:0"' in out
+    assert _round_image_corners(out) == out, 'повторне застосування - no-op'
+
+
+def test_stat_cards_are_not_turned_into_pills():
+    from app.pipeline import _shrink_pills
+
+    stat = ('<section><div style="background:#1A2128;border-radius:14px;padding:16px">'
+            '<b style="font-size:26px">216×74×51 мм</b><small>Размеры устройства</small></div></section>')
+    assert _shrink_pills(stat) == stat, 'картка показника - не пігулка'
+
+    pill_with_span = ('<section><div style="border:1px solid #19BCC9;border-radius:8px;padding:6px 12px">'
+                      '<span>МОБИЛЬНОСТЬ И ПАРАМЕТРЫ</span></div></section>')
+    out = _shrink_pills(pill_with_span)
+    assert 'width:fit-content' in out and 'border-radius:999px' in out
