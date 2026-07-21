@@ -177,3 +177,6 @@ PYTHONPATH=apps/api pytest -q tests
 
 Автор і правовласник — **yehorshuliak@gmail.com** ([github.com/seemyminiwong](https://github.com/seemyminiwong)).
 Пишіть щодо комерційної ліцензії, співпраці або питань по проєкту.
+
+- Питання й ідеї — **[Discussions](https://github.com/seemyminiwong/rich-ai/discussions)**.
+- Знайшли вразливість — не створюйте публічний issue: [SECURITY.md](SECURITY.md).
