@@ -1416,6 +1416,37 @@ def critic_fix(project_id: str, db: Session = Depends(get_db), user=Depends(requ
     return {'updated': updated, 'cost': cost}
 
 
+@app.get('/api/artifacts/{artifact_id}/blocks.zip')
+def artifact_blocks_png(artifact_id: str, db: Session = Depends(get_db), user=Depends(current)):
+    """ZIP із PNG кожного блока сторінки (для маркетплейсів, що не беруть HTML).
+
+    Рендерить окремий сервіс `shots` зі справжнім Chromium - тому картинка
+    точно така, якою її бачить покупець. Без сервісу ендпоінт чесно каже, що
+    робити, а не падає 500."""
+    artifact = db.get(Artifact, artifact_id)
+    if not artifact:
+        raise HTTPException(404, 'Результат не знайдено')
+    if not settings.shots_url:
+        raise HTTPException(503, 'Сервіс знімків вимкнено. Увімкніть: docker compose --profile shots up -d shots')
+    check_action(user.id, 'blocks_png', 6)
+    import httpx
+    project = db.get(Project, artifact.project_id)
+    width = 480 if artifact.variant == 'mobile' else 1240
+    try:
+        with httpx.Client(timeout=180) as http:
+            reply = http.post(settings.shots_url.rstrip('/') + '/render',
+                              json={'html': artifact.html, 'width': width})
+    except Exception:
+        logger.exception('Blocks render failed')
+        raise HTTPException(503, 'Сервіс знімків недоступний. Перевірте: docker compose --profile shots ps')
+    if reply.status_code != 200:
+        raise HTTPException(502, f'Сервіс знімків відповів {reply.status_code}')
+    audit(db, user, 'artifact.blocks_png', 'artifact', artifact.id, {'variant': artifact.variant}); db.commit()
+    name = _archive_name(f'{project.name if project else "rich"}-{artifact.language}-{artifact.variant}-v{artifact.version}', 'blocks')
+    return StreamingResponse(io.BytesIO(reply.content), media_type='application/zip',
+                             headers={'Content-Disposition': f'attachment; filename="{name}-png.zip"'})
+
+
 @app.put('/api/artifacts/{artifact_id}')
 def save_artifact(artifact_id: str, payload: HtmlIn, db: Session = Depends(get_db), user=Depends(require_perm('project.edit_html'))):
     source = db.get(Artifact, artifact_id)
@@ -1594,6 +1625,7 @@ def system_status(db: Session = Depends(get_db), user=Depends(require_perm('sett
         'watchdog_minutes': settings.stuck_project_minutes,
         'daily_budget_usd': float(settings.daily_budget_usd or 0),
         'today_spend_usd': round(today_spend(), 4),
+        'shots_enabled': bool(settings.shots_url),
         'code_graph_url': ('/api/system/graph?t=' + sign_media_path('/api/system/graph')) if (is_root_admin(user) and _GRAPH_FILE.is_file()) else '',
         'alerts_telegram': bool(settings.telegram_bot_token and settings.telegram_chat_id),
         'alerts_webhook': bool(settings.alert_webhook_url),

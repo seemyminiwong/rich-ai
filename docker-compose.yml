@@ -90,6 +90,17 @@ services:
   # Шлях Б: вихід назовні без білого IP і без відкритих портів.
   # cloudflared сам підключається НАЗОВНІ до Cloudflare; публічний hostname і
   # маршрут (studio.домен -> http://web:80) задаються в Zero Trust UI.
+  # Експорт блоків сторінки в PNG: справжній Chromium, вмикається профілем.
+  # docker compose --profile shots up -d shots
+  shots:
+    build: ./apps/shots
+    restart: unless-stopped
+    profiles: ["shots"]
+    environment:
+      SHOTS_BASE_URL: http://web
+    depends_on:
+      - web
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
