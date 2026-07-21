@@ -631,3 +631,21 @@ def test_short_bordered_pills_hug_their_text():
     assert 'ПРОИЗВОДИТЕЛЬНОСТЬ' in out
     # картка з дітьми і довгий абзац - недоторкані
     assert 'Лёгкий корпус</small></div>' in out and 'блочним абзацом</p>' in out
+
+
+def test_mobile_hero_matches_the_portrait_frame_instead_of_cropping_it():
+    from app.pipeline import _fit_mobile_hero
+
+    hero = '/media/p1/hero-mobile.webp?t=abc'
+    html = (f'<section><div style="background:url({hero}) center/cover;min-height:600px;padding:320px 18px 26px">'
+            f'<img src="{hero}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">'
+            '<h2>Товар</h2></div></section>')
+    out = _fit_mobile_hero(html, hero)
+    assert 'aspect-ratio:2/3' in out, 'висота блока має дорівнювати кадру'
+    assert 'background-position:center top' in out
+    assert 'object-position:center top' in out, 'шар <img> теж не має різати верх'
+    assert 'min-height:600px' in out, 'фолбек висоти лишається'
+    assert _fit_mobile_hero(out, hero) == out, 'повторне застосування - no-op'
+    # чужі зображення не чіпаються
+    other = '<section><img src="https://cdn/x.webp" style="object-fit:cover"></section>'
+    assert _fit_mobile_hero(other, hero) == other

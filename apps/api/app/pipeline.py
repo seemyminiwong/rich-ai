@@ -1516,6 +1516,49 @@ def _apply_podium_scroll(markup: str, hero_url: str, frames: list[str]) -> str:
 
 
 
+def _fit_mobile_hero(markup: str, hero_url: str) -> str:
+    """Мобільний Hero не має різати товар.
+
+    Мобільний кадр - портрет 2:3, а модель верстає блок фіксованою висотою
+    (min-height:600px) з background-size:cover: на 480px ширини кадр
+    масштабується до 720px і ~120px зрізається зверху і знизу - у живому
+    прикладі 3D-сканеру відрізало голову приладу. Механічно: даємо обгортці
+    aspect-ratio:2/3 (висота сама дорівнює кадру - обрізати нічого) і
+    прив'язуємо фон до верхнього краю, бо товар за контрактом стоїть угорі.
+    Те саме для <img>-шару Showcase: object-position:center top.
+    """
+    if not markup:
+        return markup
+    hero_path = (hero_url or '').split('?', 1)[0]
+    if not hero_path:
+        return markup
+    soup = BeautifulSoup(markup, 'html.parser')
+    changed = False
+    for node in soup.find_all(style=True):
+        style = node.get('style') or ''
+        if hero_path not in style or 'url(' not in style:
+            continue
+        if 'aspect-ratio' not in style:
+            style = style.rstrip().rstrip(';') + ';aspect-ratio:2/3'
+        style = re.sub(r'background-position\s*:[^;]+', 'background-position:center top', style, flags=re.I)
+        if 'background-position' not in style.lower():
+            style = style.rstrip().rstrip(';') + ';background-position:center top'
+        node['style'] = style
+        changed = True
+    for img in soup.find_all('img'):
+        if hero_path not in (img.get('src') or ''):
+            continue
+        style = img.get('style') or ''
+        if 'object-fit:cover' not in style.replace(' ', ''):
+            continue
+        style = re.sub(r'object-position\s*:[^;]+', 'object-position:center top', style, flags=re.I)
+        if 'object-position' not in style.lower():
+            style = style.rstrip().rstrip(';') + ';object-position:center top'
+        img['style'] = style
+        changed = True
+    return str(soup) if changed else markup
+
+
 def _shrink_pills(markup: str) -> str:
     """Короткі «пігулки» (eyebrow-лейбли, бейджі) не мають розтягуватись на колонку.
 
@@ -1937,6 +1980,8 @@ HTML:
         output = _restore_image_urls(output, hero, feature, variant, img_hero='THE FIRST CHILD of the wrapper' in (style.prompt or ''))
         output = _enforce_image_whitelist(output, [hero, feature] + list(gallery or []), spares=list(gallery or []))
         output = _round_image_corners(output)
+        if variant == 'mobile':
+            output = _fit_mobile_hero(output, hero)
         prompt_text = style.prompt or ''
         if _PODIUM_SCROLL_MARKER in prompt_text:
             output = _apply_podium_scroll(output, hero, rotation or [])
