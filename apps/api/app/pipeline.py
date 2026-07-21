@@ -1560,6 +1560,37 @@ def _harmonize_radii(markup: str) -> str:
     return str(soup) if changed else markup
 
 
+def _is_scene_asset(src: str) -> bool:
+    """Згенерована сцена (hero/feature) - її можна кадрувати; решта - реальні
+    кадри товару (галерея, завантаження, product-reference), їх різати не можна."""
+    return bool(re.search(r'/(?:hero|feature)[^/]*\.(?:webp|png|jpe?g)', src or '', re.I))
+
+
+def _never_crop_product_photos(markup: str) -> str:
+    """Реальне фото товару ніколи не обрізається - у будь-якій розкладці.
+
+    Правило карток покривало лише «картка з одним фото». Але моделі ставлять
+    кадр і в колонку поруч із текстом з height:100%;object-fit:cover - і на
+    десктопі приладу зрізало голову. Тому перемикаємо на contain КОЖЕН <img>
+    із реальним кадром товару; згенеровані сцени (hero/feature) лишаються cover.
+    """
+    soup = BeautifulSoup(markup or '', 'html.parser')
+    changed = False
+    for img in soup.find_all('img'):
+        src = img.get('src') or ''
+        if not src or _is_scene_asset(src):
+            continue
+        style = img.get('style') or ''
+        if 'object-fit:cover' not in style.replace(' ', '').lower():
+            continue
+        updated = re.sub(r'object-fit\s*:\s*cover', 'object-fit:contain', style, flags=re.I)
+        if 'object-position' not in updated.lower():
+            updated = updated.rstrip().rstrip(';') + ';object-position:center'
+        img['style'] = updated
+        changed = True
+    return str(soup) if changed else markup
+
+
 def _fit_photo_cards(markup: str, variant: str = 'mobile') -> str:
     """Фото має заповнювати картку, а не плавати в ній.
 
@@ -1597,8 +1628,7 @@ def _fit_photo_cards(markup: str, variant: str = 'mobile') -> str:
         card['style'] = re.sub(r'padding[a-z-]*\s*:[^;]+;?', '', style, flags=re.I).rstrip(';') + ';overflow:hidden'
         keep = [d for d in img_style.split(';') if d.strip() and not re.match(
             r'\s*(width|height|max-width|max-height|border-radius|object-fit|object-position|display|margin)\s*:', d, re.I)]
-        src = img.get('src') or ''
-        scene = bool(re.search(r'/(?:hero|feature)[^/]*\.(?:webp|png|jpe?g)', src, re.I))
+        scene = _is_scene_asset(img.get('src') or '')
         keep.append('display:block')
         keep.append('width:100%')
         keep.append(f'aspect-ratio:{ratio}')
@@ -2078,6 +2108,7 @@ HTML:
         if variant == 'mobile':
             output = _fit_mobile_hero(output, hero)
         output = _fit_photo_cards(output, variant)
+        output = _never_crop_product_photos(output)
         output = _harmonize_radii(output)
         prompt_text = style.prompt or ''
         if _PODIUM_SCROLL_MARKER in prompt_text:

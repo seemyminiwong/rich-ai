@@ -772,3 +772,21 @@ def test_run_history_survives_reruns_and_extra_work():
     assert [r['index'] for r in runs] == [1, 2]
     assert runs[0]['cost'] == 0.23 and runs[1]['cost'] == 0.15
     assert project.lifetime_cost == 0.38, 'вартість попередніх прогонів не має зникати'
+
+
+def test_product_photos_are_never_cropped_in_any_layout():
+    from app.pipeline import _never_crop_product_photos
+
+    html = ('<section><div style="display:grid;grid-template-columns:1.1fr .9fr">'
+            '<div><h2>Текст</h2></div>'
+            '<img src="https://cdn.example/gallery/510525/1400_gallery_main.webp" style="width:100%;height:100%;object-fit:cover">'
+            '</div>'
+            '<div><img src="/media/p1/hero-desktop.webp?t=x" style="width:100%;height:420px;object-fit:cover"></div>'
+            '<div><img src="/media/p1/upload-2.webp?t=y" style="height:300px;object-fit:cover;border-radius:14px"></div>'
+            '</section>')
+    out = _never_crop_product_photos(html)
+    # кадр галереї і завантажене фото - contain
+    assert out.count('object-fit:contain') == 2
+    # згенерована сцена лишається cover
+    assert 'hero-desktop.webp?t=x" style="width:100%;height:420px;object-fit:cover' in out
+    assert _never_crop_product_photos(out) == out, 'повторне застосування - no-op'
