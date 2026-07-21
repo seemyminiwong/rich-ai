@@ -1516,16 +1516,18 @@ def _apply_podium_scroll(markup: str, hero_url: str, frames: list[str]) -> str:
 
 
 
-def _fit_mobile_photo_cards(markup: str) -> str:
-    """На вузькому екрані фото має заповнювати картку, а не плавати в ній.
+def _fit_photo_cards(markup: str, variant: str = 'mobile') -> str:
+    """Фото має заповнювати картку, а не плавати в ній.
 
     Модель верстає картку з padding і кладе всередину <img> у власних
-    пропорціях: на десктопі це виглядає повітряно, а на 480px виходить фото
-    з нерівними білими полями і різною висотою в сусідніх картках. Механічно:
-    якщо картка (border-radius + фон) містить ЛИШЕ зображення - прибираємо
-    падінги, розтягуємо фото на всю ширину і задаємо спільні пропорції 4:3
-    з object-fit:cover. Картки з текстом (число + підпис) не чіпаємо.
+    пропорціях - виходить фото з нерівними полями і різною висотою в сусідніх
+    картках (на мобільному це особливо помітно, на десктопі ряд карток «стрибає»
+    по висоті). Механічно: якщо картка (border-radius + фон) містить ЛИШЕ
+    зображення - прибираємо падінги, розтягуємо фото на всю ширину і задаємо
+    спільні пропорції з object-fit:cover. Десктоп отримує ширші 3:2 (ряд із 2-3
+    карток), мобільний - 4:3. Картки з текстом (число + підпис) не чіпаємо.
     """
+    ratio = '3/2' if variant == 'desktop' else '4/3'
     soup = BeautifulSoup(markup or '', 'html.parser')
     changed = False
     for card in soup.find_all(['div', 'figure']):
@@ -1549,7 +1551,7 @@ def _fit_mobile_photo_cards(markup: str) -> str:
             r'\s*(width|height|max-width|max-height|border-radius|object-fit|object-position|display|margin)\s*:', d, re.I)]
         keep.append('display:block')
         keep.append('width:100%')
-        keep.append('aspect-ratio:4/3')
+        keep.append(f'aspect-ratio:{ratio}')
         keep.append('object-fit:cover')
         keep.append('object-position:center')
         img['style'] = ';'.join(x.strip() for x in keep)
@@ -2023,7 +2025,7 @@ HTML:
         output = _round_image_corners(output)
         if variant == 'mobile':
             output = _fit_mobile_hero(output, hero)
-            output = _fit_mobile_photo_cards(output)
+        output = _fit_photo_cards(output, variant)
         prompt_text = style.prompt or ''
         if _PODIUM_SCROLL_MARKER in prompt_text:
             output = _apply_podium_scroll(output, hero, rotation or [])

@@ -651,19 +651,30 @@ def test_mobile_hero_matches_the_portrait_frame_instead_of_cropping_it():
     assert _fit_mobile_hero(other, hero) == other
 
 
-def test_mobile_photo_cards_fill_edge_to_edge():
-    from app.pipeline import _fit_mobile_photo_cards
+def test_photo_cards_fill_edge_to_edge_on_both_variants():
+    from app.pipeline import _fit_photo_cards
 
     html = ('<section>'
             '<div style="background:#fff;border-radius:18px;padding:16px"><img src="/media/p/g1.webp?t=a" alt="" style="max-width:100%;border-radius:10px"></div>'
             '<div style="background:#1A2128;border-radius:14px;padding:18px"><b>0,53 кг</b><small>Масса</small></div>'
             '<div style="background:#fff;border-radius:18px;padding:16px"><img src="/media/p/g2.webp?t=b" alt=""><p>Підпис під фото</p></div>'
             '</section>')
-    out = _fit_mobile_photo_cards(html)
+    out = _fit_photo_cards(html)
     assert out.count('aspect-ratio:4/3') == 1, 'лише картка з самим фото'
     assert 'object-fit:cover' in out and 'overflow:hidden' in out
     assert 'padding:16px"><img src="/media/p/g1' not in out, 'падінг у фото-картці прибрано'
     # картка з текстом і картка фото+підпис лишаються як були
     assert '0,53 кг' in out and 'padding:18px' in out
     assert 'Підпис під фото' in out and out.count('padding:16px') == 1
-    assert _fit_mobile_photo_cards(out) == out or 'aspect-ratio:4/3' in _fit_mobile_photo_cards(out)
+    assert _fit_photo_cards(out) == out or 'aspect-ratio:4/3' in _fit_photo_cards(out)
+
+
+def test_desktop_photo_cards_use_a_wider_ratio():
+    from app.pipeline import _fit_photo_cards
+
+    card = '<section><div style="background:#fff;border-radius:18px;padding:16px"><img src="/media/p/g1.webp?t=a" alt=""></div></section>'
+    desktop = _fit_photo_cards(card, 'desktop')
+    mobile = _fit_photo_cards(card, 'mobile')
+    assert 'aspect-ratio:3/2' in desktop and 'aspect-ratio:4/3' not in desktop
+    assert 'aspect-ratio:4/3' in mobile
+    assert 'object-fit:cover' in desktop and 'overflow:hidden' in desktop

@@ -12,7 +12,7 @@ from app.models import Artifact, Asset, CriticReport, Event, Project, Status, St
 from app.limits import add_spend, add_user_spend
 from app.media import media_url
 from app.prompts import BASE_STYLE_VERSION, LICENSE_COMMENT
-from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, _fit_mobile_hero, _fit_mobile_photo_cards
+from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, _fit_mobile_hero, _fit_photo_cards
 from app.pipeline import (
     _image_urls_of,
     hero_environment,
@@ -434,7 +434,7 @@ def process_project(self, project_id, reuse_images=False):
                                 # Перекомпонування успадковує десктопні пропорції блока -
                                 # підганяємо під портретний кадр, щоб не різало товар.
                                 relaid = _fit_mobile_hero(relaid, mobile_hero or hero)
-                                relaid = _fit_mobile_photo_cards(relaid)
+                                relaid = _fit_photo_cards(relaid, 'mobile')
                                 # Модель могла загубити <style> обертання при перекомпонуванні -
                                 # повторне застосування ідемпотентне.
                                 prompt_text = style.prompt or ''
