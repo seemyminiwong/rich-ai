@@ -847,3 +847,18 @@ def test_contained_photos_get_a_rounded_frame():
     assert _frame_contained_photos(scene) == scene
 
     assert _frame_contained_photos(out) == out, 'повторне застосування - no-op'
+
+
+def test_labels_share_one_radius_even_with_their_own_width():
+    from app.pipeline import _shrink_pills
+
+    html = ('<section>'
+            '<div style="border:1px solid #19BCC9;border-radius:999px;padding:6px 12px">РАБОТА ПРИ СОЛНЦЕ</div>'
+            '<div style="border:1px solid #19BCC9;border-radius:8px;padding:6px 12px;width:fit-content">ПРОДУКТИВНІСТЬ</div>'
+            '<div style="background:#1A2128;border-radius:10px;padding:6px 12px;display:inline-block">ЩЕ ОДИН ЛЕЙБЛ</div>'
+            '</section>')
+    out = _shrink_pills(html)
+    assert out.count('border-radius:999px') == 3, 'усі лейбли - однакова капсула'
+    # власну ширину не перебиваємо
+    assert 'width:fit-content' in out
+    assert _shrink_pills(out) == out, 'повторне застосування - no-op'

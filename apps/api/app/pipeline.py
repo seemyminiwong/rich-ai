@@ -1743,8 +1743,6 @@ def _shrink_pills(markup: str) -> str:
             continue
         if 'border' not in low.replace('border-radius', '') and 'background' not in low:
             continue
-        if re.search(r'(?:^|;)\s*(?:max-|min-)?width\s*:', low) or 'fit-content' in low:
-            continue
         # Картки показників (велике число + підпис) мають кілька дітей - не чіпаємо.
         children = node.find_all(True, recursive=False)
         if len(children) > 1 or any(c.name not in ('span', 'b', 'strong', 'em', 'i', 'small') for c in children):
@@ -1754,9 +1752,16 @@ def _shrink_pills(markup: str) -> str:
         text = node.get_text(strip=True)
         if not text or len(text) > 40:
             continue
+        # Радіус уніфікуємо ЗАВЖДИ: раніше лейбл із власною шириною пропускався
+        # цілком, і на одній сторінці сусідили капсула і прямокутник.
         cleaned = _RADIUS_RE.sub('border-radius:999px', style, count=1)
-        cleaned = re.sub(r'display\s*:[^;]+;?', '', cleaned, flags=re.I).rstrip().rstrip(';')
-        node['style'] = cleaned + ';display:inline-block;width:fit-content'
+        has_width = bool(re.search(r'(?:^|;)\s*(?:max-|min-)?width\s*:', cleaned, flags=re.I))
+        if not has_width:
+            cleaned = re.sub(r'display\s*:[^;]+;?', '', cleaned, flags=re.I).rstrip().rstrip(';')
+            cleaned = cleaned + ';display:inline-block;width:fit-content'
+        if cleaned == style:
+            continue
+        node['style'] = cleaned
         changed = True
     return str(soup) if changed else markup
 
