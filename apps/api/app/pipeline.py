@@ -1566,6 +1566,46 @@ def _is_scene_asset(src: str) -> bool:
     return bool(re.search(r'/(?:hero|feature)[^/]*\.(?:webp|png|jpe?g)', src or '', re.I))
 
 
+def _frame_contained_photos(markup: str) -> str:
+    """Фото, вписане через contain, має скруглятись КОНТЕЙНЕРОМ, а не собою.
+
+    border-radius на <img> із object-fit:contain не видно: фото не заповнює
+    свою коробку, тож глядач бачить прямі кути самого знімка. Тому кожному
+    такому кадру гарантуємо рамку - білу картку з тим самим радіусом і
+    обрізанням; на світлому фоні вона зливається, на темному працює як
+    підкладка (той самий прийом, що для підмінених кадрів галереї).
+    """
+    soup = BeautifulSoup(markup or '', 'html.parser')
+    changed = False
+    for img in soup.find_all('img'):
+        style = img.get('style') or ''
+        flat = style.replace(' ', '').lower()
+        if 'object-fit:contain' not in flat or 'position:absolute' in flat:
+            continue
+        parent = img.parent
+        parent_style = parent.get('style') or '' if getattr(parent, 'get', None) else ''
+        only_child = parent is not None and len(parent.find_all(True, recursive=False)) == 1
+        if only_child and _RADIUS_RE.search(parent_style):
+            updated = parent_style
+            if 'background' not in updated.lower():
+                updated = updated.rstrip().rstrip(';') + ';background:#FFFFFF'
+            if 'overflow' not in updated.lower():
+                updated = updated.rstrip().rstrip(';') + ';overflow:hidden'
+            if updated != parent_style:
+                parent['style'] = updated
+                changed = True
+            continue
+        frame = soup.new_tag('div')
+        frame['style'] = (f'border-radius:{_DEFAULT_IMAGE_RADIUS}px;overflow:hidden;background:#FFFFFF;'
+                          'display:block;box-sizing:border-box')
+        img.replace_with(frame)
+        frame.append(img)
+        if 'width:100%' not in flat:
+            img['style'] = style.rstrip().rstrip(';') + ';width:100%'
+        changed = True
+    return str(soup) if changed else markup
+
+
 def _never_crop_product_photos(markup: str) -> str:
     """Реальне фото товару ніколи не обрізається - у будь-якій розкладці.
 
@@ -2145,6 +2185,7 @@ HTML:
             output = _fit_mobile_hero(output, hero)
         output = _fit_photo_cards(output, variant)
         output = _never_crop_product_photos(output)
+        output = _frame_contained_photos(output)
         output = _harmonize_radii(output)
         prompt_text = style.prompt or ''
         if _PODIUM_SCROLL_MARKER in prompt_text:

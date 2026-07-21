@@ -204,6 +204,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'contained photos are framed so the radius is visible': 'def _frame_contained_photos' in pipeline and '_frame_contained_photos(output)' in pipeline and '_frame_contained_photos(relaid)' in tasks,
     'uniform radii: photos and pills': '_DEFAULT_IMAGE_RADIUS = 16' in pipeline and 'border-radius:999px' in pipeline and 'overflow:hidden' in pipeline,
     'product photos never cropped in any layout': 'def _never_crop_product_photos' in pipeline and 'def _is_scene_asset' in pipeline and '_never_crop_product_photos(output)' in pipeline and '_never_crop_product_photos(relaid)' in tasks,
     'run history keeps costs across reruns': 'def close_run' in tasks and 'def bill_extra' in tasks and 'lifetime_cost' in main and "p.run_index = (getattr(p, 'run_index', 1) or 1) + 1" in main and 'function runsPanel' in web and 'прогін ${a.run_index}' in web,

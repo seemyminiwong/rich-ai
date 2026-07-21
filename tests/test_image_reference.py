@@ -824,3 +824,26 @@ def test_stat_cards_are_not_turned_into_pills():
                       '<span>МОБИЛЬНОСТЬ И ПАРАМЕТРЫ</span></div></section>')
     out = _shrink_pills(pill_with_span)
     assert 'width:fit-content' in out and 'border-radius:999px' in out
+
+
+def test_contained_photos_get_a_rounded_frame():
+    from app.pipeline import _frame_contained_photos
+
+    # 1) кадр просто в комірці сітки - додається біла рамка зі скругленням
+    bare = '<section><div style="display:grid"><img src="https://cdn/gallery/1400_main.webp" style="object-fit:contain"></div></section>'
+    out = _frame_contained_photos(bare)
+    assert 'border-radius:16px;overflow:hidden;background:#FFFFFF' in out
+    assert 'width:100%' in out
+
+    # 2) кадр уже в картці з радіусом - картці лише додається фон і обрізання
+    carded = ('<section><div style="border-radius:24px;padding:0">'
+              '<img src="/media/p/upload-1.webp?t=a" style="width:100%;object-fit:contain"></div></section>')
+    out2 = _frame_contained_photos(carded)
+    assert out2.count('<div') == 1, 'зайва обгортка не потрібна'
+    assert 'overflow:hidden' in out2 and 'background:#FFFFFF' in out2
+
+    # 3) сцени з cover не чіпаємо
+    scene = '<section><img src="/media/p/feature.webp?t=b" style="object-fit:cover"></section>'
+    assert _frame_contained_photos(scene) == scene
+
+    assert _frame_contained_photos(out) == out, 'повторне застосування - no-op'
