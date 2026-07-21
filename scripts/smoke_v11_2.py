@@ -206,7 +206,7 @@ checks = {
 checks.update({
     'concentric radii in every style': 'def _harmonize_radii' in pipeline and 'inner = outer - padding' in pipeline and '_harmonize_radii(output)' in pipeline and '_harmonize_radii(relaid)' in tasks,
     'photo cards fill their frame on both variants': 'def _fit_photo_cards' in pipeline and '_fit_photo_cards(output, variant)' in pipeline and "_fit_photo_cards(relaid, 'mobile')" in tasks and "'3/2' if variant == 'desktop'" in pipeline,
-    'mobile hero fits the portrait frame': 'def _fit_mobile_hero' in pipeline and "variant == 'mobile'" in pipeline and 'aspect-ratio:2/3' in pipeline and '_fit_mobile_hero(relaid' in tasks,
+    'mobile hero shows the whole product without dead space': 'def _fit_mobile_hero' in pipeline and "variant == 'mobile'" in pipeline and 'background-size:100% auto' in pipeline and "';aspect-ratio:2/3'" not in pipeline and '_fit_mobile_hero(relaid' in tasks,
     'short pills hug their text in every style': 'def _shrink_pills' in pipeline and '_shrink_pills(_responsive_grids(' in pipeline and 'width:fit-content' in pipeline,
     'usage shows per-stage spend breakdown': "'by_stage': by_stage" in main and 'usageStagePanel' in web and 'Куди йдуть гроші' in web and "stage_totals['other']" in main,
     'local llm provider: openai-compatible, free pricing, own model list': "'local_base_url': 'local_llm_base_url'" in runtime_src and "cfg['llm_provider'] == 'local'" in pipeline and "provider in ('openrouter', 'local')" in pipeline and 'settings.local_models' in tasks and "'local','Локальний сервер'" in web and 'LOCAL_LLM_BASE_URL' in (root / '.env.example').read_text(encoding='utf-8'),
