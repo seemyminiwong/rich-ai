@@ -205,7 +205,7 @@ checks = {
 # guards a UI feature added after v12.0 lives here.
 checks.update({
     'concentric radii in every style': 'def _harmonize_radii' in pipeline and 'inner = outer - padding' in pipeline and '_harmonize_radii(output)' in pipeline and '_harmonize_radii(relaid)' in tasks,
-    'photo cards fill their frame on both variants': 'def _fit_photo_cards' in pipeline and '_fit_photo_cards(output, variant)' in pipeline and "_fit_photo_cards(relaid, 'mobile')" in tasks and "'3/2' if variant == 'desktop'" in pipeline,
+    'photo cards fill their frame on both variants': 'def _fit_photo_cards' in pipeline and '_fit_photo_cards(output, variant)' in pipeline and "_fit_photo_cards(relaid, 'mobile')" in tasks and "'3/2' if variant == 'desktop'" in pipeline and "'object-fit:cover' if scene else 'object-fit:contain'" in pipeline,
     'mobile hero shows the whole product without dead space': 'def _fit_mobile_hero' in pipeline and "variant == 'mobile'" in pipeline and 'background-size:100% auto' in pipeline and "';aspect-ratio:2/3'" not in pipeline and '_fit_mobile_hero(relaid' in tasks,
     'short pills hug their text in every style': 'def _shrink_pills' in pipeline and '_shrink_pills(_responsive_grids(' in pipeline and 'width:fit-content' in pipeline,
     'usage shows per-stage spend breakdown': "'by_stage': by_stage" in main and 'usageStagePanel' in web and 'Куди йдуть гроші' in web and "stage_totals['other']" in main,
