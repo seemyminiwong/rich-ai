@@ -616,3 +616,18 @@ def test_llm_fix_rewrites_only_flagged_text_and_freezes_dom():
          patch('app.pipeline.text_ready', lambda: True):
         same, _, _, changed = llm_fix_texts(html, ['дрібниця'], {}, 'gpt-5-mini', 'ua')
     assert changed == 0 and 'Продумана основа' in same
+
+
+def test_short_bordered_pills_hug_their_text():
+    from app.pipeline import _shrink_pills
+
+    html = ('<section><div style="display:grid;gap:12px">'
+            '<div style="border:1px solid #19BCC9;border-radius:8px;padding:6px 12px;font-size:11px">ПРОИЗВОДИТЕЛЬНОСТЬ</div>'
+            '<div style="background:#1A2128;border:1px solid #2F3137;border-radius:14px;padding:16px"><b>0.53 кг</b><small>Лёгкий корпус</small></div>'
+            '<p style="border:1px solid #ccc;border-radius:10px">' + 'Довгий текст пояснення, який точно не є пігулкою і має лишитись блочним абзацом' + '</p>'
+            '</div></section>')
+    out = _shrink_pills(html)
+    assert out.count('width:fit-content') == 1, 'лише коротка пігулка без дітей'
+    assert 'ПРОИЗВОДИТЕЛЬНОСТЬ' in out
+    # картка з дітьми і довгий абзац - недоторкані
+    assert 'Лёгкий корпус</small></div>' in out and 'блочним абзацом</p>' in out

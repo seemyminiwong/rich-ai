@@ -1516,6 +1516,34 @@ def _apply_podium_scroll(markup: str, hero_url: str, frames: list[str]) -> str:
 
 
 
+def _shrink_pills(markup: str) -> str:
+    """Короткі «пігулки» (eyebrow-лейбли, бейджі) не мають розтягуватись на колонку.
+
+    Модель верстає лейбл блочним <div> з рамкою; батьківський grid/flex розтягує
+    його на всю ширину - замість капсули по тексту виходить смуга на пів блока
+    (живий приклад: «ПРОИЗВОДИТЕЛЬНОСТЬ» у Showcase). Механічне правило: листовий
+    елемент з border+border-radius і коротким текстом отримує width:fit-content -
+    його не розтягне ані grid, ані flex. Картки з дітьми і довгі тексти не чіпаємо.
+    """
+    soup = BeautifulSoup(markup or '', 'html.parser')
+    changed = False
+    for node in soup.find_all(['div', 'p', 'span']):
+        style = node.get('style') or ''
+        low = style.lower()
+        if 'border-radius' not in low or 'border' not in low.replace('border-radius', ''):
+            continue
+        if re.search(r'(?:^|;)\s*(?:max-|min-)?width\s*:', low) or 'display:inline' in low.replace(' ', '') or 'fit-content' in low:
+            continue
+        if node.find(True) is not None:
+            continue
+        text = node.get_text(strip=True)
+        if not text or len(text) > 40:
+            continue
+        node['style'] = style.rstrip().rstrip(';') + ';display:inline-block;width:fit-content'
+        changed = True
+    return str(soup) if changed else markup
+
+
 def _responsive_grids(markup: str) -> str:
     """Багатоколонкові ряди мусять ПЕРЕНОСИТИСЬ на вузьких ширинах - у всіх стилях.
 
@@ -1563,7 +1591,7 @@ def _html_only(text: str) -> str:
     start, end = value.find('<section'), value.rfind('</section>')
     if start < 0 or end < start:
         raise RuntimeError('AI did not return a complete <section> block')
-    return _responsive_grids(sanitize_html(value[start:end + len('</section>')]))
+    return _shrink_pills(_responsive_grids(sanitize_html(value[start:end + len('</section>')])))
 
 
 def _section_count(markup: str) -> int:
