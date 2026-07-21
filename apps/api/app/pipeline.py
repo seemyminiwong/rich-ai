@@ -1565,11 +1565,15 @@ def _fit_photo_cards(markup: str, variant: str = 'mobile') -> str:
 
     Модель верстає картку з padding і кладе всередину <img> у власних
     пропорціях - виходить фото з нерівними полями і різною висотою в сусідніх
-    картках (на мобільному це особливо помітно, на десктопі ряд карток «стрибає»
-    по висоті). Механічно: якщо картка (border-radius + фон) містить ЛИШЕ
-    зображення - прибираємо падінги, розтягуємо фото на всю ширину і задаємо
-    спільні пропорції з object-fit:cover. Десктоп отримує ширші 3:2 (ряд із 2-3
-    карток), мобільний - 4:3. Картки з текстом (число + підпис) не чіпаємо.
+    картках. Механічно: картка (border-radius + фон) з ЛИШЕ зображенням
+    втрачає падінги, фото стає на всю ширину зі спільними пропорціями
+    (десктоп 3:2, мобільний 4:3).
+
+    Спосіб вписування залежить від типу кадру, інакше товар ріжеться:
+      - згенеровані сцени (hero/feature) - cover: це фон, кадрувати можна;
+      - реальні кадри товару (галерея, завантаження) - contain: обрізати
+        товар не можна ніколи, тому він вписується цілком у спільну рамку.
+    Картки з текстом (число + підпис) не чіпаємо.
     """
     ratio = '3/2' if variant == 'desktop' else '4/3'
     soup = BeautifulSoup(markup or '', 'html.parser')
@@ -1593,10 +1597,12 @@ def _fit_photo_cards(markup: str, variant: str = 'mobile') -> str:
         card['style'] = re.sub(r'padding[a-z-]*\s*:[^;]+;?', '', style, flags=re.I).rstrip(';') + ';overflow:hidden'
         keep = [d for d in img_style.split(';') if d.strip() and not re.match(
             r'\s*(width|height|max-width|max-height|border-radius|object-fit|object-position|display|margin)\s*:', d, re.I)]
+        src = img.get('src') or ''
+        scene = bool(re.search(r'/(?:hero|feature)[^/]*\.(?:webp|png|jpe?g)', src, re.I))
         keep.append('display:block')
         keep.append('width:100%')
         keep.append(f'aspect-ratio:{ratio}')
-        keep.append('object-fit:cover')
+        keep.append('object-fit:cover' if scene else 'object-fit:contain')
         keep.append('object-position:center')
         img['style'] = ';'.join(x.strip() for x in keep)
         changed = True

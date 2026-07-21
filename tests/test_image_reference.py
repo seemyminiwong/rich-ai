@@ -734,3 +734,18 @@ def test_nested_radii_are_concentric_in_every_style():
     # картка без падінга лишається як була
     assert 'border-radius:12px">без падінга' in out
     assert _harmonize_radii(out) == out, 'повторне застосування - no-op'
+
+
+def test_product_frames_are_never_cropped_inside_cards():
+    from app.pipeline import _fit_photo_cards
+
+    gallery = ('<section><div style="background:#fff;border-radius:18px;padding:16px">'
+               '<img src="https://cdn.example/gallery/510525/1400_gallery_main.webp" alt=""></div></section>')
+    scene = ('<section><div style="background:#fff;border-radius:18px;padding:16px">'
+             '<img src="/media/p1/feature.webp?t=abc" alt=""></div></section>')
+    out_gallery = _fit_photo_cards(gallery, 'mobile')
+    out_scene = _fit_photo_cards(scene, 'mobile')
+    assert 'object-fit:contain' in out_gallery, 'реальний кадр товару різати не можна'
+    assert 'object-fit:cover' in out_scene, 'згенерована сцена - це фон, її можна кадрувати'
+    # спільна рамка лишається в обох випадках
+    assert 'aspect-ratio:4/3' in out_gallery and 'aspect-ratio:4/3' in out_scene
