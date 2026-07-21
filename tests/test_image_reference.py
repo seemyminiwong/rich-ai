@@ -678,3 +678,24 @@ def test_desktop_photo_cards_use_a_wider_ratio():
     assert 'aspect-ratio:3/2' in desktop and 'aspect-ratio:4/3' not in desktop
     assert 'aspect-ratio:4/3' in mobile
     assert 'object-fit:cover' in desktop and 'overflow:hidden' in desktop
+
+
+def test_nested_radii_are_concentric_in_every_style():
+    from app.pipeline import _harmonize_radii
+
+    html = ('<section>'
+            '<div style="border-radius:24px;padding:8px;background:#fff">'
+            '  <div style="border-radius:16px;background:#eee">внутрішня картка</div>'
+            '</div>'
+            '<div style="border-radius:32px;padding:46px;background:#0D1013">'
+            '  <div style="border-radius:99px;padding:6px 12px">пігулка</div>'
+            '</div>'
+            '<div style="border-radius:18px;background:#fff"><p style="border-radius:12px">без падінга - не чіпаємо</p></div>'
+            '</section>')
+    out = _harmonize_radii(html)
+    # 24 - 8 = 16 (вже правильно), 32 - 46 -> мінімум 4px
+    assert 'border-radius:16px;background:#eee' in out
+    assert 'border-radius:4px;padding:6px 12px' in out
+    # картка без падінга лишається як була
+    assert 'border-radius:12px">без падінга' in out
+    assert _harmonize_radii(out) == out, 'повторне застосування - no-op'

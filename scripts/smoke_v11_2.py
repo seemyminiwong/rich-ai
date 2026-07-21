@@ -204,6 +204,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'concentric radii in every style': 'def _harmonize_radii' in pipeline and 'inner = outer - padding' in pipeline and '_harmonize_radii(output)' in pipeline and '_harmonize_radii(relaid)' in tasks,
     'photo cards fill their frame on both variants': 'def _fit_photo_cards' in pipeline and '_fit_photo_cards(output, variant)' in pipeline and "_fit_photo_cards(relaid, 'mobile')" in tasks and "'3/2' if variant == 'desktop'" in pipeline,
     'mobile hero fits the portrait frame': 'def _fit_mobile_hero' in pipeline and "variant == 'mobile'" in pipeline and 'aspect-ratio:2/3' in pipeline and '_fit_mobile_hero(relaid' in tasks,
     'short pills hug their text in every style': 'def _shrink_pills' in pipeline and '_shrink_pills(_responsive_grids(' in pipeline and 'width:fit-content' in pipeline,

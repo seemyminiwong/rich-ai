@@ -1516,6 +1516,50 @@ def _apply_podium_scroll(markup: str, hero_url: str, frames: list[str]) -> str:
 
 
 
+_RADIUS_RE = re.compile(r'border-radius\s*:\s*([0-9.]+)px', re.I)
+_PADDING_RE = re.compile(r'padding\s*:\s*([^;]+)', re.I)
+
+
+def _first_px(value: str):
+    match = re.search(r'([0-9.]+)px', value or '')
+    return float(match.group(1)) if match else None
+
+
+def _harmonize_radii(markup: str) -> str:
+    """Концентричні радіуси: зовнішній = внутрішній + падінг.
+
+    Якщо картка має radius 24px і padding 8px, вкладений елемент мусить мати
+    16px - інакше кути «розходяться» і композиція виглядає зібраною нашвидкуруч.
+    Моделі ставлять радіуси на око (звідси однакові 16 всередині 16), тож
+    рахуємо механічно для КОЖНОГО стилю: inner = outer - padding, мінімум 4px.
+    Зачіпаємо лише прямих дітей із власним border-radius; елементи без радіуса
+    не отримують його примусово.
+    """
+    soup = BeautifulSoup(markup or '', 'html.parser')
+    changed = False
+    for outer in soup.find_all(style=True):
+        style = outer.get('style') or ''
+        outer_radius = _RADIUS_RE.search(style)
+        padding = _PADDING_RE.search(style)
+        if not outer_radius or not padding:
+            continue
+        outer_value = float(outer_radius.group(1))
+        pad = _first_px(padding.group(1))
+        if pad is None or pad <= 0 or outer_value < 8:
+            continue
+        inner_value = max(4.0, round(outer_value - pad))
+        for child in outer.find_all(recursive=False):
+            child_style = child.get('style') or ''
+            child_radius = _RADIUS_RE.search(child_style)
+            if not child_radius:
+                continue
+            if abs(float(child_radius.group(1)) - inner_value) < 1:
+                continue
+            child['style'] = _RADIUS_RE.sub(f'border-radius:{inner_value:g}px', child_style, count=1)
+            changed = True
+    return str(soup) if changed else markup
+
+
 def _fit_photo_cards(markup: str, variant: str = 'mobile') -> str:
     """Фото має заповнювати картку, а не плавати в ній.
 
@@ -2026,6 +2070,7 @@ HTML:
         if variant == 'mobile':
             output = _fit_mobile_hero(output, hero)
         output = _fit_photo_cards(output, variant)
+        output = _harmonize_radii(output)
         prompt_text = style.prompt or ''
         if _PODIUM_SCROLL_MARKER in prompt_text:
             output = _apply_podium_scroll(output, hero, rotation or [])
