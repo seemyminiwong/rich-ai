@@ -1698,16 +1698,25 @@ def _shrink_pills(markup: str) -> str:
     for node in soup.find_all(['div', 'p', 'span']):
         style = node.get('style') or ''
         low = style.lower()
-        if 'border-radius' not in low or 'border' not in low.replace('border-radius', ''):
+        flat = low.replace(' ', '')
+        if 'border-radius' not in low:
             continue
-        if re.search(r'(?:^|;)\s*(?:max-|min-)?width\s*:', low) or 'display:inline' in low.replace(' ', '') or 'fit-content' in low:
+        if 'border' not in low.replace('border-radius', '') and 'background' not in low:
             continue
-        if node.find(True) is not None:
+        if re.search(r'(?:^|;)\s*(?:max-|min-)?width\s*:', low) or 'fit-content' in low:
+            continue
+        # Картки показників (велике число + підпис) мають кілька дітей - не чіпаємо.
+        children = node.find_all(True, recursive=False)
+        if len(children) > 1 or any(c.name not in ('span', 'b', 'strong', 'em', 'i', 'small') for c in children):
+            continue
+        if node.find('img') is not None:
             continue
         text = node.get_text(strip=True)
         if not text or len(text) > 40:
             continue
-        node['style'] = style.rstrip().rstrip(';') + ';display:inline-block;width:fit-content'
+        cleaned = _RADIUS_RE.sub('border-radius:999px', style, count=1)
+        cleaned = re.sub(r'display\s*:[^;]+;?', '', cleaned, flags=re.I).rstrip().rstrip(';')
+        node['style'] = cleaned + ';display:inline-block;width:fit-content'
         changed = True
     return str(soup) if changed else markup
 
@@ -1856,22 +1865,49 @@ def _deterministic_html(product, style, language, variant, hero, feature):
 </section>'''
 
 
-def _round_image_corners(html: str) -> str:
-    """Every content <img> gets rounded corners unless it already has them.
+_DEFAULT_IMAGE_RADIUS = 16
 
-    A square photo inside a 12-28px-radius card reads as unfinished; models add
-    the radius inconsistently. Positioned hero images are skipped - their wrapper
-    clips them - and existing border-radius values are respected.
+
+def _round_image_corners(html: str) -> str:
+    """ЄДИНИЙ радіус для всіх фото сторінки, а не «як вийде».
+
+    Раніше радіус ставився лише тим зображенням, у яких його не було, тож на
+    одній сторінці сусідили квадратне фото галереї і скруглена сцена. Тепер
+    радіус нав'язується КОЖНОМУ контентному фото і рахується від контейнера:
+      - картка з радіусом і падінгом -> концентрично (radius - padding);
+      - картка з радіусом без падінга -> фото повторює радіус картки, а картці
+        додається overflow:hidden, щоб кути справді збігались;
+      - поза карткою -> спільний дефолт 16px.
+    Абсолютно позиційовані шари Hero пропускаємо: їх ріже обгортка.
     """
     soup = BeautifulSoup(html or '', 'html.parser')
-    changed = 0
+    changed = False
     for img in soup.find_all('img'):
         style = img.get('style') or ''
-        flat = style.replace(' ', '').lower()
-        if 'border-radius' in flat or 'position:absolute' in flat:
+        if 'position:absolute' in style.replace(' ', '').lower():
             continue
-        img['style'] = (style.rstrip(';') + ';' if style.strip() else '') + 'border-radius:10px'
-        changed += 1
+        radius = _DEFAULT_IMAGE_RADIUS
+        parent = img.parent
+        parent_style = parent.get('style') or '' if getattr(parent, 'get', None) else ''
+        outer = _RADIUS_RE.search(parent_style)
+        if outer:
+            pad = _PADDING_RE.search(parent_style)
+            pad_value = _first_px(pad.group(1)) if pad else None
+            if pad_value:
+                radius = max(4, round(float(outer.group(1)) - pad_value))
+            else:
+                radius = round(float(outer.group(1)))
+                if 'overflow' not in parent_style.lower():
+                    parent['style'] = parent_style.rstrip().rstrip(';') + ';overflow:hidden'
+                    changed = True
+        current = _RADIUS_RE.search(style)
+        if current and abs(float(current.group(1)) - radius) < 1:
+            continue
+        if current:
+            img['style'] = _RADIUS_RE.sub(f'border-radius:{radius:g}px', style, count=1)
+        else:
+            img['style'] = (style.rstrip(';') + ';' if style.strip() else '') + f'border-radius:{radius:g}px'
+        changed = True
     return str(soup) if changed else html
 
 
