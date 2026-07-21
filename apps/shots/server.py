@@ -43,6 +43,15 @@ def health():
 
 @app.post('/render')
 def render(payload: RenderIn):
+    try:
+        return _render(payload)
+    except HTTPException:
+        raise
+    except Exception as exc:  # причина має доїхати до оператора, а не зникнути в 500
+        raise HTTPException(500, f'{type(exc).__name__}: {exc}'[:500])
+
+
+def _render(payload: RenderIn):
     if len(payload.html) > MAX_HTML:
         raise HTTPException(413, 'HTML більший за 2 МБ')
     from playwright.sync_api import sync_playwright
@@ -66,8 +75,9 @@ def render(payload: RenderIn):
             page.evaluate("() => Promise.all(Array.from(document.images)"
                           ".filter(i => !i.complete).map(i => new Promise(r => {i.onload = i.onerror = r})))")
             page.wait_for_timeout(300)
-            root = page.query_selector('section') or page.query_selector('body')
-            blocks = root.query_selector_all(':scope > *') if root else []
+            # ':scope > *' у Playwright ненадійний, тому звичайні CSS-селектори:
+            # блоки - прямі діти кореневої <section> (або тіла, якщо секції немає).
+            blocks = page.query_selector_all('body > section > *') or page.query_selector_all('body > *')
             with zipfile.ZipFile(stream, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
                 index = 0
                 for node in blocks:
