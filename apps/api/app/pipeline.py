@@ -1553,6 +1553,12 @@ def _harmonize_radii(markup: str) -> str:
             child_radius = _RADIUS_RE.search(child_style)
             if not child_radius:
                 continue
+            # Капсула (пігулка/бейдж) завжди повністю кругла - її радіус НЕ
+            # концентричний до картки. Інакше eyebrow-лейбл усередині панелі з
+            # великим падінгом схлопувався у прямокутник 4px, тоді як такий самий
+            # лейбл у героя лишався капсулою - на сторінці сусідили обидва.
+            if float(child_radius.group(1)) >= 100:
+                continue
             if abs(float(child_radius.group(1)) - inner_value) < 1:
                 continue
             child['style'] = _RADIUS_RE.sub(f'border-radius:{inner_value:g}px', child_style, count=1)
