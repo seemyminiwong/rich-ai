@@ -170,7 +170,7 @@ checks = {
     'discovery only verifies the curated list': 'kept_text = [x for x in text_models if has(x)]' in main,
     'reasoning list derives from chosen models': 'reasoning_models = [x for x in text_models if _is_reasoning_model(x)]' in main,
     'unpriced models are surfaced': "'unpriced'" in main and 'function modelNotes' in web,
-    'ai preview iframes sandboxed without scripts': web.count('sandbox="allow-same-origin"') == 3 and 'allow-scripts' not in web,
+    'ai preview iframes sandboxed without scripts': web.count('sandbox="allow-same-origin"') >= 3 and 'allow-scripts' not in web,
     'index.html is never cached': 'no-store, must-revalidate' in nginx,
     'assets are immutable': 'max-age=31536000, immutable' in nginx,
     'security headers repeated where add_header breaks inheritance': nginx.count('X-Content-Type-Options') == 4,
@@ -204,6 +204,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'style ab/golden/usage counter': "@app.post('/api/styles/{style_id}/ab')" in main and "@app.post('/api/styles/{style_id}/golden')" in main and 'def _golden_example' in pipeline and 'usage_count' in main and 'function runStyleAB' in web and 'function pinGolden' in web and '0008_style_golden' in ' '.join(str(x) for x in (root / 'apps/api/alembic/versions').iterdir()),
     'style tooling: real stats, free dry-run, diff, real-product preview': "@app.get('/api/styles/{style_id}/stats')" in main and "@app.post('/api/styles/dry-run')" in main and 'def build_prompt' in pipeline and 'POST_GENERATION_GUARANTEES' in pipeline and 'function lineDiff' in web and 'function runStyleDryRun' in web and 'style.improve' not in web.split('applyImprove')[0][-1:] and "generated['current']" in main and 'sample_project_id' in main,
     'per-block png export via optional chromium service': (root / 'apps/shots/server.py').exists() and "@app.get('/api/artifacts/{artifact_id}/blocks.zip')" in main and 'shots_enabled' in main and 'downloadBlocks' in web and 'profiles: ["shots"]' in (root / 'docker-compose.yml').read_text(encoding='utf-8') and "query_selector_all(':scope" not in (root / 'apps/shots/server.py').read_text(encoding='utf-8') and 'Сервіс знімків відповів' in main,
     'contact and security policy published': 'yehorshuliak@gmail.com' in (root / 'README.md').read_text(encoding='utf-8') and (root / 'SECURITY.md').exists() and 'yehorshuliak@gmail.com' in (root / 'SECURITY.md').read_text(encoding='utf-8'),

@@ -882,3 +882,19 @@ def test_build_prompt_is_a_free_faithful_dry_run():
     # набір гарантій непорожній і згадує ключові механіки
     joined = ' '.join(POST_GENERATION_GUARANTEES)
     assert 'contain' in joined and 'капсул' in joined
+
+
+def test_golden_example_is_structure_only_and_scrubs_urls():
+    from app.pipeline import _golden_example, build_prompt
+
+    style = SimpleNamespace(prompt='STYLE', hero_prompt='', feature_prompt='', negative_prompt='',
+                            golden_html='<section><img src="/media/secret/hero.webp?t=x"><h2>Еталон 42 Вт</h2></section>')
+    frag = _golden_example(style)
+    assert 'FORMAT EXAMPLE' in frag
+    assert 'imitate ONLY the structure' in frag
+    assert '/media/secret/hero.webp' not in frag and 'PROJECT_IMAGE_URL' in frag
+    # без golden — нічого не додається
+    assert _golden_example(SimpleNamespace(golden_html='')) == ''
+    # build_prompt справді підмішує еталон
+    full = build_prompt({'name': 'X'}, style, 'ua', 'desktop', '', '')
+    assert 'FORMAT EXAMPLE' in full and 'Еталон 42 Вт' in full

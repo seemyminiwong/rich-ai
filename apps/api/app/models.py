@@ -73,6 +73,8 @@ class Style(Base):
     negative_prompt: Mapped[str] = mapped_column(Text, default='')
     score_json: Mapped[str] = mapped_column(Text, default='{}')
     preview_html: Mapped[str] = mapped_column(Text, default='')
+    # Еталон формату (few-shot): якщо заданий, підмішується в промпт як приклад.
+    golden_html: Mapped[str] = mapped_column(Text, default='')
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
 
 

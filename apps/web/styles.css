@@ -347,3 +347,7 @@ tr.urow-active td{background:#E9F8FA}
 .dryrun{margin-top:6px}
 .guarantee-list{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:12.5px;line-height:1.6}
 .preview-canvas.mobile{max-width:480px;margin:0 auto}
+.ab-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:6px}
+.ab-grid>div>b{display:block;margin-bottom:6px;font-size:13px}
+.ab-grid .preview-canvas{max-height:60vh;overflow:auto;border:1px solid var(--border);border-radius:12px}
+@media(max-width:900px){.ab-grid{grid-template-columns:1fr}}
