@@ -1,15 +1,13 @@
-# Самодостатній образ: playwright і Chromium в тому самому середовищі, що й
-# fastapi/uvicorn. Системні залежності ставимо ЯВНО (не через --with-deps, який
-# на slim часом рветься), потім лише сам браузер.
-FROM python:3.12-slim
+# Офіційний образ Playwright на Ubuntu Jammy: Chromium і ВСІ системні залежності
+# (шрифти тощо) вже всередині — на debian-slim install-deps падав на
+# ttf-ubuntu-font-family. Playwright тут лежить у системному python; ставимо
+# fastapi/uvicorn ТИМ САМИМ pip, тож "import playwright" точно бачить пакет.
+FROM mcr.microsoft.com/playwright/python:v1.49.0-jammy
 
 WORKDIR /app
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-browsers
-
-RUN pip install --no-cache-dir \
-        fastapi==0.115.12 uvicorn==0.34.2 pydantic==2.11.7 playwright==1.49.0 \
-    && python -m playwright install-deps chromium \
-    && python -m playwright install chromium
+RUN pip install --no-cache-dir --break-system-packages \
+        fastapi==0.115.12 uvicorn==0.34.2 pydantic==2.11.7 \
+    && python -c "import playwright, fastapi, uvicorn, pydantic; print('imports ok')"
 
 COPY server.py .
 EXPOSE 8080
