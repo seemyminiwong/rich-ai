@@ -264,6 +264,16 @@ app = FastAPI(title='ARTLINE Rich Studio API', version=APP_VERSION, lifespan=lif
 # /media is a verifying endpoint now, not a blind static mount: signed URLs are
 # capabilities, unsigned ones are tolerated only in transitional mode.
 _MEDIA_NAME = re.compile(r'^[A-Za-z0-9._\-]+$')
+# Явний Content-Type за розширенням. Без нього FileResponse кладеться на
+# mimetypes, який часто НЕ знає .webp, і Starlette віддає text/plain. Для тієї ж
+# origin браузеру байдуже, але при кросс-origin вбудовуванні (сервіс знімків,
+# зовнішній редактор) Chromium ріже такий «text/plain як картинку» через ORB
+# (net::ERR_BLOCKED_BY_ORB) - саме так губилися hero/feature на експортних PNG.
+_MEDIA_TYPES = {
+    '.webp': 'image/webp', '.png': 'image/png', '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.svg': 'image/svg+xml',
+    '.avif': 'image/avif', '.bmp': 'image/bmp',
+}
 
 
 @app.get('/media/{project_id}/{filename}')
@@ -279,7 +289,10 @@ def media_file(project_id: str, filename: str, t: str = ''):
     media_root = Path(settings.media_dir).resolve()
     if media_root not in file_path.parents or not file_path.is_file():
         raise HTTPException(404, 'Not found')
-    return FileResponse(file_path)
+    media_type = _MEDIA_TYPES.get(file_path.suffix.lower())
+    # nosniff безпечний лише коли тип правильний: інакше ORB діяв би ще жорсткіше.
+    headers = {'X-Content-Type-Options': 'nosniff'} if media_type else None
+    return FileResponse(file_path, media_type=media_type, headers=headers)
 
 
 class Login(BaseModel): email: str; password: str
