@@ -1633,6 +1633,74 @@ def artifact_blocks_png(artifact_id: str, db: Session = Depends(get_db), user=De
                              headers={'Content-Disposition': f'attachment; filename="{name}-png.zip"'})
 
 
+@app.get('/api/projects/{project_id}/blocks-all.zip')
+def project_blocks_all_png(project_id: str, run: int = 0, db: Session = Depends(get_db), user=Depends(current)):
+    """Усі варіанти (мови × формати) ОДНІЄЇ версії rich-товару - блоки в PNG,
+    одним архівом, кожен варіант у своїй підпапці.
+
+    "Версія" = один прогін (run_index): це узгоджений набір сторінок товару по
+    всіх мовах і форматах. За замовчуванням береться поточний (найновіший)
+    прогін; у межах прогону для кожної пари (мова, формат) - остання версія.
+    Рендерить той самий сервіс `shots`; один невдалий варіант не валить архів -
+    його причина йде в _errors.txt поруч із рештою."""
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, 'Проєкт не знайдено')
+    if not settings.shots_url:
+        raise HTTPException(503, 'Сервіс знімків вимкнено. Увімкніть: docker compose --profile shots up -d shots')
+    artifacts = db.scalars(select(Artifact).where(Artifact.project_id == project.id).order_by(Artifact.version)).all()
+    if not artifacts:
+        raise HTTPException(409, 'У проєкті ще немає готового HTML')
+    target_run = run or max((getattr(a, 'run_index', 1) or 1) for a in artifacts)
+    latest = {}
+    for a in artifacts:
+        if (getattr(a, 'run_index', 1) or 1) != target_run:
+            continue
+        latest[(a.language, a.variant)] = a  # відсортовано за version - останнє перезаписує = найновіше
+    if not latest:
+        raise HTTPException(404, f'Немає сторінок для цієї версії (прогін {target_run})')
+    check_action(user.id, 'blocks_png_all', 12)
+    import httpx
+    combined = io.BytesIO()
+    failures = []
+    with zipfile.ZipFile(combined, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as out:
+        with httpx.Client(timeout=300) as http:
+            for (language, variant), artifact in sorted(latest.items()):
+                width = 480 if variant == 'mobile' else 1240
+                try:
+                    reply = http.post(settings.shots_url.rstrip('/') + '/render',
+                                      json={'html': artifact.html, 'width': width})
+                except Exception:
+                    logger.exception('Blocks(all) render failed for %s/%s', language, variant)
+                    failures.append(f'{language}-{variant}: сервіс знімків недоступний')
+                    continue
+                if reply.status_code != 200:
+                    detail = ''
+                    try:
+                        detail = (reply.json() or {}).get('detail') or ''
+                    except Exception:
+                        detail = reply.text[:200]
+                    failures.append(f'{language}-{variant}: {reply.status_code} {detail}'[:200])
+                    continue
+                folder = _archive_name(f'{language}-{variant}-v{artifact.version}', 'variant')
+                try:
+                    sub = zipfile.ZipFile(io.BytesIO(reply.content))
+                    for entry in sub.namelist():
+                        out.writestr(f'{folder}/{entry}', sub.read(entry))
+                except Exception:
+                    failures.append(f'{language}-{variant}: пошкоджений архів знімків')
+        if failures:
+            out.writestr('_errors.txt', 'Варіанти, які не відрендерились:\n' + '\n'.join(failures))
+    if len(failures) >= len(latest):
+        raise HTTPException(502, 'Жоден варіант не відрендерився. ' + '; '.join(failures)[:300])
+    audit(db, user, 'project.blocks_png_all', 'project', project.id,
+          {'run': target_run, 'variants': len(latest), 'failed': len(failures)}); db.commit()
+    combined.seek(0)
+    name = _archive_name(f'{project.name}-v{target_run}-all', 'blocks')
+    return StreamingResponse(combined, media_type='application/zip',
+                             headers={'Content-Disposition': f'attachment; filename="{name}-png.zip"'})
+
+
 @app.put('/api/artifacts/{artifact_id}')
 def save_artifact(artifact_id: str, payload: HtmlIn, db: Session = Depends(get_db), user=Depends(require_perm('project.edit_html'))):
     source = db.get(Artifact, artifact_id)
