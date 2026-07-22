@@ -1827,6 +1827,24 @@ def _gallery_line(style, gallery) -> str:
     return '\nGALLERY_IMAGES (real photos of this exact product from its page, already verified; use them as detail/interior frames): ' + json.dumps(gallery, ensure_ascii=False)
 
 
+# Механічні гарантії, що застосовуються ПІСЛЯ моделі (для dry-run у редакторі стилів).
+POST_GENERATION_GUARANTEES = [
+    'Кожен <img> звіряється з білим списком реальних зображень; вигадані URL замінюються або видаляються.',
+    'Втрачені Hero/Feature URL відновлюються механічно.',
+    'Реальні фото товару ніколи не обрізаються (object-fit:contain) і отримують рамку зі скругленням.',
+    'Згенеровані сцени вписуються cover; фото-картки мають спільні пропорції (десктоп 3:2, мобайл 4:3).',
+    'Єдиний радіус усім фото; вкладені радіуси концентричні (зовнішній − падінг).',
+    'Короткі лейбли стають однаковими капсулами; багатоколонкові ряди переносяться на вузьких екранах.',
+    'Мобільний Hero масштабується по ширині від верхнього краю (товар не ріжеться, без пустого низу).',
+    'Санітизація вирізає script/on*/зовнішній CSS; мова сторінки перевіряється, неповні сторінки відхиляються.',
+]
+
+
+def build_prompt(product, style, language='ua', variant='desktop', hero='', feature='', gallery=None):
+    """Публічна обгортка _prompt для dry-run: точний текст, що піде в модель."""
+    return _prompt(product, style, language, variant, hero, feature, gallery)
+
+
 def _prompt(product, style, language, variant, hero, feature, gallery=None):
     layout = 'single-column mobile layout with no horizontal overflow' if variant == 'mobile' else 'desktop layout up to 1240px'
     target_language_rule = language_rule(language)
