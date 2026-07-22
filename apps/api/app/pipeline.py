@@ -1845,6 +1845,23 @@ def build_prompt(product, style, language='ua', variant='desktop', hero='', feat
     return _prompt(product, style, language, variant, hero, feature, gallery)
 
 
+def _golden_example(style) -> str:
+    """Few-shot еталон: показати моделі приклад ІДЕАЛЬНОГО ВИВОДУ цього стилю.
+
+    Формат моделі тримають набагато краще, коли бачать приклад, а не лише опис.
+    Береться лише СТРУКТУРА (реальні числа й тексти прикладу не стосуються нового
+    товару), тому чітко кажемо: наслідуй верстку і ритм, а не зміст. URL зображень
+    із прикладу вирізаємо, щоб модель не скопіювала чужі картинки.
+    """
+    golden = (getattr(style, 'golden_html', None) or '').strip()
+    if not golden:
+        return ''
+    golden = re.sub(r'\s(?:src|href)="[^"]*"', ' src="PROJECT_IMAGE_URL"', golden)[:12000]
+    return ('\n\nFORMAT EXAMPLE (imitate ONLY the structure, layout rhythm, section '
+            'order and CSS patterns - NEVER copy its numbers, product names or text; '
+            'those must come from Product JSON for the NEW product):\n' + golden)
+
+
 def _prompt(product, style, language, variant, hero, feature, gallery=None):
     layout = 'single-column mobile layout with no horizontal overflow' if variant == 'mobile' else 'desktop layout up to 1240px'
     target_language_rule = language_rule(language)
@@ -1857,7 +1874,7 @@ Embedding rule: the rich content is displayed on a light ARTLINE product page. K
 Mandatory visual guardrails: use #101010 for headings and #555555 or #69737D for paragraphs on light surfaces; use #FFFFFF or #F7F8FA for headings and #D0D7DE or #AFB8C1 for paragraphs on dark surfaces. Use #19BCC9 only for compact badges, eyebrow labels, small specification values and subtle borders. Never use turquoise, green, blue, purple or orange for paragraphs or multi-line headings. At least 70 percent of the content area must remain light or transparent. Use 12px radii for sections and cards and 8px for badges. Do not use decorative colored strips, alternating card colors, checkerboard layouts, excessive gradients or repeated heavy shadows.
 The style prompt below is the primary design specification. Follow it precisely unless it conflicts with factual accuracy or HTML validity.
 STYLE PROMPT:
-{strip_image_blocks(style.prompt)}
+{strip_image_blocks(style.prompt)}{_golden_example(style)}
 Mandatory factual rule: use only facts present in Product JSON. Never invent warranty, partnership, certification, compatibility, performance, contents or support claims.
 Images: hero={hero}; feature={feature}.{_gallery_line(style, gallery)}
 Product JSON: {json.dumps(product, ensure_ascii=False)}"""

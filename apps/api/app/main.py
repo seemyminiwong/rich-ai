@@ -337,6 +337,7 @@ class StyleIn(BaseModel):
     negative_prompt: str = ''
     score: dict = Field(default_factory=dict)
     preview_html: str = ''
+    golden_html: str = ''
     is_default: bool = False
 class StyleGenerateIn(BaseModel):
     name: str = 'Новий стиль'
@@ -443,7 +444,7 @@ def user_dict(x):
             'permissions': sorted(effective_perms(x)),
             'granted': sorted(overrides.get('grant') or []), 'revoked': sorted(overrides.get('revoke') or []),
             'created_at': x.created_at, 'last_login_at': x.last_login_at}
-def style_dict(x): return {'id': x.id, 'name': x.name, 'description': x.description, 'prompt': x.prompt, 'hero_prompt': x.hero_prompt, 'feature_prompt': x.feature_prompt, 'negative_prompt': x.negative_prompt, 'score': json.loads(x.score_json or '{}'), 'preview_html': x.preview_html, 'is_default': x.is_default}
+def style_dict(x, usage=None): return {'id': x.id, 'name': x.name, 'description': x.description, 'prompt': x.prompt, 'hero_prompt': x.hero_prompt, 'feature_prompt': x.feature_prompt, 'negative_prompt': x.negative_prompt, 'score': json.loads(x.score_json or '{}'), 'preview_html': x.preview_html, 'golden_html': getattr(x, 'golden_html', '') or '', 'has_golden': bool((getattr(x, 'golden_html', '') or '').strip()), 'is_default': x.is_default, 'usage_count': usage if usage is not None else None}
 def artifact_dict(x): return {'id': x.id, 'language': x.language, 'variant': x.variant, 'html': x.html, 'version': x.version, 'created_at': x.created_at, 'fallback_reason': getattr(x, 'fallback_reason', '') or '', 'run_index': getattr(x, 'run_index', 1) or 1}
 def project_dict(p, full=False, style_name=''):
     try:
@@ -750,7 +751,9 @@ def delete_user(user_id: str, db: Session = Depends(get_db), user=Depends(requir
 
 
 @app.get('/api/styles')
-def styles(db: Session = Depends(get_db), user=Depends(current)): return [style_dict(x) for x in db.scalars(select(Style).order_by(Style.name)).all()]
+def styles(db: Session = Depends(get_db), user=Depends(current)):
+    counts = dict(db.execute(select(Project.style_id, func.count(Project.id)).group_by(Project.style_id)).all())
+    return [style_dict(x, usage=int(counts.get(x.id, 0))) for x in db.scalars(select(Style).order_by(Style.name)).all()]
 
 
 @app.post('/api/styles')
@@ -888,6 +891,7 @@ def style_stats(style_id: str, db: Session = Depends(get_db), user=Depends(requi
     llm_scores = [r.score for r in db.scalars(select(CriticReport).where(
         CriticReport.project_id.in_(ids), CriticReport.critic_type == 'llm')).all()] if ids else []
     return {
+        'usage_count': len(projects),
         'projects': len(projects),
         'finished': len(finished),
         'reviewed': len(reviewed),
@@ -937,6 +941,68 @@ def style_sample_products(db: Session = Depends(get_db), user=Depends(require_pe
             continue
         out.append({'id': p.id, 'name': p.name})
     return out
+
+
+@app.post('/api/styles/{style_id}/golden')
+def style_set_golden(style_id: str, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
+    """Закріпити ПОТОЧНИЙ AI-приклад стилю як еталон формату (few-shot).
+
+    Далі кожна генерація цим стилем бачить приклад ідеального виводу - модель
+    краще тримає структуру. Кнопка «прибрати» очищає поле."""
+    s = db.get(Style, style_id)
+    if not s: raise HTTPException(404, 'Стиль не знайдено')
+    if not (s.preview_html or '').strip():
+        raise HTTPException(409, 'Спершу згенеруйте AI-приклад — саме він стає еталоном')
+    s.golden_html = s.preview_html
+    audit(db, user, 'style.golden_set', 'style', s.id); db.commit()
+    return {'has_golden': True}
+
+
+@app.delete('/api/styles/{style_id}/golden')
+def style_clear_golden(style_id: str, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
+    s = db.get(Style, style_id)
+    if not s: raise HTTPException(404, 'Стиль не знайдено')
+    s.golden_html = ''
+    audit(db, user, 'style.golden_clear', 'style', s.id); db.commit()
+    return {'has_golden': False}
+
+
+class StyleABIn(BaseModel):
+    prompt_a: str
+    prompt_b: str
+    variant: str = 'desktop'
+    sample_project_id: str = ''
+
+
+@app.post('/api/styles/{style_id}/ab')
+def style_ab(style_id: str, payload: StyleABIn, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
+    """A/B: два промпти на ОДНОМУ товарі, поруч. Два платні прогони - тому
+    подвійний бюджет-чек. Картинки не генеруються (порожні URL) - порівнюємо
+    саме текст і верстку."""
+    from types import SimpleNamespace
+    from app.pipeline import generate_html
+    s = db.get(Style, style_id)
+    if not s: raise HTTPException(404, 'Стиль не знайдено')
+    check_action(user.id, 'style_ab', 3); check_budget(); check_user_budget(user)
+    variant = payload.variant if payload.variant in ('desktop', 'mobile') else 'desktop'
+    product, sample = dict(DEMO_PRODUCT), ''
+    if payload.sample_project_id:
+        proj = db.get(Project, payload.sample_project_id)
+        if proj and proj.product_json:
+            try:
+                product = json.loads(proj.product_json) or product
+                sample = proj.name
+            except Exception:
+                pass
+    golden = getattr(s, 'golden_html', '')
+    def run(prompt_text):
+        ns = SimpleNamespace(prompt=prompt_text, hero_prompt=s.hero_prompt, feature_prompt=s.feature_prompt,
+                             negative_prompt=s.negative_prompt, golden_html=golden)
+        html, _i, _o, reason = generate_html(product, ns, 'ua', variant, '', '', settings.openai_text_model)
+        return {'html': sanitize_html(html), 'fallback': bool(reason), 'reason': reason or ''}
+    result = {'a': run(payload.prompt_a), 'b': run(payload.prompt_b), 'sample_name': sample, 'variant': variant}
+    audit(db, user, 'style.ab', 'style', s.id, {'sample': sample, 'variant': variant}); db.commit()
+    return result
 
 
 @app.post('/api/styles/analyze')
