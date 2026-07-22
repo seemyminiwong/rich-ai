@@ -1,12 +1,15 @@
-# Самодостатній образ: playwright і Chromium ставимо В ТЕ САМЕ середовище,
-# що й fastapi/uvicorn. Раніше базовий образ Microsoft тримав playwright в
-# окремому venv, тож "import playwright" падав ModuleNotFoundError.
+# Самодостатній образ: playwright і Chromium в тому самому середовищі, що й
+# fastapi/uvicorn. Системні залежності ставимо ЯВНО (не через --with-deps, який
+# на slim часом рветься), потім лише сам браузер.
 FROM python:3.12-slim
 
 WORKDIR /app
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-browsers
+
 RUN pip install --no-cache-dir \
         fastapi==0.115.12 uvicorn==0.34.2 pydantic==2.11.7 playwright==1.49.0 \
-    && playwright install --with-deps chromium
+    && python -m playwright install-deps chromium \
+    && python -m playwright install chromium
 
 COPY server.py .
 EXPOSE 8080
