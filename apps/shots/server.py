@@ -69,6 +69,12 @@ def _render(payload: RenderIn):
         try:
             page = browser.new_page(viewport={'width': payload.width, 'height': 1200},
                                     device_scale_factor=payload.scale)
+            # Діагностика: чому саме гине Hero. Ловимо КОЖНУ невдалу мережеву
+            # відповідь (403 на підпис, DNS, таймаут) - потім кладемо у ZIP
+            # окремим _diagnostics.txt, щоб не гадати по чорному прямокутнику.
+            net_log = []
+            page.on('requestfailed', lambda r: net_log.append(f'FAIL  {r.method} {r.url}  :: {r.failure}'))
+            page.on('response', lambda r: net_log.append(f'{r.status}  {r.url}') if r.status >= 400 else None)
             # networkidle сумнозвісно зависає (30 с) на будь-якому повільному
             # запиті і валить рендер у 500. Чекаємо лише DOM, а картинки -
             # окремо, з ЖОРСТКИМ лімітом: краще знімок без пари фото, ніж таймаут.
@@ -109,11 +115,26 @@ def _render(payload: RenderIn):
             # збігається з повною сторінкою: рознобою "у повному є, у блоці нема"
             # більше не існує в принципі.
             from PIL import Image as PILImage
+            # Звіт по кожній картинці: URL, який реально тягнувся, і чи декодувалась.
+            try:
+                img_report = page.evaluate(
+                    "() => Array.from(document.images).map((i,n) => "
+                    "(n+1)+'. w='+i.naturalWidth+' complete='+i.complete+'  '"
+                    "+(i.currentSrc||i.src))")
+            except Exception as exc:
+                img_report = [f'(img report failed: {exc})']
+            diagnostics = (
+                f'base_url={BASE_URL}\nviewport_width={payload.width} scale={payload.scale}\n\n'
+                '== IMAGES (naturalWidth=0 => НЕ завантажилась) ==\n'
+                + '\n'.join(img_report)
+                + '\n\n== NETWORK ERRORS (порожньо = всі відповіді <400) ==\n'
+                + ('\n'.join(net_log) if net_log else '(немає)'))
             full_png = page.screenshot(type='png', full_page=True, timeout=25000)
             scale = payload.scale
             blocks = page.query_selector_all('body > section > *') or page.query_selector_all('body > *')
             with zipfile.ZipFile(stream, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
                 archive.writestr('00-full-page.png', full_png)
+                archive.writestr('_diagnostics.txt', diagnostics)
                 full_img = PILImage.open(io.BytesIO(full_png))
                 index = 0
                 for node in blocks:
