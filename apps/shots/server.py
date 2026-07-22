@@ -74,15 +74,21 @@ def _render(payload: RenderIn):
             # окремо, з ЖОРСТКИМ лімітом: краще знімок без пари фото, ніж таймаут.
             page.set_default_timeout(20000)
             page.set_content(document, wait_until='domcontentloaded')
+            # Чекаємо, доки КОЖНА картинка справді ДЕКОДОВАНА (naturalWidth>0),
+            # а не просто "onload": інакше найважче фото (Hero) не встигає, і його
+            # блок знімається порожнім, тоді як повний знімок пізніше вже з фото -
+            # саме той рознобій і губив Hero. Фонові url() довантажуємо окремо.
             try:
-                # Чекаємо і <img>, і CSS background-image (Hero тягне фото саме
-                # фоном) — інакше знімок ловить блок ще до появи картинки й вона
-                # губиться. Усе під ЖОРСТКИМ лімітом 8 с: краще без пари фото.
+                page.wait_for_function(
+                    "() => Array.from(document.images)"
+                    ".every(i => i.complete && i.naturalWidth > 0)",
+                    timeout=12000)
+            except Exception:
+                pass
+            try:
                 page.evaluate(
                     "() => {"
-                    "const p = Array.from(document.images).filter(i=>!i.complete)"
-                    ".map(i=>new Promise(r=>{i.onload=i.onerror=r}));"
-                    "const re = /url\\((['\\\"]?)(.*?)\\1\\)/g;"
+                    "const re = /url\\((['\\\"]?)(.*?)\\1\\)/g; const p = [];"
                     "for (const el of document.querySelectorAll('*')) {"
                     "const v = getComputedStyle(el).backgroundImage;"
                     "if (!v || v === 'none') continue;"
@@ -96,15 +102,37 @@ def _render(payload: RenderIn):
             except Exception:
                 pass
             page.wait_for_timeout(400)
+            page.evaluate("() => window.scrollTo(0, 0)")
+
+            # Один повний знімок сторінки - джерело істини; блоки ВИРІЗАЄМО з нього
+            # за геометрією getBoundingClientRect. Так кожен блок піксель-у-пік
+            # збігається з повною сторінкою: рознобою "у повному є, у блоці нема"
+            # більше не існує в принципі.
+            from PIL import Image as PILImage
+            full_png = page.screenshot(type='png', full_page=True, timeout=25000)
+            scale = payload.scale
             blocks = page.query_selector_all('body > section > *') or page.query_selector_all('body > *')
             with zipfile.ZipFile(stream, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+                archive.writestr('00-full-page.png', full_png)
+                full_img = PILImage.open(io.BytesIO(full_png))
                 index = 0
                 for node in blocks:
                     try:
-                        box = node.bounding_box()
-                        if not box or box['height'] < 40 or box['width'] < 120:
+                        rect = node.evaluate(
+                            "el => {const r = el.getBoundingClientRect();"
+                            "return {x:r.x, y:r.y, w:r.width, h:r.height};}")
+                        if not rect or rect['h'] < 40 or rect['w'] < 120:
                             continue
-                        shot = node.screenshot(type='png', timeout=15000)
+                        left = max(0, round(rect['x'] * scale))
+                        top = max(0, round(rect['y'] * scale))
+                        right = min(full_img.width, round((rect['x'] + rect['w']) * scale))
+                        bottom = min(full_img.height, round((rect['y'] + rect['h']) * scale))
+                        if right - left < 2 or bottom - top < 2:
+                            continue
+                        crop = full_img.crop((left, top, right, bottom))
+                        buf = io.BytesIO()
+                        crop.save(buf, format='PNG')
+                        shot = buf.getvalue()
                     except Exception:
                         continue  # один проблемний блок не має валити весь ZIP
                     index += 1
@@ -113,10 +141,6 @@ def _render(payload: RenderIn):
                     if heading:
                         title = (heading.inner_text() or '').strip().split('\n')[0]
                     archive.writestr(f'{index:02d}-{_slug(title, "block")}.png', shot)
-                try:
-                    archive.writestr('00-full-page.png', page.screenshot(type='png', full_page=True, timeout=20000))
-                except Exception:
-                    pass
                 if not index:
                     raise HTTPException(422, 'У HTML не знайдено жодного блока для знімка')
         finally:
