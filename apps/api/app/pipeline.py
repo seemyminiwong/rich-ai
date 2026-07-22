@@ -1596,8 +1596,15 @@ def _frame_contained_photos(markup: str) -> str:
                 changed = True
             continue
         frame = soup.new_tag('div')
+        # Рамка мусить ЗАПОВНИТИ слот. Якщо у фото height:100% (типово для карток
+        # «трійки можливостей»), а обгортка без розміру - height нема від чого
+        # відлічити, фото розгортається в натуральний розмір і ВИПАДАЄ зі свого
+        # слота, перекриваючи заголовок і сусідні картки. Тому за наявності
+        # висоти у фото рамка тягнеться на 100% висоти слота.
+        fills = ('height:100%' in flat) or bool(re.search(r'height:\d', flat))
+        size = 'width:100%;height:100%;max-height:100%' if fills else 'width:100%'
         frame['style'] = (f'border-radius:{_DEFAULT_IMAGE_RADIUS}px;overflow:hidden;background:#FFFFFF;'
-                          'display:block;box-sizing:border-box')
+                          f'display:flex;align-items:center;justify-content:center;box-sizing:border-box;{size}')
         img.replace_with(frame)
         frame.append(img)
         if 'width:100%' not in flat:
