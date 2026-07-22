@@ -952,8 +952,38 @@ def style_sample_products(db: Session = Depends(get_db), user=Depends(require_pe
     for p in rows:
         if not p.product_json:
             continue
-        out.append({'id': p.id, 'name': p.name})
+        # style_id дає фронту згрупувати: товари ЦЬОГО стилю мають справжній
+        # прогін (його можна показати без витрат), решта - лише дані для превʼю.
+        out.append({'id': p.id, 'name': p.name, 'style_id': p.style_id})
     return out
+
+
+@app.get('/api/styles/{style_id}/real-example')
+def style_real_example(style_id: str, project_id: str, variant: str = 'desktop',
+                       db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
+    """Справжня згенерована сторінка проєкту цього стилю - БЕЗ витрат.
+
+    Коли товар уже проходив саме цей стиль, немає сенсу платити за новий приклад:
+    показуємо реальну останню видачу. Якщо проєкт зроблено іншим стилем -
+    відмовляємо, щоб превʼю не брехало про стиль."""
+    s = db.get(Style, style_id)
+    if not s:
+        raise HTTPException(404, 'Стиль не знайдено')
+    p = db.get(Project, project_id)
+    if not p:
+        raise HTTPException(404, 'Проєкт не знайдено')
+    if p.style_id != style_id:
+        raise HTTPException(400, 'Цей проєкт зроблено іншим стилем - справжнього прогону цього стилю в нього немає')
+    variant = variant if variant in ('desktop', 'mobile') else 'desktop'
+    arts = db.scalars(select(Artifact).where(Artifact.project_id == p.id).order_by(Artifact.version)).all()
+    if not arts:
+        raise HTTPException(409, 'У проєкті ще немає готового HTML')
+    pool = [a for a in arts if a.variant == variant] or arts
+    ua = [a for a in pool if a.language == 'ua']
+    art = max(ua or pool, key=lambda a: (getattr(a, 'run_index', 1) or 1, a.version))
+    return {'html': art.html, 'source': 'real', 'sample_name': p.name,
+            'variant': art.variant, 'language': art.language,
+            'run_index': getattr(art, 'run_index', 1) or 1, 'version': art.version}
 
 
 @app.post('/api/styles/{style_id}/golden')
