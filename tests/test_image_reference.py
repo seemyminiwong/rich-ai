@@ -863,3 +863,22 @@ def test_labels_share_one_radius_even_with_their_own_width():
     # власну ширину не перебиваємо
     assert 'width:fit-content' in out
     assert _shrink_pills(out) == out, 'повторне застосування - no-op'
+
+
+def test_build_prompt_is_a_free_faithful_dry_run():
+    from app.pipeline import build_prompt, POST_GENERATION_GUARANTEES, strip_image_blocks
+
+    style = SimpleNamespace(prompt='MY STYLE CONTRACT\n[HERO_IMAGE]secret art[/HERO_IMAGE]',
+                            hero_prompt='', feature_prompt='', negative_prompt='')
+    product = {'name': 'Тест X1', 'brand': 'Тест'}
+    text = build_prompt(product, style, 'ua', 'mobile', '/media/p/hero.webp', '/media/p/feature.webp')
+    # усе, що модель реально бачить
+    assert 'MY STYLE CONTRACT' in text
+    assert 'Тест X1' in text and 'TARGET LANGUAGE CODE: ua' in text
+    assert 'single-column mobile layout' in text
+    assert '/media/p/hero.webp' in text and '/media/p/feature.webp' in text
+    # image art-direction blocks не йдуть у текстовий виклик
+    assert 'secret art' not in text
+    # набір гарантій непорожній і згадує ключові механіки
+    joined = ' '.join(POST_GENERATION_GUARANTEES)
+    assert 'contain' in joined and 'капсул' in joined

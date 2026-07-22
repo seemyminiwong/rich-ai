@@ -346,6 +346,16 @@ class StyleGenerateIn(BaseModel):
 class StyleImproveIn(BaseModel):
     instructions: str = ''
     model: str | None = None
+class StylePreviewIn(BaseModel):
+    sample_project_id: str = ''
+    variant: str = 'desktop'
+class StyleDryRunIn(BaseModel):
+    prompt: str = ''
+    hero_prompt: str = ''
+    feature_prompt: str = ''
+    negative_prompt: str = ''
+    variant: str = 'desktop'
+    sample_project_id: str = ''
 class StyleAnalyzeIn(BaseModel):
     prompt: str = ''
     hero_prompt: str = ''
@@ -817,25 +827,116 @@ def style_preview(style_id: str, db: Session = Depends(get_db), user=Depends(cur
 
 
 @app.post('/api/styles/{style_id}/preview')
-def style_preview_generate(style_id: str, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
+def style_preview_generate(style_id: str, payload: StylePreviewIn | None = None, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
     check_action(user.id, 'style_ai', 4); check_budget(); check_user_budget(user)
-    """Generate a real AI example page for this style from the demo product and save it."""
+    """Real AI example for this style. On a chosen finished project's data if
+    given (representative), else the fixed demo product."""
     from types import SimpleNamespace
     from app.pipeline import generate_html
     s = db.get(Style, style_id)
     if not s: raise HTTPException(404, 'Стиль не знайдено')
+    payload = payload or StylePreviewIn()
+    variant = payload.variant if payload.variant in ('desktop', 'mobile') else 'desktop'
+    product, sample = dict(DEMO_PRODUCT), ''
+    if payload.sample_project_id:
+        proj = db.get(Project, payload.sample_project_id)
+        if proj and proj.product_json:
+            try:
+                product = json.loads(proj.product_json) or product
+                sample = proj.name
+            except Exception:
+                pass
     style_ns = SimpleNamespace(prompt=s.prompt, hero_prompt=s.hero_prompt, feature_prompt=s.feature_prompt, negative_prompt=s.negative_prompt)
-    html, _i, _o, reason = generate_html(DEMO_PRODUCT, style_ns, 'ua', 'desktop', '', '', settings.openai_text_model)
+    html, _i, _o, reason = generate_html(product, style_ns, 'ua', variant, '', '', settings.openai_text_model)
     s.preview_html = sanitize_html(html)
-    audit(db, user, 'style.preview', 'style', s.id, {'ai': not reason})
+    audit(db, user, 'style.preview', 'style', s.id, {'ai': not reason, 'sample': sample, 'variant': variant})
     db.commit()
-    return {'html': s.preview_html, 'source': 'demo' if reason else 'generated', 'note': reason or ''}
+    return {'html': s.preview_html, 'source': 'demo' if reason else 'generated', 'note': reason or '', 'sample_name': sample, 'variant': variant}
 
 
 @app.get('/api/styles/{style_id}/versions')
 def style_versions(style_id: str, db: Session = Depends(get_db), user=Depends(current)):
     rows = db.scalars(select(StyleVersion).where(StyleVersion.style_id == style_id).order_by(StyleVersion.version.desc())).all()
     return [{'id': x.id, 'version': x.version, 'prompt': x.prompt, 'hero_prompt': x.hero_prompt, 'feature_prompt': x.feature_prompt, 'created_at': x.created_at} for x in rows]
+
+
+@app.get('/api/styles/{style_id}/stats')
+def style_stats(style_id: str, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
+    """Реальна якість стилю з даних, а не лінт промпта.
+
+    Все рахується з проєктів цього стилю: скільки зроблено, скільки на рев'ю
+    схвалено, як часто правлять HTML руками, як часто спрацьовує аварійний
+    шаблон, і середня оцінка платного AI-рецензента. Це замінює вигаданий скор
+    на цикл зворотного звʼязку «поправив промпт -> побачив, чи виріс approve».
+    """
+    style = db.get(Style, style_id)
+    if not style: raise HTTPException(404, 'Стиль не знайдено')
+    projects = db.scalars(select(Project).where(Project.style_id == style_id)).all()
+    ids = [p.id for p in projects]
+    finished = [p for p in projects if p.status in (Status.review, Status.approved, Status.done, Status.changes_requested)]
+    decisions = defaultdict(set)
+    if ids:
+        for r in db.scalars(select(Review).where(Review.project_id.in_(ids))).all():
+            decisions[r.project_id].add(r.decision)
+    reviewed = [p for p in projects if decisions.get(p.id)]
+    approved = [p for p in reviewed if 'approve' in decisions[p.id]]
+    manual_edits = (db.scalar(select(func.count(Artifact.id)).where(
+        Artifact.version > 1, Artifact.created_by.isnot(None), Artifact.project_id.in_(ids))) or 0) if ids else 0
+    fallback_hits = (db.scalar(select(func.count(Artifact.id)).where(
+        Artifact.fallback_reason != '', Artifact.project_id.in_(ids))) or 0) if ids else 0
+    total_artifacts = (db.scalar(select(func.count(Artifact.id)).where(Artifact.project_id.in_(ids))) or 0) if ids else 0
+    llm_scores = [r.score for r in db.scalars(select(CriticReport).where(
+        CriticReport.project_id.in_(ids), CriticReport.critic_type == 'llm')).all()] if ids else []
+    return {
+        'projects': len(projects),
+        'finished': len(finished),
+        'reviewed': len(reviewed),
+        'approved': len(approved),
+        'approve_rate': round(len(approved) / len(reviewed) * 100) if reviewed else None,
+        'manual_edits': manual_edits,
+        'fallback_hits': fallback_hits,
+        'fallback_rate': round(fallback_hits / total_artifacts * 100) if total_artifacts else 0,
+        'llm_avg': round(sum(llm_scores) / len(llm_scores)) if llm_scores else None,
+        'llm_reviews': len(llm_scores),
+    }
+
+
+@app.post('/api/styles/dry-run')
+def style_dry_run(payload: StyleDryRunIn, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
+    """Точний текст, що піде в модель - БЕЗ платного виклику. Плюс перелік
+    механічних гарантій, які застосуються після генерації."""
+    from types import SimpleNamespace
+    from app.pipeline import build_prompt, POST_GENERATION_GUARANTEES
+    product = dict(DEMO_PRODUCT)
+    sample = ''
+    if payload.sample_project_id:
+        proj = db.get(Project, payload.sample_project_id)
+        if proj and proj.product_json:
+            try:
+                product = json.loads(proj.product_json) or product
+                sample = proj.name
+            except Exception:
+                pass
+    variant = payload.variant if payload.variant in ('desktop', 'mobile') else 'desktop'
+    style_ns = SimpleNamespace(prompt=payload.prompt, hero_prompt=payload.hero_prompt,
+                               feature_prompt=payload.feature_prompt, negative_prompt=payload.negative_prompt)
+    text = build_prompt(product, style_ns, 'ua', variant, '/media/приклад/hero.webp', '/media/приклад/feature.webp')
+    return {'prompt': text, 'chars': len(text), 'sample_name': sample,
+            'guarantees': POST_GENERATION_GUARANTEES, 'variant': variant}
+
+
+@app.get('/api/styles/sample-products')
+def style_sample_products(db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
+    """Завершені проєкти, чиї дані можна взяти для превʼю/dry-run стилю."""
+    rows = db.scalars(select(Project).where(
+        Project.status.in_([Status.review, Status.approved, Status.done])
+    ).order_by(Project.finished_at.desc()).limit(30)).all()
+    out = []
+    for p in rows:
+        if not p.product_json:
+            continue
+        out.append({'id': p.id, 'name': p.name})
+    return out
 
 
 @app.post('/api/styles/analyze')
@@ -1582,6 +1683,10 @@ def improve_style(style_id: str, payload: StyleImproveIn, db: Session = Depends(
     s = db.get(Style, style_id)
     if not s: raise HTTPException(404, 'Стиль не знайдено')
     generated = generate_style(StyleGenerateIn(name=s.name, brief=(s.prompt + '\nImprovement request: ' + payload.instructions)[:12000], model=payload.model), user)
+    # Повертаємо ПРОПОЗИЦІЮ разом із поточним - фронтенд показує diff, оператор
+    # приймає свідомо, а не наосліп перезаписує ручні правки.
+    generated['current'] = {'prompt': s.prompt, 'hero_prompt': s.hero_prompt,
+                            'feature_prompt': s.feature_prompt, 'negative_prompt': s.negative_prompt}
     return generated
 
 
