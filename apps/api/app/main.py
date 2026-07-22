@@ -443,7 +443,7 @@ def user_dict(x):
             'daily_budget_usd': float(getattr(x, 'daily_budget_usd', 0) or 0), 'today_spend_usd': round(user_today_spend(x.id), 4),
             'permissions': sorted(effective_perms(x)),
             'granted': sorted(overrides.get('grant') or []), 'revoked': sorted(overrides.get('revoke') or []),
-            'created_at': x.created_at, 'last_login_at': x.last_login_at}
+            'created_at': x.created_at, 'last_login_at': x.last_login_at, 'shots_enabled': bool(settings.shots_url)}
 def style_dict(x, usage=None): return {'id': x.id, 'name': x.name, 'description': x.description, 'prompt': x.prompt, 'hero_prompt': x.hero_prompt, 'feature_prompt': x.feature_prompt, 'negative_prompt': x.negative_prompt, 'score': json.loads(x.score_json or '{}'), 'preview_html': x.preview_html, 'golden_html': getattr(x, 'golden_html', '') or '', 'has_golden': bool((getattr(x, 'golden_html', '') or '').strip()), 'is_default': x.is_default, 'usage_count': usage if usage is not None else None}
 def artifact_dict(x): return {'id': x.id, 'language': x.language, 'variant': x.variant, 'html': x.html, 'version': x.version, 'created_at': x.created_at, 'fallback_reason': getattr(x, 'fallback_reason', '') or '', 'run_index': getattr(x, 'run_index', 1) or 1}
 def project_dict(p, full=False, style_name=''):
