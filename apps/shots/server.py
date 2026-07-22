@@ -134,7 +134,10 @@ def _render(payload: RenderIn):
             blocks = page.query_selector_all('body > section > *') or page.query_selector_all('body > *')
             with zipfile.ZipFile(stream, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
                 archive.writestr('00-full-page.png', full_png)
-                archive.writestr('_diagnostics.txt', diagnostics)
+                # Кладемо звіт лише коли є на що дивитися: якась картинка не
+                # завантажилась або була мережева помилка. Чистий архів - без сміття.
+                if net_log or any(' w=0 ' in line for line in img_report):
+                    archive.writestr('_diagnostics.txt', diagnostics)
                 full_img = PILImage.open(io.BytesIO(full_png))
                 index = 0
                 for node in blocks:
