@@ -75,14 +75,27 @@ def _render(payload: RenderIn):
             page.set_default_timeout(20000)
             page.set_content(document, wait_until='domcontentloaded')
             try:
+                # Чекаємо і <img>, і CSS background-image (Hero тягне фото саме
+                # фоном) — інакше знімок ловить блок ще до появи картинки й вона
+                # губиться. Усе під ЖОРСТКИМ лімітом 8 с: краще без пари фото.
                 page.evaluate(
-                    "() => Promise.race(["
-                    "Promise.all(Array.from(document.images).filter(i=>!i.complete)"
-                    ".map(i=>new Promise(r=>{i.onload=i.onerror=r}))),"
-                    "new Promise(r=>setTimeout(r,8000))])")
+                    "() => {"
+                    "const p = Array.from(document.images).filter(i=>!i.complete)"
+                    ".map(i=>new Promise(r=>{i.onload=i.onerror=r}));"
+                    "const re = /url\\((['\\\"]?)(.*?)\\1\\)/g;"
+                    "for (const el of document.querySelectorAll('*')) {"
+                    "const v = getComputedStyle(el).backgroundImage;"
+                    "if (!v || v === 'none') continue;"
+                    "let m; while ((m = re.exec(v))) {"
+                    "const u = m[2];"
+                    "if (!u || u.startsWith('data:')) continue;"
+                    "p.push(new Promise(r=>{const im=new Image();im.onload=im.onerror=r;im.src=u;}));"
+                    "}}"
+                    "return Promise.race([Promise.all(p),"
+                    "new Promise(r=>setTimeout(r,8000))]);}")
             except Exception:
                 pass
-            page.wait_for_timeout(300)
+            page.wait_for_timeout(400)
             blocks = page.query_selector_all('body > section > *') or page.query_selector_all('body > *')
             with zipfile.ZipFile(stream, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
                 index = 0
