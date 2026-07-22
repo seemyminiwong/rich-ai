@@ -43,6 +43,10 @@
 .project-metrics{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
 .project-metrics b{overflow-wrap:anywhere}
 .dialog-note{margin:0;padding:12px 14px;border-radius:12px;background:var(--surface-soft);border:1px solid var(--border);color:var(--muted);font-size:13px;line-height:1.55}
+/* Панелі в колонці стилів - не прямі діти .container, тож правило
+   .container>section{margin-bottom} на них не діє. У вкладці «Якість» їх кілька
+   поспіль, і без цього вони злипались. Даємо той самий вертикальний ритм. */
+.style-shell>div>section+section{margin-top:16px}
 .style-savebar{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:42px;padding-top:4px}
 .style-savebar span{color:var(--muted);font-size:12px;font-weight:700}
 .style-savebar span.bad{color:var(--danger)}
