@@ -69,29 +69,41 @@ def _render(payload: RenderIn):
         try:
             page = browser.new_page(viewport={'width': payload.width, 'height': 1200},
                                     device_scale_factor=payload.scale)
-            page.set_content(document, wait_until='networkidle')
-            # Дочекатись справжнього декодування картинок: інакше блок може
-            # знятись із порожніми рамками.
-            page.evaluate("() => Promise.all(Array.from(document.images)"
-                          ".filter(i => !i.complete).map(i => new Promise(r => {i.onload = i.onerror = r})))")
+            # networkidle сумнозвісно зависає (30 с) на будь-якому повільному
+            # запиті і валить рендер у 500. Чекаємо лише DOM, а картинки -
+            # окремо, з ЖОРСТКИМ лімітом: краще знімок без пари фото, ніж таймаут.
+            page.set_default_timeout(20000)
+            page.set_content(document, wait_until='domcontentloaded')
+            try:
+                page.evaluate(
+                    "() => Promise.race(["
+                    "Promise.all(Array.from(document.images).filter(i=>!i.complete)"
+                    ".map(i=>new Promise(r=>{i.onload=i.onerror=r}))),"
+                    "new Promise(r=>setTimeout(r,8000))])")
+            except Exception:
+                pass
             page.wait_for_timeout(300)
-            # ':scope > *' у Playwright ненадійний, тому звичайні CSS-селектори:
-            # блоки - прямі діти кореневої <section> (або тіла, якщо секції немає).
             blocks = page.query_selector_all('body > section > *') or page.query_selector_all('body > *')
             with zipfile.ZipFile(stream, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
                 index = 0
                 for node in blocks:
-                    box = node.bounding_box()
-                    if not box or box['height'] < 40 or box['width'] < 120:
-                        continue
+                    try:
+                        box = node.bounding_box()
+                        if not box or box['height'] < 40 or box['width'] < 120:
+                            continue
+                        shot = node.screenshot(type='png', timeout=15000)
+                    except Exception:
+                        continue  # один проблемний блок не має валити весь ZIP
                     index += 1
                     title = ''
                     heading = node.query_selector('h2, h3')
                     if heading:
                         title = (heading.inner_text() or '').strip().split('\n')[0]
-                    name = f'{index:02d}-{_slug(title, "block")}.png'
-                    archive.writestr(name, node.screenshot(type='png'))
-                archive.writestr('00-full-page.png', page.screenshot(type='png', full_page=True))
+                    archive.writestr(f'{index:02d}-{_slug(title, "block")}.png', shot)
+                try:
+                    archive.writestr('00-full-page.png', page.screenshot(type='png', full_page=True, timeout=20000))
+                except Exception:
+                    pass
                 if not index:
                     raise HTTPException(422, 'У HTML не знайдено жодного блока для знімка')
         finally:
