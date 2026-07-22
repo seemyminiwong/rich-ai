@@ -1,12 +1,13 @@
-# Офіційний образ Playwright на Ubuntu Jammy: Chromium і ВСІ системні залежності
-# (шрифти тощо) вже всередині — на debian-slim install-deps падав на
-# ttf-ubuntu-font-family. Playwright тут лежить у системному python; ставимо
-# fastapi/uvicorn ТИМ САМИМ pip, тож "import playwright" точно бачить пакет.
-FROM mcr.microsoft.com/playwright/python:v1.49.0-jammy
+# Debian BOOKWORM (стабільний, офіційно підтримується Playwright — apt-список
+# сходиться), а не trixie зі slim, де падало на ttf-ubuntu-font-family.
+# playwright ставимо ТИМ САМИМ pip, що й fastapi, тож "import playwright"
+# бачить пакет (на офіційному MS-образі він жив в іншому python).
+FROM python:3.12-slim-bookworm
 
 WORKDIR /app
 RUN pip install --no-cache-dir --break-system-packages \
-        fastapi==0.115.12 uvicorn==0.34.2 pydantic==2.11.7 \
+        fastapi==0.115.12 uvicorn==0.34.2 pydantic==2.11.7 playwright==1.49.0 \
+    && playwright install --with-deps chromium \
     && python -c "import playwright, fastapi, uvicorn, pydantic; print('imports ok')"
 
 COPY server.py .
