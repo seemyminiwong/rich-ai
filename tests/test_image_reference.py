@@ -754,6 +754,66 @@ def test_product_frames_are_never_cropped_inside_cards():
     assert 'aspect-ratio:4/3' in out_gallery and 'aspect-ratio:4/3' in out_scene
 
 
+def test_showcase_prompt_has_named_blocks_consistent_labels_and_no_crop_conflict():
+    from app.prompts import SHOWCASE_STYLE_PROMPT
+
+    prompt = SHOWCASE_STYLE_PROMPT
+    assert 'ARTLINE BLOCK 01: HERO START' in prompt
+    assert 'ARTLINE BLOCK 07: FINAL RECAP END' in prompt
+    assert 'SHARED SECTION LABEL' in prompt and 'Desktop: width:280px' in prompt
+    assert 'EQUAL DESKTOP CARDS' in prompt
+    dark_split = prompt.split('4. DARK FEATURE SPLIT', 1)[1].split('5. CAPABILITY TRIO', 1)[0]
+    capability = prompt.split('5. CAPABILITY TRIO', 1)[1].split('6. TRUST SPLIT', 1)[0]
+    assert 'object-fit:cover' not in dark_split
+    assert 'object-fit:cover' not in capability
+    assert 'object-fit:contain' in dark_split and 'object-fit:contain' in capability
+
+
+def test_showcase_finalizer_names_blocks_and_equalizes_desktop_components():
+    from app.pipeline import _finalize_showcase_layout
+
+    block = lambda label, title, extra='': (
+        f'<div><span>{label}</span><h2>{title}</h2>{extra}</div>'
+    )
+    markup = (
+        '<section>'
+        + block('QUBE · Монітор 23.8″', 'QUBE V24F100-PLUS')
+        + '<div style="display:grid;grid-template-columns:repeat(4,1fr)">'
+          '<div><h3>100 Гц</h3></div><div><h3>1 мс</h3></div></div>'
+        + block('Екранні характеристики', 'Чітке зображення')
+        + block('МОЖЛИВОСТІ', 'Плавність у деталях')
+        + '<div><div><img src="/media/p/gallery.webp"><h3>Підключення</h3></div></div>'
+        + '<div><h2>Вибір без компромісів</h2></div>'
+        + block('QUBE · V24F100-PLUS', 'Готовий до роботи')
+        + '</section>'
+    )
+    out = _finalize_showcase_layout(markup, 'desktop')
+
+    assert out.count('ARTLINE BLOCK ') == 14
+    assert '<!-- ARTLINE BLOCK 01: HERO START -->' in out
+    assert '<!-- ARTLINE BLOCK 07: FINAL RECAP END -->' in out
+    assert out.count('width:280px') == 4
+    assert 'align-items:stretch' in out
+    assert out.count('height:100%') >= 2
+    assert _finalize_showcase_layout(out, 'desktop') == out
+
+
+def test_contained_photo_with_fixed_height_gets_a_real_media_slot():
+    from app.pipeline import _frame_contained_photos
+
+    markup = (
+        '<section><div style="border-radius:28px">'
+        '<img src="/media/p/gallery.webp" style="width:100%;height:250px;object-fit:contain">'
+        '<div><h3>Екран</h3><p>Короткий опис</p></div>'
+        '</div></section>'
+    )
+    out = _frame_contained_photos(markup)
+
+    assert 'height:250px;max-height:250px;flex:0 0 auto' in out
+    assert 'height:100%;max-height:100%;object-fit:contain;object-position:center' in out
+    assert _frame_contained_photos(out) == out
+
+
 def test_run_history_survives_reruns_and_extra_work():
     import json as _json
     from app.tasks import close_run, bill_extra

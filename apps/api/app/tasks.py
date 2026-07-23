@@ -12,7 +12,7 @@ from app.models import Artifact, Asset, CriticReport, Event, Project, Status, St
 from app.limits import add_spend, add_user_spend
 from app.media import media_url
 from app.prompts import BASE_STYLE_VERSION, LICENSE_COMMENT
-from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, _fit_mobile_hero, _fit_photo_cards, _frame_contained_photos, _harmonize_radii, _never_crop_product_photos
+from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, _finalize_showcase_layout, _fit_mobile_hero, _fit_photo_cards, _frame_contained_photos, _harmonize_radii, _never_crop_product_photos
 from app.pipeline import (
     _image_urls_of,
     hero_environment,
@@ -524,6 +524,12 @@ def process_project(self, project_id, reuse_images=False):
                                 relaid = _never_crop_product_photos(relaid)
                                 relaid = _frame_contained_photos(relaid)
                                 relaid = _harmonize_radii(relaid)
+                                if (style.name or '').startswith('ARTLINE Showcase'):
+                                    relaid = _finalize_showcase_layout(
+                                        relaid,
+                                        'mobile',
+                                        dark_edition=style.name == 'ARTLINE Showcase Dark',
+                                    )
                                 # Модель могла загубити <style> обертання при перекомпонуванні -
                                 # повторне застосування ідемпотентне.
                                 prompt_text = style.prompt or ''
