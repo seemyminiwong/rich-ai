@@ -3,6 +3,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 pipeline = (root / 'apps/api/app/pipeline.py').read_text(encoding='utf-8')
 tasks = (root / 'apps/api/app/tasks.py').read_text(encoding='utf-8')
+celery_app = (root / 'apps/api/app/celery_app.py').read_text(encoding='utf-8')
 main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
 models = (root / 'apps/api/app/models.py').read_text(encoding='utf-8')
 security = (root / 'apps/api/app/security.py').read_text(encoding='utf-8')
@@ -15,11 +16,16 @@ config = (root / 'apps/api/app/config.py').read_text(encoding='utf-8')
 nginx = (root / 'apps/web/nginx.conf').read_text(encoding='utf-8')
 media = (root / 'apps/api/app/media.py').read_text(encoding='utf-8')
 limits = (root / 'apps/api/app/limits.py').read_text(encoding='utf-8')
+bulk_import = (root / 'apps/api/app/bulk_import.py').read_text(encoding='utf-8')
 runtime_src = (root / 'apps/api/app/runtime.py').read_text(encoding='utf-8')
 compose = (root / 'docker-compose.yml').read_text(encoding='utf-8')
 envex = (root / '.env.example').read_text(encoding='utf-8')
 caddyfile = (root / 'Caddyfile').read_text(encoding='utf-8')
 rev0002 = (root / 'apps/api/alembic/versions/0002_runtime_settings.py').read_text(encoding='utf-8')
+rev0009 = (root / 'apps/api/alembic/versions/0009_bulk_budget_reservation.py').read_text(encoding='utf-8')
+rev0010 = (root / 'apps/api/alembic/versions/0010_bulk_queue_clock.py').read_text(encoding='utf-8')
+bulk_route = "@app.post('/api/projects/bulk-import')"
+bulk_endpoint = main.split(bulk_route, 1)[1][:900] if bulk_route in main else ''
 
 checks = {
     # --- retained pipeline guarantees ---
@@ -40,6 +46,16 @@ checks = {
     'shared language layout': 'text-node-only translation' in tasks,
     'separate hero sizes': "'desktop': ('1536x1024'" in tasks and "'mobile': ('1024x1536'" in tasks,
     'flexible project languages': 'normalize_languages(payload.languages)' in main and 'languagePicker' in web,
+    'bulk csv parser is bounded and strict': 'MAX_BULK_ROWS = 100' in bulk_import and 'MAX_BULK_CSV_BYTES = 512 * 1024' in bulk_import and 'strict=True' in bulk_import,
+    'bulk import validates before queueing': bulk_route in main and "api('/api/projects/bulk-import'" in web and 'validate_only' in main and 'validate_only' in web,
+    'bulk import remains permissioned and tested': "require_perm('project.create')" in bulk_endpoint and (root / 'tests/test_bulk_import.py').exists(),
+    'bulk commit is idempotent': 'batch_id: str = Field' in main and 'def _bulk_replay_result' in main and 'request_hash' in main and 'pg_advisory_xact_lock' in main and 'batch_id:batchId' in web,
+    'bulk queue has durable dispatch recovery': "stage='dispatch_pending'" in main and 'def dispatch_pending_projects' in tasks and 'dispatch-pending-projects' in celery_app and 'task_reject_on_worker_lost=True' in celery_app and 'project.status != Status.queued' in tasks and 'maintenance:' in compose and '--appendonly' in compose,
+    'bulk budget is durably reserved': 'reserved_cost' in models and 'reserved_cost=item' in main and 'Project.reserved_cost > 0' in main and 'reserved_cost' in rev0009,
+    'bulk queue clock is migrated': 'queued_at' in models and 'queued_at' in rev0010 and 'queued_at=queued_at' in main,
+    'run billing is idempotent across retries': '_CUMULATIVE_CHARGE_LUA' in limits and 'operation_id=operation_id' in tasks,
+    'bulk parser protects service columns': "_RESERVED_HEADERS = {'_row', '_parse_error'}" in bulk_import,
+    'queued work has a separate watchdog ttl': 'queued_project_hours' in config and 'queued_cutoff' in tasks and 'QUEUED_PROJECT_HOURS=24' in envex,
     'gpt image 2 fidelity compatibility': "not model.startswith('gpt-image-2')" in pipeline,
     'managed base prompt intact': 'SEO AND GENERATIVE-ENGINE VALUE' in prompts and 'CONTENT ISLAND SYSTEM' in prompts,
 
@@ -98,7 +114,7 @@ checks = {
     'feature url planned before text': "planned_feature_url = media_url(project.id, 'feature.webp')" in tasks,
     'feature falls back to real photo': 'def select_feature_photo' in pipeline and 'feature generation failed' in tasks,
     'key feature fallback kept': 'def select_key_feature' in pipeline and 'select_key_feature(product)' in tasks,
-    'rerun can reuse existing images': 'def process_project(self, project_id, reuse_images=False)' in tasks and "feature_mode = 'reused'" in tasks and 'reuse_images: bool = False' in main and 'process_project.delay(p.id, reuse_images=reuse)' in main and 'function reuseImagesField' in web,
+    'rerun can reuse existing images': 'def process_project(self, project_id, reuse_images=False)' in tasks and "feature_mode = 'reused'" in tasks and 'reuse_images: bool = False' in main and '_dispatch_project_once(db, p, reuse_images=reuse)' in main and 'function reuseImagesField' in web,
     'viewpoint locked in image prompts': prompts.count('VIEWPOINT LOCK') == 6 and 'working-angle' not in prompts and prompts.count('no substituted product variant') == 2,
     'image prompts ban redrawn logos': prompts.count('LOGOS, LABELS AND TEXT ON THE PRODUCT') == 6 and prompts.count('garbled') >= 6,
     'base prompt bans meta text': 'NEVER DESCRIBE THE PAGE OR THE IMAGES' in prompts and 'could not be pasted onto a different product' in prompts,
@@ -143,7 +159,7 @@ checks = {
     'root admin protected': 'def is_root_admin' in main and 'Пароль головного адміністратора' in main and 'Головного адміністратора видалити не можна' in main and 'u.is_root' in web,
 
     # --- v12 foundation ---
-    'single version source': '__version__ = "12.1"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
+    'single version source': '__version__ = "12.2"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
     'no version in the product UI': all(s not in (root / 'apps/web/index.html').read_text(encoding='utf-8') for s in ('Studio v', 'v12')) and 'state.version' not in web and 'BASE_STYLE_VERSION' not in main,
     'cache busting kept': '?b=' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
     'openai retries': 'def _with_retry' in pipeline and '_with_retry(lambda: api.responses.create' in pipeline and '_with_retry(lambda: image_client().images.edit' in pipeline,
@@ -299,7 +315,7 @@ checks.update({
     'probe offers images from a sibling project': "'prior': prior" in main and 'ADOPTABLE_IMAGE_LABELS' in main,
     'adopted images are copied, not referenced': 'def _adopt_images' in main and 'shutil.copy2' in main and "json.dumps({'adopted_from': source.id}" in main,
     'adoption locked to the same product url': 'source.source_url != new_project.source_url' in main,
-    'adopted run skips image generation': 'process_project.delay(p.id, reuse_images=bool(adopted))' in main,
+    'adopted run skips image generation': '_dispatch_project_once(db, p, reuse_images=bool(adopted))' in main,
     'prior strip in the probe ui': 'usePrior' in web and 'adopt_images' in web,
     'showcase hero is background plus img, redundantly': 'url(HERO_URL) center/cover' in prompts and "html.replace('HERO_URL', hero)" in pipeline,
     'invented image urls are swapped or dropped': 'def _enforce_image_whitelist' in pipeline and 'spares=list(gallery or [])' in pipeline,

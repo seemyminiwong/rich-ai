@@ -10,11 +10,11 @@ docker compose project name `rich-ai`.
 
 Single source of truth: `apps/api/app/version.py` (`__version__`). The health
 endpoint and Docker image tags derive from it. On release, bump it and keep the
-`?v=` query in `apps/web/index.html` in sync, then tag the commit:
+cache-busting query in `apps/web/index.html` in sync, then tag the commit:
 
 ```bash
-git tag v12.0
-git push origin v12.0
+git tag v12.2
+git push origin v12.2
 ```
 
 ---
@@ -35,7 +35,10 @@ GHCR:
 - `ghcr.io/seemyminiwong/rich-ai-api:latest` (also `:<version>` and `:<sha>`)
 - `ghcr.io/seemyminiwong/rich-ai-web:latest`
 
-The `worker` service reuses the `rich-ai-api` image.
+The `worker` and `maintenance` services reuse the `rich-ai-api` image.
+The API applies Alembic migrations `0009_bulk_budget_reservation` and
+`0010_bulk_queue_clock` automatically on startup; they preserve all existing
+projects and add only the reservation and queue-clock columns.
 
 ---
 
@@ -59,7 +62,7 @@ docker compose -f docker-compose.yml -f docker-compose.registry.yml up -d
 curl http://127.0.0.1:8000/health
 ```
 
-Pin a specific version instead of `latest` with `export IMAGE_TAG=12.0`.
+Pin a specific version instead of `latest` with `export IMAGE_TAG=12.2`.
 
 You still need the repository checkout on the host for the compose files and
 `.env`; update them with `git pull` (the code itself now comes from the images).
@@ -111,13 +114,20 @@ with the rest of the `Data` pool via TrueNAS snapshots.
 
 ## 5b. Failure alerts & watchdog
 
-The worker runs a beat schedule: every 5 minutes a watchdog fails projects stuck
-in `processing`/`queued` longer than `STUCK_PROJECT_MINUTES` (default 45) and
-posts an alert. Alerts also fire on every project error.
+The dedicated `maintenance` worker retries DB-backed `dispatch_pending`
+projects every minute and runs the watchdog every 5 minutes, independently of
+long generation jobs. Redis uses an AOF-backed `redis_data` volume, so accepted
+Celery messages survive container restarts. Active `processing` projects older than
+`STUCK_PROJECT_MINUTES` (default 45) are failed and alerted. A project waiting
+behind a large CSV import stays `queued`; after `QUEUED_PROJECT_HOURS` (default
+24 hours) it raises an operational warning but is not cancelled merely for
+waiting. Alerts also fire on every project error.
 
 Configure any of these in `.env` (empty = disabled):
 
 ```env
+STUCK_PROJECT_MINUTES=45
+QUEUED_PROJECT_HOURS=24
 TELEGRAM_BOT_TOKEN=...   # @BotFather token
 TELEGRAM_CHAT_ID=...     # your chat/channel id
 ALERT_WEBHOOK_URL=...    # any endpoint accepting JSON POST {"text": ...}

@@ -17,19 +17,20 @@ from urllib.parse import quote, urlencode
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, HttpUrl
-from sqlalchemy import delete as sa_delete, func, select
+from pydantic import BaseModel, Field, HttpUrl, ValidationError
+from sqlalchemy import delete as sa_delete, func, select, text
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import Base, SessionLocal, engine, ensure_schema, get_db, run_migrations
 from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Project, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
-from app.tasks import bill_extra, process_project, text_rate, translate_project
+from app.tasks import bill_extra, image_rate, process_project, text_rate, translate_project
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
 from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, is_public_http_url, parse_page, safe_client, sanitize_html, style_image_prompt, text_client
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.version import __version__
+from app.bulk_import import BulkCSVError, MAX_BULK_CSV_BYTES, parse_bulk_csv, split_bulk_values
 
 logger = logging.getLogger(__name__)
 from app.prompts import (
@@ -326,11 +327,16 @@ class AdoptItem(BaseModel):
 class TranslateIn(BaseModel):
     language: str = Field(min_length=2, max_length=10)
 class ProjectIn(BaseModel):
-    name: str = ''; source_url: HttpUrl; style_id: str | None = None
-    languages: list[str] = Field(default_factory=lambda: ['ua', 'ru'])
-    variants: list[str] = Field(default_factory=lambda: ['desktop', 'mobile'])
-    text_model: str | None = None; image_model: str | None = None; image_quality: str = 'medium'
-    custom_hero_url: str = ''; custom_feature_url: str = ''
+    name: str = Field(default='', max_length=300)
+    source_url: HttpUrl
+    style_id: str | None = Field(default=None, max_length=200)
+    languages: list[str] = Field(default_factory=lambda: ['ua', 'ru'], max_length=10)
+    variants: list[str] = Field(default_factory=lambda: ['desktop', 'mobile'], max_length=10)
+    text_model: str | None = Field(default=None, max_length=200)
+    image_model: str | None = Field(default=None, max_length=200)
+    image_quality: str = Field(default='medium', max_length=20)
+    custom_hero_url: str = Field(default='', max_length=4096)
+    custom_feature_url: str = Field(default='', max_length=4096)
     gallery: list[str] = Field(default_factory=list, max_length=10)
     reuse_images_from: str = ''
     reuse_labels: list[str] = Field(default_factory=list, max_length=10)
@@ -341,6 +347,19 @@ class ProjectIn(BaseModel):
     upload_feature: str = ''
     # 360-серія: усі uploads стають кадрами обертання (за порядком), а не галереєю.
     uploads_360: bool = False
+class BulkProjectImportIn(BaseModel):
+    csv_text: str = Field(min_length=1, max_length=MAX_BULK_CSV_BYTES)
+    style_id: str | None = Field(default=None, max_length=200)
+    languages: list[str] = Field(default_factory=lambda: ['ua', 'ru'], max_length=10)
+    variants: list[str] = Field(default_factory=lambda: ['desktop', 'mobile'], max_length=10)
+    text_model: str | None = Field(default=None, max_length=200)
+    image_model: str | None = Field(default=None, max_length=200)
+    image_quality: str = Field(default='medium', max_length=20)
+    skip_existing: bool = True
+    validate_only: bool = True
+    # Returned by the preview and required for the paid commit. Reusing it is
+    # an idempotent replay, including after a lost HTTP response.
+    batch_id: str = Field(default='', max_length=100, pattern=r'^$|^bulk-[0-9a-f]{16,64}$')
 class StyleIn(BaseModel):
     name: str
     description: str = ''
@@ -1191,6 +1210,226 @@ def _pick_even(items: list, limit: int) -> list:
     return [items[round(i * len(items) / limit)] for i in range(limit)]
 
 
+def _project_values(payload: ProjectIn, db: Session) -> tuple[dict, Style]:
+    """Validate and normalize the fields shared by single and bulk creation."""
+    source_url = str(payload.source_url)
+    if not is_public_http_url(source_url):
+        raise HTTPException(400, 'URL товару має бути публічним http(s)-посиланням')
+    style = db.get(Style, payload.style_id) if payload.style_id else db.scalar(select(Style).where(Style.is_default == True))
+    if not style:
+        raise HTTPException(400, 'Немає доступного стилю')
+    languages = normalize_languages(payload.languages)
+    variants = list(dict.fromkeys(x for x in payload.variants if x in {'desktop', 'mobile'}))
+    if not languages or not variants:
+        raise HTTPException(400, 'Оберіть щонайменше одну мову та формат')
+    for label, value in (('Hero', payload.custom_hero_url.strip()), ('Feature', payload.custom_feature_url.strip())):
+        if value and not is_public_http_url(value):
+            raise HTTPException(400, f'Власне {label} URL має бути публічним http(s)-посиланням')
+    return {
+        'name': payload.name.strip() or 'Визначення товару…',
+        'source_url': source_url,
+        'style_id': style.id,
+        'languages': ','.join(languages),
+        'variants': ','.join(variants),
+        'text_model': (payload.text_model or '').strip() or settings.openai_text_model,
+        'image_model': (payload.image_model or '').strip() or settings.openai_image_model,
+        'image_quality': payload.image_quality if payload.image_quality in {'low', 'medium', 'high'} else 'medium',
+        'custom_hero_url': payload.custom_hero_url.strip(),
+        'custom_feature_url': payload.custom_feature_url.strip(),
+        'gallery_json': json.dumps([u.strip() for u in payload.gallery if is_public_http_url(u.strip())][:10]),
+    }, style
+
+
+def _new_project_record(payload: ProjectIn, db: Session, user) -> tuple[Project, Style]:
+    values, style = _project_values(payload, db)
+    project = Project(owner_id=user.id, status=Status.queued, stage='queued', **values)
+    db.add(project)
+    db.flush()
+    return project, style
+
+
+def _bulk_validation_message(exc: ValidationError) -> str:
+    """Turn Pydantic's row error into a concise operator-facing message."""
+    messages = []
+    for item in exc.errors()[:3]:
+        field = '.'.join(str(part) for part in item.get('loc') or [])
+        message = str(item.get('msg') or 'некоректне значення')
+        messages.append(f'{field}: {message}' if field else message)
+    return '; '.join(messages) or 'Некоректні дані рядка'
+
+
+def _bulk_estimated_cost(values: dict, style: Style) -> float:
+    """Conservative pre-flight cost, scaled by requested output pages.
+
+    The 30k/14k baseline is calibrated for the normal two-language,
+    desktop+mobile project (four outputs). Larger language matrices add
+    translations for every layout, so reserve proportionally above that base.
+    """
+    input_rate, output_rate = text_rate(values['text_model'])
+    languages = [value for value in values['languages'].split(',') if value]
+    variants = [value for value in values['variants'].split(',') if value]
+    output_count = max(1, len(languages) * len(variants))
+    output_factor = max(1.0, output_count / 4.0)
+    text_cost = (
+        30_000 / 1_000_000 * input_rate
+        + 14_000 / 1_000_000 * output_rate
+    ) * output_factor
+    hero_enabled = bool(style_image_prompt(style.prompt or '', 'HERO_IMAGE') or (style.hero_prompt or '').strip())
+    feature_enabled = bool(style_image_prompt(style.prompt or '', 'FEATURE_IMAGE') or (style.feature_prompt or '').strip())
+    image_count = len(variants) if hero_enabled and not values['custom_hero_url'] else 0
+    if feature_enabled and not values['custom_feature_url']:
+        image_count += 1
+    return round(text_cost + image_count * image_rate(values['image_model'], values['image_quality']), 6)
+
+
+def _reserve_project_run(db: Session, user, project: Project, style: Style) -> float:
+    """Reserve a conservative run estimate inside the caller's commit lock."""
+    values = {
+        'languages': project.languages,
+        'variants': project.variants,
+        'text_model': project.text_model,
+        'image_model': project.image_model,
+        'image_quality': project.image_quality,
+        'custom_hero_url': project.custom_hero_url,
+        'custom_feature_url': project.custom_feature_url,
+    }
+    estimate = _bulk_estimated_cost(values, style)
+    _check_bulk_estimated_budget(db, user, estimate)
+    queued_at = datetime.utcnow()
+    project.reserved_cost = estimate
+    project.queued_at = queued_at
+    project.started_at = queued_at
+    project.finished_at = None
+    return estimate
+
+
+def _check_bulk_estimated_budget(db: Session, user, estimated_cost: float) -> None:
+    """Refuse work that cannot fit completed spend plus durable reservations."""
+    reserved_global = float(db.scalar(select(func.coalesce(func.sum(Project.reserved_cost), 0.0)).where(
+        Project.reserved_cost > 0,
+    )) or 0)
+    global_cap = float(settings.daily_budget_usd or 0)
+    global_spent = today_spend()
+    if global_cap > 0 and global_spent + reserved_global + estimated_cost > global_cap + 1e-9:
+        remaining = max(0.0, global_cap - global_spent - reserved_global)
+        raise HTTPException(
+            429,
+            f'Пакет оцінено у ${estimated_cost:.2f}, а в денному бюджеті лишилося ${remaining:.2f}. '
+            'Зменште CSV або дочекайтеся нового дня',
+        )
+    user_cap = float(getattr(user, 'daily_budget_usd', 0) or 0)
+    user_spent = user_today_spend(user.id)
+    reserved_user = float(db.scalar(select(func.coalesce(func.sum(Project.reserved_cost), 0.0)).where(
+        Project.reserved_cost > 0,
+        Project.owner_id == user.id,
+    )) or 0)
+    if user_cap > 0 and user_spent + reserved_user + estimated_cost > user_cap + 1e-9:
+        remaining = max(0.0, user_cap - user_spent - reserved_user)
+        raise HTTPException(
+            429,
+            f'Пакет оцінено у ${estimated_cost:.2f}, а у вашому ліміті лишилося ${remaining:.2f}. '
+            'Зменште CSV або зверніться до адміністратора',
+        )
+
+
+def _lock_bulk_commit(db: Session) -> None:
+    """Serialize final imports so skip-existing and budget reservation are atomic."""
+    bind = db.get_bind()
+    if bind.dialect.name == 'postgresql':
+        db.execute(text('SELECT pg_advisory_xact_lock(hashtext(:lock_name))'), {
+            'lock_name': f'richstudio-bulk-import:{settings.db_schema}',
+        })
+
+
+def _bulk_request_hash(payload: BulkProjectImportIn) -> str:
+    canonical = payload.model_dump(exclude={'batch_id', 'validate_only'}, mode='json')
+    encoded = json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _bulk_replay_result(db: Session, audit_row: AuditLog) -> dict:
+    """Rebuild the original success response for an idempotent commit retry."""
+    try:
+        metadata = json.loads(audit_row.metadata_json or '{}')
+    except Exception:
+        metadata = {}
+    records = metadata.get('projects') if isinstance(metadata.get('projects'), list) else []
+    project_ids = [str(item.get('id') or '') for item in records if item.get('id')]
+    project_rows = db.scalars(select(Project).where(Project.id.in_(project_ids))).all() if project_ids else []
+    by_id = {project.id: project for project in project_rows}
+    style_ids = {project.style_id for project in project_rows}
+    styles = db.scalars(select(Style).where(Style.id.in_(style_ids))).all() if style_ids else []
+    style_names = {style.id: style.name for style in styles}
+    ordered = [by_id[project_id] for project_id in project_ids if project_id in by_id]
+    pending_records = [item for item in records if (
+        (project := by_id.get(str(item.get('id') or '')))
+        and project.status == Status.queued
+        and project.stage == 'dispatch_pending'
+    )]
+    pending = [{
+        'project_id': str(item.get('id') or ''),
+        'row': item.get('row'),
+        'error': 'Передача воркеру очікує автоматичного повтору.',
+    } for item in pending_records]
+    return {
+        'batch_id': audit_row.entity_id,
+        'idempotent_replay': True,
+        'validate_only': False,
+        'total_rows': int(metadata.get('total_rows') or 0),
+        'valid_count': len(records),
+        'invalid_count': int(metadata.get('invalid_count') or 0),
+        'skipped_count': int(metadata.get('skipped_count') or 0),
+        'created_count': len(ordered),
+        'queued_count': len(ordered),
+        'dispatch_failed_count': len(pending),
+        'dispatch_pending_count': len(pending),
+        'estimated_cost': float(metadata.get('estimated_cost') or 0),
+        'valid_rows': metadata.get('valid_rows') or [],
+        'errors': metadata.get('errors') or [],
+        'skipped': metadata.get('skipped') or [],
+        'projects': [project_dict(project, style_name=style_names.get(project.style_id, '')) for project in ordered],
+        'dispatch_failures': pending,
+    }
+
+
+def _bulk_replay_if_exists(db: Session, user, payload: BulkProjectImportIn) -> dict | None:
+    prior = db.scalar(select(AuditLog).where(
+        AuditLog.user_id == user.id,
+        AuditLog.action == 'project.bulk_import',
+        AuditLog.entity_type == 'bulk_batch',
+        AuditLog.entity_id == payload.batch_id,
+    ).order_by(AuditLog.created_at.desc()))
+    if not prior:
+        return None
+    try:
+        prior_metadata = json.loads(prior.metadata_json or '{}')
+    except Exception:
+        prior_metadata = {}
+    expected_hash = str(prior_metadata.get('request_hash') or '')
+    if not expected_hash or not hmac.compare_digest(expected_hash, _bulk_request_hash(payload)):
+        raise HTTPException(409, 'Цей batch_id уже використано з іншим CSV або налаштуваннями')
+    return _bulk_replay_result(db, prior)
+
+
+def _dispatch_project_once(db: Session, project: Project, reuse_images: bool = False) -> bool:
+    """Best-effort immediate publish; DB pending state is the durable fallback."""
+    try:
+        process_project.delay(project.id, reuse_images=reuse_images)
+    except Exception as exc:
+        logger.exception('Project dispatch failed for %s: %s', project.id, exc)
+        message = 'Передача воркеру не вдалася; maintenance-worker повторить її автоматично.'
+        db.add(Event(project_id=project.id, stage='dispatch_pending', level='warning', message=message))
+        db.commit()
+        return False
+    db.refresh(project)
+    if project.status == Status.queued and project.stage == 'dispatch_pending':
+        project.stage = 'queued'
+        project.started_at = datetime.utcnow()
+        db.add(Event(project_id=project.id, stage='queued', message='Проєкт передано воркеру'))
+        db.commit()
+    return True
+
+
 @app.post('/api/uploads/image')
 async def upload_reference_image(request: Request, user=Depends(require_perm('project.create'))):
     """Прийняти власне фото для майбутнього проєкту.
@@ -1223,19 +1462,240 @@ async def upload_reference_image(request: Request, user=Depends(require_perm('pr
     return {'url': media_url('uploads', name), 'width': image.width, 'height': image.height}
 
 
+@app.post('/api/projects/bulk-import')
+def bulk_import_projects(payload: BulkProjectImportIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
+    """Validate a CSV batch, then create every valid row in one transaction.
+
+    The UI calls this twice: a write-free preview first, followed by an explicit
+    queue action with the same payload. Invalid rows never block valid ones.
+    """
+    check_action(user.id, 'bulk-preview' if payload.validate_only else 'bulk-import', 20 if payload.validate_only else 3)
+    if payload.image_quality not in {'low', 'medium', 'high'}:
+        raise HTTPException(400, 'Якість зображень має бути low, medium або high')
+    default_languages = normalize_languages(payload.languages)
+    default_variants = list(dict.fromkeys(value for value in payload.variants if value in {'desktop', 'mobile'}))
+    if not default_languages or not default_variants:
+        raise HTTPException(400, 'Оберіть щонайменше одну мову та формат для пакета')
+    if not payload.validate_only:
+        if not payload.batch_id:
+            raise HTTPException(400, 'Спочатку перевірте CSV та передайте batch_id із попереднього перегляду')
+        # Fast idempotent replay does not need to re-resolve up to 100 hostnames.
+        replay = _bulk_replay_if_exists(db, user, payload)
+        if replay:
+            return replay
+
+    styles = db.scalars(select(Style)).all()
+    default_style = (next((style for style in styles if style.id == payload.style_id), None)
+                     if payload.style_id else next((style for style in styles if style.is_default), None))
+    if not default_style:
+        raise HTTPException(400, 'Обраний стиль не знайдено')
+    style_by_id = {style.id: style for style in styles}
+    style_by_name = {(style.name or '').strip().casefold(): style for style in styles}
+
+    try:
+        rows = parse_bulk_csv(payload.csv_text)
+    except BulkCSVError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    errors = []
+    skipped = []
+    prepared = []
+    seen_sources: set[str] = set()
+    for row in rows:
+        row_number = int(row.get('_row') or 0)
+        source_raw = str(row.get('source_url') or '').strip()
+        name_raw = str(row.get('name') or '').strip()
+        if row.get('_parse_error'):
+            errors.append({'row': row_number, 'source_url': source_raw, 'name': name_raw,
+                           'error': str(row['_parse_error'])})
+            continue
+        if not source_raw:
+            errors.append({'row': row_number, 'source_url': '', 'name': name_raw,
+                           'error': 'Не вказано URL товару'})
+            continue
+
+        style = default_style
+        style_raw = str(row.get('style') or '').strip()
+        if style_raw:
+            style = style_by_id.get(style_raw) or style_by_name.get(style_raw.casefold())
+            if not style:
+                errors.append({'row': row_number, 'source_url': source_raw, 'name': name_raw,
+                               'error': f'Стиль «{style_raw[:120]}» не знайдено'})
+                continue
+
+        row_languages = split_bulk_values(str(row.get('languages') or '')) or default_languages
+        row_variants = split_bulk_values(str(row.get('variants') or '')) or default_variants
+        quality = str(row.get('image_quality') or '').strip().lower() or payload.image_quality
+        if quality not in {'low', 'medium', 'high'}:
+            errors.append({'row': row_number, 'source_url': source_raw, 'name': name_raw,
+                           'error': 'image_quality має бути low, medium або high'})
+            continue
+        try:
+            row_payload = ProjectIn(
+                name=name_raw,
+                source_url=source_raw,
+                style_id=style.id,
+                languages=row_languages,
+                variants=row_variants,
+                text_model=str(row.get('text_model') or '').strip() or payload.text_model,
+                image_model=str(row.get('image_model') or '').strip() or payload.image_model,
+                image_quality=quality,
+                custom_hero_url=str(row.get('custom_hero_url') or '').strip(),
+                custom_feature_url=str(row.get('custom_feature_url') or '').strip(),
+            )
+            values, resolved_style = _project_values(row_payload, db)
+        except ValidationError as exc:
+            errors.append({'row': row_number, 'source_url': source_raw, 'name': name_raw,
+                           'error': _bulk_validation_message(exc)})
+            continue
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, str) else 'Некоректні дані рядка'
+            errors.append({'row': row_number, 'source_url': source_raw, 'name': name_raw, 'error': detail})
+            continue
+
+        normalized_source = values['source_url']
+        if normalized_source in seen_sources:
+            skipped.append({'row': row_number, 'source_url': normalized_source, 'name': values['name'],
+                            'reason': 'Дублікат URL у цьому CSV'})
+            continue
+        seen_sources.add(normalized_source)
+        estimated_cost = _bulk_estimated_cost(values, resolved_style)
+        prepared.append({'row': row_number, 'values': values, 'style': resolved_style,
+                         'estimated_cost': estimated_cost})
+
+    if not payload.validate_only:
+        # Keep the global critical section short: all slow DNS validation above
+        # is pure preparation. Recheck idempotency under the lock before the
+        # duplicate query, budget reservation and inserts.
+        _lock_bulk_commit(db)
+        replay = _bulk_replay_if_exists(db, user, payload)
+        if replay:
+            return replay
+
+    if payload.skip_existing and prepared:
+        existing_sources = set(db.scalars(select(Project.source_url).where(
+            Project.source_url.in_([item['values']['source_url'] for item in prepared])
+        )).all())
+        ready = []
+        for item in prepared:
+            if item['values']['source_url'] in existing_sources:
+                skipped.append({'row': item['row'], 'source_url': item['values']['source_url'],
+                                'name': item['values']['name'], 'reason': 'Проєкт із цим URL уже існує'})
+            else:
+                ready.append(item)
+        prepared = ready
+
+    estimated_cost = round(sum(item['estimated_cost'] for item in prepared), 6)
+    valid_rows = [{
+        'row': item['row'],
+        'source_url': item['values']['source_url'],
+        'name': item['values']['name'],
+        'style': item['style'].name,
+        'languages': item['values']['languages'].split(','),
+        'variants': item['values']['variants'].split(','),
+        'estimated_cost': item['estimated_cost'],
+    } for item in prepared]
+    batch_id = ('bulk-' + secrets.token_hex(8)) if payload.validate_only else payload.batch_id
+    result = {
+        'batch_id': batch_id,
+        'validate_only': payload.validate_only,
+        'total_rows': len(rows),
+        'valid_count': len(prepared),
+        'invalid_count': len(errors),
+        'skipped_count': len(skipped),
+        'created_count': 0,
+        'queued_count': 0,
+        'dispatch_failed_count': 0,
+        'dispatch_pending_count': 0,
+        'estimated_cost': estimated_cost,
+        'valid_rows': valid_rows,
+        'errors': errors,
+        'skipped': skipped,
+        'projects': [],
+        'dispatch_failures': [],
+    }
+    if payload.validate_only or not prepared:
+        return result
+
+    _check_bulk_estimated_budget(db, user, estimated_cost)
+    created = []
+    queued_at = datetime.utcnow()
+    for item in prepared:
+        project = Project(
+            owner_id=user.id,
+            status=Status.queued,
+            stage='dispatch_pending',
+            queued_at=queued_at,
+            started_at=queued_at,
+            reserved_cost=item['estimated_cost'],
+            **item['values'],
+        )
+        db.add(project)
+        db.flush()
+        db.add(Event(project_id=project.id, stage='dispatch_pending', message=f'Додано з CSV-пакета {batch_id}; очікує передачі воркеру'))
+        audit(db, user, 'project.create', 'project', project.id,
+              {'batch_id': batch_id, 'csv_row': item['row']})
+        created.append((project, item['style'], item['row']))
+    audit(db, user, 'project.bulk_import', 'bulk_batch', batch_id, {
+        'total_rows': len(rows),
+        'created_count': len(created),
+        'invalid_count': len(errors),
+        'skipped_count': len(skipped),
+        'estimated_cost': estimated_cost,
+        'request_hash': _bulk_request_hash(payload),
+        'valid_rows': valid_rows,
+        'errors': errors,
+        'skipped': skipped,
+        'projects': [
+            {'id': project.id, 'row': row_number, 'style': style.name}
+            for project, style, row_number in created
+        ],
+    })
+    # This is a transactional outbox: DB state and budget reservations become
+    # durable before publication. Beat retries every pending row after a crash.
+    db.commit()
+
+    dispatch_failures = []
+    for project, _style, row_number in created:
+        try:
+            process_project.delay(project.id)
+        except Exception as exc:
+            logger.exception('Bulk import dispatch failed for project %s: %s', project.id, exc)
+            message = 'Передача воркеру не вдалася; система повторить її автоматично протягом хвилини.'
+            db.add(Event(project_id=project.id, stage='dispatch_pending', level='warning', message=message))
+            dispatch_failures.append({'project_id': project.id, 'row': row_number, 'error': message})
+        else:
+            # The worker may already have claimed the row. Only mark it queued
+            # while it is still in the pending state.
+            db.refresh(project)
+            if project.status == Status.queued and project.stage == 'dispatch_pending':
+                project.stage = 'queued'
+                db.add(Event(project_id=project.id, stage='queued', message='Проєкт передано воркеру'))
+                db.commit()
+    if dispatch_failures:
+        audit(db, user, 'project.bulk_dispatch_pending', 'bulk_batch', batch_id,
+              {'failed_count': len(dispatch_failures), 'project_ids': [item['project_id'] for item in dispatch_failures]})
+        db.commit()
+
+    result.update({
+        'validate_only': False,
+        'created_count': len(created),
+        'queued_count': len(created),
+        'dispatch_failed_count': len(dispatch_failures),
+        'dispatch_pending_count': len(dispatch_failures),
+        'dispatch_failures': dispatch_failures,
+        'projects': [project_dict(project, style_name=style.name) for project, style, _row in created],
+    })
+    return result
+
+
 @app.post('/api/projects')
 def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
     check_action(user.id, 'create', 6); check_budget(); check_user_budget(user)
-    style = db.get(Style, payload.style_id) if payload.style_id else db.scalar(select(Style).where(Style.is_default == True))
-    if not style: raise HTTPException(400, 'Немає доступного стилю')
-    langs = normalize_languages(payload.languages); vars = [x for x in payload.variants if x in {'desktop', 'mobile'}]
-    if not langs or not vars: raise HTTPException(400, 'Оберіть щонайменше одну мову та формат')
-    for label, value in (('Hero', payload.custom_hero_url.strip()), ('Feature', payload.custom_feature_url.strip())):
-        if value and not is_public_http_url(value):
-            raise HTTPException(400, f'Власне {label} URL має бути публічним http(s)-посиланням')
-    p = Project(name=payload.name.strip() or 'Определение товара…', source_url=str(payload.source_url), style_id=style.id, owner_id=user.id, languages=','.join(dict.fromkeys(langs)), variants=','.join(dict.fromkeys(vars)),
-                text_model=payload.text_model or settings.openai_text_model, image_model=payload.image_model or settings.openai_image_model, image_quality=payload.image_quality if payload.image_quality in {'low', 'medium', 'high'} else 'medium', custom_hero_url=payload.custom_hero_url.strip(), custom_feature_url=payload.custom_feature_url.strip(), gallery_json=json.dumps([u.strip() for u in payload.gallery if is_public_http_url(u.strip())][:10]), status=Status.queued, stage='queued')
-    db.add(p); db.flush()
+    _lock_bulk_commit(db)
+    p, style = _new_project_record(payload, db, user)
+    p.stage = 'dispatch_pending'
+    _reserve_project_run(db, user, p, style)
     # Власні фото оператора: копія з media/uploads стає кадром галереї проєкту.
     upload_urls = []
     media_root = Path(settings.media_dir).resolve()
@@ -1300,7 +1760,7 @@ def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depen
         adopted = _adopt_images(db, p, payload.reuse_images_from, labels=payload.reuse_labels or None)
     audit(db, user, 'project.create', 'project', p.id, {'adopted_images': adopted} if adopted else None)
     db.commit(); db.refresh(p)
-    process_project.delay(p.id, reuse_images=bool(adopted))
+    _dispatch_project_once(db, p, reuse_images=bool(adopted))
     return project_dict(p, style_name=style.name)
 
 
@@ -1456,6 +1916,8 @@ def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends
     if not p: raise HTTPException(404, 'Проєкт не знайдено')
     require_project_edit(p, user)
     if p.status in {Status.processing, Status.queued}: raise HTTPException(409, 'Проєкт уже виконується або стоїть у черзі')
+    if p.status in {Status.paused, Status.cancelled} and p.finished_at is None:
+        raise HTTPException(409, 'Зачекайте, доки воркер підтвердить зупинку')
     if payload and payload.style_id:
         style = db.get(Style, payload.style_id)
         if not style: raise HTTPException(400, 'Обраний стиль не знайдено')
@@ -1469,11 +1931,15 @@ def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends
         variants = list(dict.fromkeys(variants))
         if not variants: raise HTTPException(400, 'Оберіть щонайменше один формат')
         p.variants = ','.join(variants)
+    _lock_bulk_commit(db)
+    style = db.get(Style, p.style_id)
+    if not style: raise HTTPException(400, 'Обраний стиль не знайдено')
     p.run_index = (getattr(p, 'run_index', 1) or 1) + 1
-    p.status = Status.queued; p.stage = 'queued'; p.progress = 0; p.error = ''; p.input_tokens = 0; p.output_tokens = 0; p.image_count = 0; p.text_request_count = 0; p.image_request_count = 0; p.text_cost = 0; p.image_cost = 0; p.estimated_cost = 0
+    p.status = Status.queued; p.stage = 'dispatch_pending'; p.progress = 0; p.error = ''; p.input_tokens = 0; p.output_tokens = 0; p.image_count = 0; p.text_request_count = 0; p.image_request_count = 0; p.text_cost = 0; p.image_cost = 0; p.estimated_cost = 0; p.reserved_cost = 0
+    _reserve_project_run(db, user, p, style)
     reuse = bool(payload and payload.reuse_images)
     audit(db, user, 'project.rerun', 'project', p.id, {'style_id': p.style_id, 'languages': p.languages, 'variants': p.variants, 'reuse_images': reuse}); db.commit()
-    process_project.delay(p.id, reuse_images=reuse)
+    _dispatch_project_once(db, p, reuse_images=reuse)
     return {'queued': True, 'style_id': p.style_id, 'languages': p.languages.split(','), 'variants': p.variants.split(','), 'reuse_images': reuse}
 
 
@@ -1484,14 +1950,28 @@ def queue_control(project_id: str, payload: QueueIn, db: Session = Depends(get_d
     require_project_edit(p, user)
     if payload.action in {'pause', 'cancel'}:
         # The running worker checks project.status between stages and stops cleanly.
+        was_processing = p.status == Status.processing
         p.status = Status.paused if payload.action == 'pause' else Status.cancelled
-        p.stage = p.status.value
+        p.stage = ('pausing' if payload.action == 'pause' else 'cancelling') if was_processing else p.status.value
+        if not was_processing:
+            p.reserved_cost = 0
+            p.finished_at = datetime.utcnow()
         db.add(Event(project_id=p.id, stage=p.stage, level='warning', message=f'{user.email}: {"пауза" if payload.action == "pause" else "скасування"}'))
     elif payload.action in {'resume', 'retry'}:
         if p.status in {Status.processing, Status.queued}: raise HTTPException(409, 'Проєкт уже виконується')
-        p.status = Status.queued; p.stage = 'queued'; p.progress = 0; p.error = ''
-        db.add(Event(project_id=p.id, stage='queued', message=f'{user.email}: повторний запуск з черги'))
-        audit(db, user, 'queue.' + payload.action, 'project', p.id); db.commit(); process_project.delay(p.id); return {'status': p.status.value}
+        if p.status in {Status.paused, Status.cancelled} and p.finished_at is None:
+            raise HTTPException(409, 'Зачекайте, доки воркер підтвердить зупинку, і повторіть дію')
+        check_action(user.id, 'queue-retry', 6); check_budget(); check_user_budget(user)
+        _lock_bulk_commit(db)
+        style = db.get(Style, p.style_id)
+        if not style: raise HTTPException(400, 'Обраний стиль не знайдено')
+        p.run_index = (getattr(p, 'run_index', 1) or 1) + 1
+        p.status = Status.queued; p.stage = 'dispatch_pending'; p.progress = 0; p.error = ''; p.input_tokens = 0; p.output_tokens = 0; p.image_count = 0; p.text_request_count = 0; p.image_request_count = 0; p.text_cost = 0; p.image_cost = 0; p.estimated_cost = 0; p.reserved_cost = 0
+        _reserve_project_run(db, user, p, style)
+        db.add(Event(project_id=p.id, stage='dispatch_pending', message=f'{user.email}: повторний запуск з черги'))
+        audit(db, user, 'queue.' + payload.action, 'project', p.id); db.commit()
+        _dispatch_project_once(db, p)
+        return {'status': p.status.value}
     else:
         raise HTTPException(400, 'Невідома дія')
     audit(db, user, 'queue.' + payload.action, 'project', p.id); db.commit(); return {'status': p.status.value}
@@ -1911,6 +2391,7 @@ def system_status(db: Session = Depends(get_db), user=Depends(require_perm('sett
         'redis_ok': redis_ok,
         'worker_ok': worker_ok,
         'watchdog_minutes': settings.stuck_project_minutes,
+        'queued_watchdog_hours': settings.queued_project_hours,
         'daily_budget_usd': float(settings.daily_budget_usd or 0),
         'today_spend_usd': round(today_spend(), 4),
         'shots_enabled': bool(settings.shots_url),

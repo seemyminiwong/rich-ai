@@ -86,8 +86,11 @@ class Settings(BaseSettings):
     # 'shared' (усі редагують усе) або 'owner' (змінює лише власник або admin).
     project_ownership: str = 'shared'
     request_timeout_seconds: int = 75
-    # Watchdog: a project stuck in processing/queued longer than this is failed.
+    # Watchdog: actively processing work should finish inside this window.
     stuck_project_minutes: int = 45
+    # Warn after this much queue time. Queued projects are never killed solely
+    # for waiting because a large valid batch can exceed a fixed wall-clock TTL.
+    queued_project_hours: int = 24
     # Hard daily cap on NEW paid work, USD. 0 disables. Running work finishes.
     daily_budget_usd: float = 25.0
     # Optional failure alerts. Telegram: token + chat id. Webhook: any URL that
