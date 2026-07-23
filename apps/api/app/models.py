@@ -112,6 +112,9 @@ class Project(Base):
     text_cost: Mapped[float] = mapped_column(Float, default=0)
     image_cost: Mapped[float] = mapped_column(Float, default=0)
     estimated_cost: Mapped[float] = mapped_column(Float, default=0)
+    # Conservative budget reservation for queued/running bulk work. Unlike the
+    # live estimate, it is not reset when a worker starts and survives restarts.
+    reserved_cost: Mapped[float] = mapped_column(Float, default=0)
     # Вартість ПОТОЧНОГО прогону обнуляється при перезапуску, тому сумарна
     # вартість проєкту живе окремо і не втрачається ніколи.
     lifetime_cost: Mapped[float] = mapped_column(Float, default=0)
@@ -119,6 +122,9 @@ class Project(Base):
     runs_json: Mapped[str] = mapped_column(Text, default='[]')
     cost_breakdown_json: Mapped[str] = mapped_column(Text, default='{}')
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    # Time this run entered the queue. Separate from started_at, which becomes
+    # the actual processing start once a worker claims the project.
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     artifacts: Mapped[list['Artifact']] = relationship(back_populates='project', cascade='all, delete-orphan')

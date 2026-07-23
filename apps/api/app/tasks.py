@@ -4,7 +4,7 @@ import logging
 import time
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from app.celery_app import celery
 from app.config import DEFAULT_IMAGE_PRICING, DEFAULT_TEXT_PRICING, settings
 from app.db import SessionLocal
@@ -156,10 +156,33 @@ def bill_extra(db, project, amount: float) -> None:
         project.runs_json = json.dumps(runs, ensure_ascii=False)
 
 
-def _aborted(db, project) -> bool:
-    """Re-read the row so a Pause/Cancel issued from the API stops the worker cleanly."""
+def _run_charge_id(project) -> str:
+    return f'project:{project.id}:run:{getattr(project, "run_index", 1) or 1}'
+
+
+def _charge_current_run(project) -> None:
+    """Move the cumulative real run cost into idempotent daily ledgers."""
+    amount = max(0.0, float(project.estimated_cost or 0))
+    operation_id = _run_charge_id(project)
+    add_spend(amount, operation_id=operation_id)
+    add_user_spend(project.owner_id or '', amount, operation_id=operation_id)
+
+
+def _aborted(db, project, started: float | None = None) -> bool:
+    """Re-read and financially finalize a user pause/cancel exactly once."""
     db.refresh(project)
-    return project.status in (Status.paused, Status.cancelled)
+    if project.status not in (Status.paused, Status.cancelled):
+        return False
+    if project.finished_at is None:
+        recalculate_cost(project)
+        _charge_current_run(project)
+        project.duration_seconds = time.time() - started if started is not None else project.duration_seconds
+        project.finished_at = now()
+        project.stage = project.status.value
+        close_run(db, project, project.status.value)
+    project.reserved_cost = 0
+    db.commit()
+    return True
 
 
 def _existing_images(db, project) -> dict:
@@ -171,13 +194,29 @@ def _existing_images(db, project) -> dict:
 @celery.task(bind=True, max_retries=0)
 def process_project(self, project_id, reuse_images=False):
     started = time.time()
-    cost_at_start = 0.0
     with SessionLocal() as db:
-        project = db.get(Project, project_id)
+        # Celery delivery is at-least-once. Lock before claiming the row so an
+        # API retry, a broker redelivery and the durable dispatcher cannot run
+        # the same paid project concurrently.
+        project = db.scalar(select(Project).where(Project.id == project_id).with_for_update())
         if not project:
             return
+        delivery = getattr(self.request, 'delivery_info', None) or {}
+        redelivered = bool(delivery.get('redelivered') or getattr(self.request, 'redelivered', False))
+        reclaim_after_worker_loss = project.status == Status.processing and redelivered
+        if project.status != Status.queued and not reclaim_after_worker_loss:
+            logger.info('Skipping project %s in status %s', project_id, project.status.value)
+            return {'skipped': True, 'status': project.status.value}
+        if reclaim_after_worker_loss:
+            logger.warning('Reclaiming redelivered project %s after worker loss', project_id)
         try:
-            cost_at_start = float(project.estimated_cost or 0)
+            if reclaim_after_worker_loss:
+                recalculate_cost(project)
+                _charge_current_run(project)
+                project.finished_at = now()
+                close_run(db, project, 'worker_lost')
+                project.run_index = (getattr(project, 'run_index', 1) or 1) + 1
+                db.add(Event(project_id=project.id, stage='queued', level='warning', message='Втрачений worker: частковий прогін зафіксовано, задачу відновлено'))
             # Reuse keeps the previous shots and regenerates only the copy: no image
             # cost and no waiting for the image model.
             existing_images = _existing_images(db, project) if reuse_images else {}
@@ -210,7 +249,7 @@ def process_project(self, project_id, reuse_images=False):
             db.execute(delete(CriticReport).where(CriticReport.project_id == project.id))
             db.commit()
 
-            if _aborted(db, project):
+            if _aborted(db, project, started):
                 db.add(Event(project_id=project.id, stage=project.stage, level='warning', message='Виконання зупинено користувачем')); db.commit()
                 return
 
@@ -431,7 +470,7 @@ def process_project(self, project_id, reuse_images=False):
                 project.cost_breakdown_json = json.dumps(cost_breakdown(project, extract_in, extract_out, content_in, content_out), ensure_ascii=False)
                 db.commit()
 
-            if _aborted(db, project):
+            if _aborted(db, project, started):
                 db.add(Event(project_id=project.id, stage=project.stage, level='warning', message='Виконання зупинено користувачем перед створенням контенту')); db.commit()
                 return
 
@@ -458,7 +497,7 @@ def process_project(self, project_id, reuse_images=False):
                 hero = hero_by_variant.get(variant) or fallback
                 master_html = None
                 for language in ordered_languages:
-                    if _aborted(db, project):
+                    if _aborted(db, project, started):
                         db.add(Event(project_id=project.id, stage=project.stage, level='warning', message='Виконання зупинено користувачем під час генерації')); db.commit()
                         return
                     progress = 40 + int(52 * completed_outputs / max(1, total_outputs))
@@ -634,15 +673,15 @@ def process_project(self, project_id, reuse_images=False):
                                  f'Перегенеруйте проєкт. Деталі: {summary}')
                 log(db, project, 'review', 'Увага: частина сторінок — аварійний шаблон, а не обраний стиль. Перед публікацією перегенеруйте.', level='error')
                 send_alert(f'Rich Studio: аварійний шаблон замість стилю\nПроєкт: {project.name}\n{summary}')
-            # Feed the daily budget with the REAL delta this run cost.
-            add_spend(float(project.estimated_cost or 0) - cost_at_start)
-            add_user_spend(project.owner_id or '', float(project.estimated_cost or 0) - cost_at_start)
+            # Feed cumulative idempotent ledgers with the real current-run cost.
+            _charge_current_run(project)
             project.status = Status.review
             project.stage = 'review'
             project.progress = 100
             project.finished_at = now()
             project.duration_seconds = time.time() - started
             close_run(db, project, 'review')
+            project.reserved_cost = 0
             db.add(Event(
                 project_id=project.id,
                 stage='review',
@@ -654,16 +693,29 @@ def process_project(self, project_id, reuse_images=False):
             ))
             db.commit()
         except Exception as exc:
+            # A failed flush/commit leaves SQLAlchemy in PendingRollbackError;
+            # restore the last durable metrics before recording the failure.
+            try:
+                db.rollback()
+                project = db.get(Project, project_id) or project
+            except Exception:
+                pass
             recalculate_cost(project)
             try:
                 project.cost_breakdown_json = json.dumps(cost_breakdown(project, extract_in, extract_out, content_in, content_out), ensure_ascii=False)
             except Exception:
                 pass
+            # Failed generations can still have consumed tokens/images. Move
+            # that real partial cost from the reservation into daily spend
+            # before releasing the reservation.
+            _charge_current_run(project)
             project.status = Status.error
             project.stage = 'error'
             project.error = str(exc)
             project.finished_at = now()
             project.duration_seconds = time.time() - started
+            close_run(db, project, 'error')
+            project.reserved_cost = 0
             db.add(Event(project_id=project.id, stage='error', level='error', message=str(exc)))
             db.commit()
             send_alert(f'Проєкт впав з помилкою\n{project.name}\n{exc}')
@@ -731,29 +783,121 @@ def translate_project(project_id: str, language: str):
 
 
 @celery.task
+def dispatch_pending_projects():
+    """Publish durable DB-backed queue entries that the API could not publish.
+
+    The API commits projects as ``dispatch_pending`` before talking to the
+    broker. If it crashes after that commit, beat republishes them here. A
+    publish-before-mark crash can create a duplicate message, which is safe
+    because ``process_project`` claims the project row under a lock.
+    """
+    # Redis now persists Celery messages with AOF. On the first run after this
+    # upgrade (or after a broker-volume loss), move every still-queued DB row
+    # back into the outbox once; duplicate messages are harmless at claim time.
+    try:
+        import redis as redis_lib
+        redis_client = redis_lib.Redis.from_url(settings.redis_url, socket_connect_timeout=2, socket_timeout=2)
+        recovery_key = 'richstudio:broker-queue-initialized:v1'
+        recover_broker_queue = not bool(redis_client.get(recovery_key))
+    except Exception:
+        redis_client = None
+        recovery_key = ''
+        recover_broker_queue = False
+    if recover_broker_queue:
+        with SessionLocal() as db:
+            db.execute(update(Project).where(
+                Project.status == Status.queued,
+                Project.stage.in_(('queued', 'queued_delayed')),
+            ).values(stage='dispatch_pending'))
+            db.commit()
+        try:
+            redis_client.set(recovery_key, '1')
+        except Exception:
+            pass
+
+    with SessionLocal() as db:
+        project_ids = list(db.scalars(select(Project.id).where(
+            Project.status == Status.queued,
+            Project.stage == 'dispatch_pending',
+        ).order_by(Project.created_at).limit(200)).all())
+
+    dispatched = failed = 0
+    for project_id in project_ids:
+        with SessionLocal() as db:
+            reuse_images = bool(db.scalar(select(func.count(Asset.id)).where(
+                Asset.project_id == project_id,
+                Asset.kind == 'image',
+            )))
+        try:
+            process_project.delay(project_id, reuse_images=reuse_images)
+        except Exception as exc:
+            failed += 1
+            logger.warning('Pending dispatch failed for project %s: %s', project_id, exc)
+            continue
+        dispatched += 1
+        with SessionLocal() as db:
+            project = db.scalar(select(Project).where(Project.id == project_id).with_for_update())
+            if project and project.status == Status.queued and project.stage == 'dispatch_pending':
+                project.stage = 'queued'
+                db.add(Event(project_id=project.id, stage='queued', message='Проєкт передано воркеру повторним диспетчером'))
+                db.commit()
+    return {'pending': len(project_ids), 'dispatched': dispatched, 'failed': failed}
+
+
+@celery.task
 def watchdog_stuck_projects():
-    """Fail projects stuck in processing/queued beyond the limit and alert about them.
+    """Fail hung processing, finalize abandoned stops, and warn on long queues.
 
     A dead worker or a hung API call otherwise leaves a project spinning forever
-    and nobody notices until they look. Runs on a beat schedule.
+    and nobody notices until they look. Queued work is never killed merely for
+    waiting: a 100-row import can legitimately exceed a fixed wall-clock TTL.
     """
-    limit = timedelta(minutes=max(10, settings.stuck_project_minutes))
-    cutoff = now() - limit
+    processing_cutoff = now() - timedelta(minutes=max(10, settings.stuck_project_minutes))
+    queued_cutoff = now() - timedelta(hours=max(1, settings.queued_project_hours))
     with SessionLocal() as db:
         stuck = db.scalars(select(Project).where(
-            Project.status.in_((Status.processing, Status.queued)),
-        )).all()
-        flagged = []
+            Project.status.in_((Status.processing, Status.queued, Status.paused, Status.cancelled)),
+        ).with_for_update(skip_locked=True)).all()
+        alerts = []
         for project in stuck:
+            if project.status == Status.queued:
+                reference = project.queued_at or project.created_at
+                if reference and reference < queued_cutoff and project.stage != 'queued_delayed':
+                    project.stage = 'queued_delayed'
+                    message = f'Проєкт очікує в черзі понад {settings.queued_project_hours} год; його не скасовано'
+                    db.add(Event(project_id=project.id, stage=project.stage, level='warning', message=message))
+                    alerts.append(f'Довга черга: {project.name}')
+                continue
+
+            if project.status in (Status.paused, Status.cancelled):
+                if project.finished_at is not None:
+                    continue
+                reference = project.started_at or project.created_at
+                if reference and reference < processing_cutoff:
+                    recalculate_cost(project)
+                    _charge_current_run(project)
+                    project.finished_at = now()
+                    project.stage = project.status.value
+                    project.reserved_cost = 0
+                    close_run(db, project, project.status.value)
+                    message = f'Зупинку підтверджено сторожем після {settings.stuck_project_minutes} хв'
+                    db.add(Event(project_id=project.id, stage=project.stage, level='warning', message=message))
+                    alerts.append(f'Завершено зупинку: {project.name}')
+                continue
+
             reference = project.started_at or project.created_at
-            if reference and reference < cutoff:
+            if reference and reference < processing_cutoff:
+                recalculate_cost(project)
+                _charge_current_run(project)
                 project.status = Status.error
                 project.stage = 'error'
-                project.error = f'Watchdog: проєкт завис довше {settings.stuck_project_minutes} хв і був зупинений'
+                project.error = f'Watchdog: проєкт не завершив активний етап за {settings.stuck_project_minutes} хв і був зупинений'
                 project.finished_at = now()
+                project.reserved_cost = 0
+                close_run(db, project, 'error')
                 db.add(Event(project_id=project.id, stage='error', level='error', message=project.error))
-                flagged.append(project.name)
-        if flagged:
+                alerts.append(f'Зупинено завислий: {project.name}')
+        if alerts:
             db.commit()
-            send_alert('Watchdog зупинив завислі проєкти:\n' + '\n'.join(f'• {name}' for name in flagged))
-        return {'flagged': len(flagged)}
+            send_alert('Watchdog проєктів:\n' + '\n'.join(f'• {message}' for message in alerts))
+        return {'flagged': len(alerts)}

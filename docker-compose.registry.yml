@@ -10,5 +10,7 @@ services:
     image: ghcr.io/seemyminiwong/rich-ai-api:${IMAGE_TAG:-latest}
   worker:
     image: ghcr.io/seemyminiwong/rich-ai-api:${IMAGE_TAG:-latest}
+  maintenance:
+    image: ghcr.io/seemyminiwong/rich-ai-api:${IMAGE_TAG:-latest}
   web:
     image: ghcr.io/seemyminiwong/rich-ai-web:${IMAGE_TAG:-latest}

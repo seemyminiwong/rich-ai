@@ -8,6 +8,7 @@ grep-smoke тричі мовчки промахувався (перевірка 
 - затінення <dialog id=...> однойменною функцією (TypeError на .close());
 - стирання URL з поля при перемиканні режимів Простий/Розширений;
 - відсутність вибору стилю в простому режимі.
+- розрив двокрокового CSV-імпорту «перевірити → створити валідні рядки».
 
 Колектор page.on('pageerror') — це і є детектор: будь-який неперехоплений
 виняток у браузері валить тест із текстом помилки.
@@ -100,6 +101,95 @@ def test_login_dialog_modes_create_and_settings(browser_page):
     if bad_toast.count():
         raise AssertionError(f'API відхилив створення проєкту: {bad_toast.first.inner_text()}')
     assert errors == [], f'JS errors after project creation: {errors}'
+
+    # --- Масовий CSV: спочатку точне превʼю, потім створення валідних рядків --
+    page.click('aside nav button:has-text("Проєкти")')
+    page.wait_for_selector('h1:has-text("Проєкти")')
+    page.click('button:has-text("Імпорт CSV")')
+    dialog = page.get_by_role('dialog', name='Імпорт проєктів із CSV')
+    dialog.wait_for()
+    assert page.locator('#bulkProjectDialog').get_attribute('aria-describedby') == 'bulkProjectDialogNote'
+    page.locator('#bulkCsvFile').focus()
+    assert page.locator('#bulkCsvFile').evaluate('node => document.activeElement === node'), \
+        'Нативний вибір CSV має отримувати клавіатурний фокус'
+    bulk_requests = []
+
+    def capture_bulk_request(request):
+        if request.method == 'POST' and request.url.endswith('/api/projects/bulk-import'):
+            bulk_requests.append(request.post_data_json)
+
+    page.on('request', capture_bulk_request)
+    csv_data = (
+        '\ufeffsource_url;name;languages;variants\r\n'
+        'https://example.com/bulk-e2e-one;Bulk E2E One;ua|pl;desktop\r\n'
+        'not-a-public-url;Broken row;ua;desktop\r\n'
+        'https://example.com/bulk-e2e-two;Bulk E2E Two;ru;mobile\r\n'
+    ).encode('utf-8')
+    page.set_input_files('#bulkCsvFile', {
+        'name': 'products-e2e.csv',
+        'mimeType': 'text/csv',
+        'buffer': csv_data,
+    })
+    page.click('#bulkActions button:has-text("Перевірити CSV")')
+    page.wait_for_selector('#bulkActions button:has-text("Створити проєкти")', timeout=30_000)
+    preview_metrics = page.locator('#bulkResult .bulk-summary > div')
+    assert preview_metrics.nth(0).locator('b').inner_text() == '2', \
+        'Превʼю мусить знайти два валідні рядки'
+    assert preview_metrics.nth(1).locator('b').inner_text() == '1', \
+        'Превʼю мусить показати один невалідний рядок'
+    assert 'not-a-public-url' in page.locator('#bulkResult').inner_text()
+    preview_table = page.locator('#bulkResult .bulk-table').first.inner_text()
+    assert all(label in preview_table for label in ('Українська', 'Польська', 'Російська',
+                                                     'Десктоп', 'Мобільна')), \
+        'Превʼю мусить показувати нормалізовані мови й формати кожного рядка'
+    batch_id = page.evaluate('state.bulk.preview.batch_id')
+    frozen_snapshot = page.evaluate(
+        'state.bulk.snapshot.batch_id === state.bulk.preview.batch_id'
+        ' && Object.isFrozen(state.bulk.snapshot)'
+        ' && Object.isFrozen(state.bulk.snapshot.languages)'
+        ' && Object.isFrozen(state.bulk.snapshot.variants)'
+    )
+    assert batch_id and frozen_snapshot, \
+        'Підтвердження мусить зберігати незмінний snapshot із batch_id'
+
+    page.click('#bulkActions button:has-text("Створити проєкти")')
+    page.wait_for_selector('#bulkResult h3:has-text("Створені проєкти")', timeout=30_000)
+    assert len(bulk_requests) == 2 and bulk_requests[1].get('batch_id') == batch_id, \
+        'Commit мусить повторно передавати batch_id із preview'
+    result_metrics = page.locator('#bulkResult .bulk-summary > div')
+    assert result_metrics.nth(0).locator('b').inner_text() == '2', \
+        'Після підтвердження мають створитися рівно два проєкти'
+    first_project_ids = page.evaluate('(state.bulk.result.projects || []).map(x => x.id)')
+    replay = page.evaluate(
+        """async payload => await api('/api/projects/bulk-import', {
+            method: 'POST', body: JSON.stringify(payload)
+        })""",
+        bulk_requests[1],
+    )
+    assert replay.get('idempotent_replay') is True
+    assert [project['id'] for project in replay.get('projects', [])] == first_project_ids, \
+        'Повтор утраченого commit-відповіді мусить повернути ті самі проєкти'
+    mismatched = {**bulk_requests[1], 'csv_text': bulk_requests[1]['csv_text'] + '\nhttps://example.com/other,Other'}
+    mismatch_status = page.evaluate(
+        """async payload => {
+            const response = await fetch('/api/projects/bulk-import', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', Authorization: `Bearer ${state.token}`},
+                body: JSON.stringify(payload)
+            });
+            return response.status;
+        }""",
+        mismatched,
+    )
+    assert mismatch_status == 409, 'Той самий batch_id з іншим CSV мусить бути відхилений'
+    projects_after_replay = page.evaluate("async () => await api('/api/projects')")
+    assert sum(project['source_url'] == 'https://example.com/bulk-e2e-one' for project in projects_after_replay) == 1
+    assert sum(project['source_url'] == 'https://example.com/bulk-e2e-two' for project in projects_after_replay) == 1
+    page.click('#bulkActions button:has-text("Готово")')
+    page.wait_for_selector('#bulkProjectDialog[open]', state='detached')
+    page.wait_for_selector('.project:has-text("https://example.com/bulk-e2e-one")')
+    page.wait_for_selector('.project:has-text("https://example.com/bulk-e2e-two")')
+    assert errors == [], f'JS errors around bulk CSV import: {errors}'
 
     # --- Налаштування: сторінка рендериться, стрічка технологій на місці -----
     page.click('aside nav button:has-text("Налаштування")')

@@ -17,6 +17,9 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -57,7 +60,27 @@ services:
   worker:
     build: ./apps/api
     restart: unless-stopped
-    command: ["celery", "-A", "app.celery_app.celery", "worker", "-B", "--loglevel=INFO", "--concurrency=2"]
+    command: ["celery", "-A", "app.celery_app.celery", "worker", "--loglevel=INFO", "--concurrency=2"]
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-richstudio}
+      POSTGRES_USER: ${POSTGRES_USER:-richstudio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-this-db-password}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - media_data:/app/media
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  maintenance:
+    build: ./apps/api
+    restart: unless-stopped
+    command: ["celery", "-A", "app.celery_app.celery", "worker", "-B", "-Q", "maintenance", "--loglevel=INFO", "--concurrency=1"]
     env_file: .env
     environment:
       POSTGRES_HOST: postgres
@@ -184,6 +207,7 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
   media_data:
   caddy_data:
   caddy_config:

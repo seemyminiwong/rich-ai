@@ -71,23 +71,68 @@ def _budget_key() -> str:
     return 'budget:' + datetime.now(timezone.utc).strftime('%Y-%m-%d')
 
 
-def add_spend(amount_usd: float) -> None:
-    """Called by the worker when a run finishes; accumulates today's real spend."""
+_CUMULATIVE_CHARGE_LUA = """
+local old = tonumber(redis.call('GET', KEYS[1]) or '0')
+local new = tonumber(ARGV[1])
+if new <= old then return 0 end
+local delta = new - old
+redis.call('SET', KEYS[1], tostring(new), 'EX', ARGV[2])
+redis.call('INCRBYFLOAT', KEYS[2], delta)
+redis.call('EXPIRE', KEYS[2], ARGV[3])
+return tostring(delta)
+"""
+
+
+def _record_spend(bucket_key: str, amount_usd: float, operation_id: str = '', scope: str = 'global') -> None:
+    """Atomically add spend; an operation id makes retries cumulative/idempotent."""
     if amount_usd <= 0:
         return
     try:
         r = _client()
-        key = _budget_key()
-        r.incrbyfloat(key, round(amount_usd, 6))
-        r.expire(key, 3 * 86400, nx=True)
+        amount = round(amount_usd, 6)
+        if operation_id:
+            ledger_key = f'budget:charge:{scope}:{operation_id}'
+            r.eval(_CUMULATIVE_CHARGE_LUA, 2, ledger_key, bucket_key, amount, 7 * 86400, 3 * 86400)
+        else:
+            r.incrbyfloat(bucket_key, amount)
+            r.expire(bucket_key, 3 * 86400, nx=True)
     except Exception as exc:
         logger.warning('Budget storage unavailable: %s', exc)
+
+
+def add_spend(amount_usd: float, operation_id: str = '') -> None:
+    """Called by workers; operation_id prevents double billing on redelivery."""
+    _record_spend(_budget_key(), amount_usd, operation_id, 'global')
 
 
 def today_spend() -> float:
     try:
         return float(_client().get(_budget_key()) or 0.0)
     except Exception:
+        return 0.0
+
+
+def active_reserved_spend(user_id: str = '') -> float:
+    """Read durable DB reservations, serialized with bulk commits.
+
+    This is intentionally lazy to keep this limits module free of import cycles.
+    Like the Redis guards, it fails open when the database is unavailable.
+    """
+    try:
+        from sqlalchemy import func, select, text
+        from app.db import SessionLocal
+        from app.models import Project
+        with SessionLocal() as db:
+            if db.get_bind().dialect.name == 'postgresql':
+                db.execute(text('SELECT pg_advisory_xact_lock(hashtext(:lock_name))'), {
+                    'lock_name': f'richstudio-bulk-import:{settings.db_schema}',
+                })
+            query = select(func.coalesce(func.sum(Project.reserved_cost), 0.0)).where(Project.reserved_cost > 0)
+            if user_id:
+                query = query.where(Project.owner_id == user_id)
+            return float(db.scalar(query) or 0)
+    except Exception as exc:
+        logger.warning('Budget reservation storage unavailable, failing open: %s', exc)
         return 0.0
 
 
@@ -101,8 +146,9 @@ def check_budget() -> None:
     if cap <= 0:
         return
     spent = today_spend()
-    if spent >= cap:
-        raise HTTPException(429, f'Денний бюджет вичерпано: витрачено ${spent:.2f} із ${cap:.2f}. '
+    reserved = active_reserved_spend()
+    if spent + reserved >= cap:
+        raise HTTPException(429, f'Денний бюджет вичерпано: витрачено ${spent:.2f}, зарезервовано ${reserved:.2f} із ${cap:.2f}. '
                                  'Нові генерації зупинено до завтра; ліміт задається DAILY_BUDGET_USD у .env')
 
 
@@ -112,16 +158,10 @@ def _user_budget_key(user_id: str) -> str:
     return f'budget:user:{user_id}:' + datetime.now(timezone.utc).strftime('%Y-%m-%d')
 
 
-def add_user_spend(user_id: str, amount_usd: float) -> None:
+def add_user_spend(user_id: str, amount_usd: float, operation_id: str = '') -> None:
     if not user_id or amount_usd <= 0:
         return
-    try:
-        r = _client()
-        key = _user_budget_key(user_id)
-        r.incrbyfloat(key, round(amount_usd, 6))
-        r.expire(key, 3 * 86400, nx=True)
-    except Exception as exc:
-        logger.warning('User budget storage unavailable: %s', exc)
+    _record_spend(_user_budget_key(user_id), amount_usd, operation_id, f'user:{user_id}')
 
 
 def user_today_spend(user_id: str) -> float:
@@ -137,6 +177,7 @@ def check_user_budget(user) -> None:
     if cap <= 0:
         return
     spent = user_today_spend(user.id)
-    if spent >= cap:
-        raise HTTPException(429, f'Ваш особистий денний ліміт вичерпано: витрачено ${spent:.2f} із ${cap:.2f}. '
+    reserved = active_reserved_spend(user.id)
+    if spent + reserved >= cap:
+        raise HTTPException(429, f'Ваш особистий денний ліміт вичерпано: витрачено ${spent:.2f}, зарезервовано ${reserved:.2f} із ${cap:.2f}. '
                                  'Нові генерації - завтра, або попросіть адміністратора підняти ліміт')
