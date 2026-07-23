@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.60"
+BASE_STYLE_VERSION = "12.61"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -601,16 +601,29 @@ ROOT
 Desktop: <section style="max-width:1240px;margin:0 auto;padding:0 14px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
 Mobile:  <section style="max-width:480px;margin:0 auto;padding:0 10px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
 
+BLOCK COMMENTS (REQUIRED)
+- The root contains exactly seven direct child blocks in the order below.
+- Wrap every direct child block in these exact invisible comments. Do not translate, rename or omit them:
+  <!-- ARTLINE BLOCK 01: HERO START --> ... <!-- ARTLINE BLOCK 01: HERO END -->
+  <!-- ARTLINE BLOCK 02: SPEC STRIP START --> ... <!-- ARTLINE BLOCK 02: SPEC STRIP END -->
+  <!-- ARTLINE BLOCK 03: LIGHT FEATURE SPLIT START --> ... <!-- ARTLINE BLOCK 03: LIGHT FEATURE SPLIT END -->
+  <!-- ARTLINE BLOCK 04: DARK FEATURE SPLIT START --> ... <!-- ARTLINE BLOCK 04: DARK FEATURE SPLIT END -->
+  <!-- ARTLINE BLOCK 05: CAPABILITY TRIO START --> ... <!-- ARTLINE BLOCK 05: CAPABILITY TRIO END -->
+  <!-- ARTLINE BLOCK 06: TRUST SPLIT START --> ... <!-- ARTLINE BLOCK 06: TRUST SPLIT END -->
+  <!-- ARTLINE BLOCK 07: FINAL RECAP START --> ... <!-- ARTLINE BLOCK 07: FINAL RECAP END -->
+
 SHOWCASE DESIGN SYSTEM
-- Dark surfaces: #101010, #1A2128, #1A2128; dark border #35393F. Light surfaces: #FFFFFF, #F5F7FA; light border #D0D7DE.
+- Dark surfaces: #101010, #1A2128, #252525; dark border #35393F. Light surfaces: #FFFFFF, #F5F7FA; light border #D0D7DE.
 - Accent is ARTLINE cyan: #19BCC9 on dark surfaces, #157985 on light. Use it ONLY for eyebrow labels, big numeric values and badge borders. Never for paragraphs.
 - Body text: #555555 on light, #d0d7de-#d8dde2 on dark. Headings: #101010 on light, #FFFFFF on dark.
 - Radii: outer sections 28-32px, inner cards 16-22px, chips and badges 999px (pills are part of this style).
 - Weights are heavy: h2 900-950, numeric values 950, chips 850-900. Section gap 18px, big-section padding 40-48px desktop / 22-26px mobile.
-- Rhythm rule: strictly alternate section canvases - dark, light, dark, light. Two same-tone sections may never touch.
+- RHYTHM RULE: use this explicit full-width canvas sequence: Hero dark; Spec Strip neutral transition; Light Feature light; Dark Feature dark; Capability Trio light; Trust Split light outer canvas with one dark inner panel; Final Recap dark. Nested cards do not redefine the section canvas. Never improvise a different tone sequence.
 - Photography works only next to copy: every frame sits in a split or a card with text. When GALLERY_IMAGES offers fewer frames, drop photo slots instead of repeating an image.
 - FITTING RULE for gallery frames: most are studio renders of the product on a white background. Such frames must NEVER be cropped: use object-fit:contain inside a white card (background:#FFFFFF; border:1px solid #D0D7DE; radius 20-28px; padding:18-24px) with a fixed height, so the whole product stays visible. object-fit:cover is allowed only for frames that show a real environment filling the whole picture. An amputated product edge is a defect.
 - Inside dark sections a white-background frame still sits in a WHITE framed card - never bare on the dark canvas and never darkened.
+- SHARED SECTION LABEL: the Hero brand/category badge, every feature eyebrow and the Final Recap brand/model badge are one reusable component, never three improvised styles. Use display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:7px 14px;border:1px solid #19BCC9;border-radius:999px;box-sizing:border-box;font-size:12px;line-height:1.25;font-weight:900;letter-spacing:.08em;text-transform:uppercase. Desktop: width:280px;max-width:100%. Mobile: width:fit-content;max-width:100%. On dark use color:#C9F0F4;background:rgba(26,33,40,.72); on light use color:#157985;background:#FFFFFF. Labels such as "QUBE · Монітор 23.8″", "Екранні характеристики" and "QUBE · V24F100-PLUS" must therefore have identical height, padding, border and typography on desktop.
+- EQUAL DESKTOP CARDS: every multi-column grid uses align-items:stretch. Its direct card children use height:100%;box-sizing:border-box. Capability cards additionally use display:flex;flex-direction:column, with equal-height image slots and copy padding below. Never let one text card float at a different height from its neighbours.
 
 SECTION SET, IN ORDER
 1. HERO - dark, full-bleed photograph
@@ -624,10 +637,10 @@ SECTION SET, IN ORDER
 2. SPEC STRIP - four value cards
 - Grid repeat(4,1fr) desktop / 1fr mobile, gap 14px. Each card: radius 22px, padding 24px; value first at 34px/950 in the accent, then h3 19px, then one short line.
 - Exactly one card is dark (#1A2128, border #35393F, cyan value) - the single most decision-critical number; the rest are white with #157985 values.
-3. LIGHT FEATURE SPLIT - #F5F7FA, radius 30px, padding 44px; grid .92fr/1.08fr (mobile stacked): left - cyan uppercase eyebrow 13px/900, h2 40-42px/950, paragraph, chip row of dark pills (#1A2128) with confirmed materials/facts; right - one gallery frame in a white 28px-radius card.
-4. DARK FEATURE SPLIT - grid 1fr/1fr (mobile stacked): left panel #1A2128 radius 30px padding 40px with cyan eyebrow, white h2 36-38px, paragraph #d0d7de and a 2x2 mini-grid of stat tiles (rgba(255,255,255,.08), 24px/950 cyan value + 14px label); right - one gallery frame, radius 30px, object-fit:cover.
-5. CAPABILITY TRIO - three white/soft cards (radius 28px): gallery frame on top (height:250px;object-fit:cover, mobile height:210px), then padding 22px with h3 20px and one line. If fewer frames remain, two cards are acceptable - never a repeated photo. Never add a standalone photo-only section: every image sits next to copy that earns its place.
-6. TRUST SPLIT - left dark panel (#1A2128, radius 28px, padding 36px) with h2 34-36px and one supportive paragraph about choosing/completing the setup with artline - no invented services or warranties beyond Product JSON; right - 2x2 grid of soft cards. Each tile answers a real buyer decision from Product JSON: what it pairs with (battery voltage/type, communication, parallel operation), an operating limit (temperature, IP rating, mounting), a capacity boundary, or a confirmed warranty term. REGISTRY DATA IS BANNED HERE: never SKU, article number, internal code, EAN/barcode or country of origin - a buyer decides nothing with those.
+3. LIGHT FEATURE SPLIT - #F5F7FA, radius 30px, padding 44px; grid .92fr/1.08fr with align-items:stretch (mobile stacked): left - the SHARED SECTION LABEL, h2 40-42px/950, paragraph, chip row of dark pills (#1A2128) with confirmed materials/facts; right - one gallery frame in a white 28px-radius card. The image slot is height:420px desktop / 300px mobile; its img is display:block;width:100%;height:100%;object-fit:contain;object-position:center.
+4. DARK FEATURE SPLIT - grid 1fr/1fr with align-items:stretch (mobile stacked): left panel #1A2128 radius 30px padding 40px with the SHARED SECTION LABEL, white h2 36-38px, paragraph #d0d7de and a 2x2 mini-grid of stat tiles (rgba(255,255,255,.08), 24px/950 cyan value + 14px label); right - one REAL gallery frame in a WHITE neutral card, radius 30px, height:420px desktop / 300px mobile. Its img uses width:100%;height:100%;object-fit:contain;object-position:center. Never use cover for this real product frame.
+5. CAPABILITY TRIO - three equal-height white/soft cards (radius 28px;display:flex;flex-direction:column;height:100%;overflow:hidden). Each card starts with a WHITE neutral image slot of height:250px desktop / 210px mobile; the real gallery img uses width:100%;height:100%;object-fit:contain;object-position:center. Copy lives in a separate padding:22px block with h3 20px and one line. If fewer frames remain, two cards are acceptable - never a repeated photo. Never add a standalone photo-only section: every image sits next to copy that earns its place.
+6. TRUST SPLIT - outer canvas #F5F7FA, radius 30px, padding 18px; grid .9fr/1.1fr with align-items:stretch (mobile stacked). Left: dark panel (#1A2128, radius 28px, padding 36px) with h2 34-36px and one supportive paragraph about choosing/completing the setup with artline - no invented services or warranties beyond Product JSON. Right: 2x2 grid of equal-height soft cards. Each tile answers a real buyer decision from Product JSON: what it pairs with (battery voltage/type, communication, parallel operation), an operating limit (temperature, IP rating, mounting), a capacity boundary, or a confirmed warranty term. REGISTRY DATA IS BANNED HERE: never SKU, article number, internal code, EAN/barcode or country of origin - a buyer decides nothing with those.
 7. FINAL RECAP - centered dark section, radius 28px, padding 48px 28px, background linear-gradient(135deg,#1A2128,#252525): pill badge with brand/model, h2 40-42px white, one summary paragraph #d0d7de max-width 700px, chip row of 3 white pills with exact confirmed values (dimensions, key spec, capacity).
 
 FACTS AND TONE
@@ -640,6 +653,7 @@ FINAL SELF-CHECK
 - the badge does not repeat the h2; the h2 is brand + model code only, commercial-name descriptors live in the subtitle as " · " specs;
 - no photo-only sections; the trust tiles contain zero registry data (SKU, codes, EAN, country);
 - no white-background render is cropped by cover or placed bare on a dark canvas;
+- all seven direct blocks carry the exact ARTLINE BLOCK start/end comments; all shared section labels have the same component CSS; desktop grid cards stretch to equal height;
 - dark and light sections strictly alternate; pills only where specified; cyan only for eyebrows, values and badge borders;
 - every gallery URL used at most once; no invented image URLs; alt on every img; loading="lazy" beyond the Hero;
 - desktop and mobile copy is word-for-word identical; mobile is single-column with the same section order;
@@ -680,7 +694,7 @@ PODIUM_STYLE_PROMPT = (
     + SHOWCASE_STYLE_PROMPT[_j:]
 )
 PODIUM_STYLE_PROMPT = PODIUM_STYLE_PROMPT.replace(
-    '- Rhythm rule: strictly alternate section canvases - dark, light, dark, light. Two same-tone sections may never touch.',
+    '- RHYTHM RULE: use this explicit full-width canvas sequence: Hero dark; Spec Strip neutral transition; Light Feature light; Dark Feature dark; Capability Trio light; Trust Split light outer canvas with one dark inner panel; Final Recap dark. Nested cards do not redefine the section canvas. Never improvise a different tone sequence.',
     '- Rhythm rule: the Podium opens LIGHT; from section 3 onward strictly alternate dark and light canvases.'
 )
 PODIUM_STYLE_PROMPT = PODIUM_STYLE_PROMPT.replace(
@@ -756,7 +770,7 @@ if 'PODIUM-3D-SCROLL' not in PODIUMSCROLL_STYLE_PROMPT or 'SECTION SET, IN ORDER
 
 SHOWCASE_DARK_STYLE_NAME = 'ARTLINE Showcase Dark'
 SHOWCASE_DARK_STYLE_PROMPT = SHOWCASE_STYLE_PROMPT.replace(
-    '- Rhythm rule: strictly alternate section canvases - dark, light, dark, light. Two same-tone sections may never touch.',
+    '- RHYTHM RULE: use this explicit full-width canvas sequence: Hero dark; Spec Strip neutral transition; Light Feature light; Dark Feature dark; Capability Trio light; Trust Split light outer canvas with one dark inner panel; Final Recap dark. Nested cards do not redefine the section canvas. Never improvise a different tone sequence.',
     '- Rhythm rule: EVERY section canvas is dark; alternate the two dark tones (#0D1013 / #1A2128) so neighbouring sections still differ. A light section may never appear.'
 ) + """
 
@@ -806,4 +820,3 @@ PODIUM360DARK_STYLE_PROMPT = _p360d
 
 if 'PODIUM-3D-360' not in PODIUM360DARK_STYLE_PROMPT or '#0D1013' not in PODIUM360DARK_STYLE_PROMPT:
     raise RuntimeError('PODIUM 360 DARK style derivation failed')
-

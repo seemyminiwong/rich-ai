@@ -1607,13 +1607,30 @@ def _frame_contained_photos(markup: str) -> str:
         # відлічити, фото розгортається в натуральний розмір і ВИПАДАЄ зі свого
         # слота, перекриваючи заголовок і сусідні картки. Тому за наявності
         # висоти у фото рамка тягнеться на 100% висоти слота.
-        fills = ('height:100%' in flat) or bool(re.search(r'height:\d', flat))
-        size = 'width:100%;height:100%;max-height:100%' if fills else 'width:100%'
+        height_match = re.search(r'(?<!max-)(?<!min-)height\s*:\s*([^;]+)', style, re.I)
+        height_value = height_match.group(1).strip() if height_match else ''
+        fills = height_value == '100%'
+        fixed = bool(height_value and height_value not in ('auto', '100%'))
+        if fixed:
+            size = f'width:100%;height:{height_value};max-height:{height_value};flex:0 0 auto'
+        elif fills:
+            size = 'width:100%;height:100%;max-height:100%'
+        else:
+            size = 'width:100%'
         frame['style'] = (f'border-radius:{_DEFAULT_IMAGE_RADIUS}px;overflow:hidden;background:#FFFFFF;'
                           f'display:flex;align-items:center;justify-content:center;box-sizing:border-box;{size}')
         img.replace_with(frame)
         frame.append(img)
-        if 'width:100%' not in flat:
+        if fixed:
+            normalized = style
+            for prop in ('width', 'height', 'max-width', 'max-height', 'object-fit', 'object-position', 'display'):
+                normalized = re.sub(rf'(^|;)\s*{prop}\s*:[^;]*', r'\1', normalized, flags=re.I)
+            normalized = normalized.strip().strip(';')
+            img['style'] = ((normalized + ';') if normalized else '') + (
+                'display:block;width:100%;height:100%;max-height:100%;'
+                'object-fit:contain;object-position:center'
+            )
+        elif 'width:100%' not in flat:
             img['style'] = style.rstrip().rstrip(';') + ';width:100%'
         changed = True
     return str(soup) if changed else markup
@@ -1641,6 +1658,51 @@ def _never_crop_product_photos(markup: str) -> str:
             updated = updated.rstrip().rstrip(';') + ';object-position:center'
         img['style'] = updated
         changed = True
+    return str(soup) if changed else markup
+
+
+def _fit_framed_images(markup: str) -> str:
+    """Фото в слоті з ФІКСОВАНОЮ висотою мусить заповнити слот, а не задавати
+    власні пропорції.
+
+    Моделі раз у раз ставлять на <img> aspect-ratio:3/2 всередині контейнера
+    height:240px. Пропорція б'ється з висотою слота: фото або ріжеться, або
+    висить криво з порожнечею по краях (жива скарга «картинки не ідеально
+    стають»). Правило: прибрати aspect-ratio, розтягнути на весь слот і дати
+    об'єкту вписатись - contain для реального товару, cover для згенерованих
+    сцен (hero/feature). Заразом підтягуємо радіус рамки: майже прямий кут (4px)
+    серед скруглених карток читається як дефект.
+    """
+    soup = BeautifulSoup(markup or '', 'html.parser')
+    changed = False
+    for img in soup.find_all('img'):
+        istyle = img.get('style') or ''
+        if 'position:absolute' in istyle.replace(' ', '').lower():
+            continue  # Hero-зображення позиціонується окремо - не чіпаємо
+        slot, anc = None, img.parent
+        for _ in range(3):
+            if anc is None or not getattr(anc, 'get', None):
+                break
+            if re.search(r'height\s*:\s*\d+px', anc.get('style') or '', re.I):
+                slot = anc
+                break
+            anc = anc.parent
+        if slot is None:
+            continue
+        scene = _is_scene_asset(img.get('src') or '')
+        keep = [d for d in istyle.split(';') if d.strip() and not re.match(
+            r'\s*(width|height|max-width|max-height|aspect-ratio|object-fit|object-position|display)\s*:', d, re.I)]
+        keep += ['display:block', 'width:100%', 'height:100%',
+                 'object-fit:cover' if scene else 'object-fit:contain', 'object-position:center']
+        new_istyle = ';'.join(x.strip() for x in keep)
+        if new_istyle != istyle:
+            img['style'] = new_istyle
+            changed = True
+        sstyle = slot.get('style') or ''
+        m = re.search(r'border-radius\s*:\s*([\d.]+)px', sstyle, re.I)
+        if m and float(m.group(1)) < 12:
+            slot['style'] = re.sub(r'border-radius\s*:\s*[\d.]+px', 'border-radius:16px', sstyle, count=1, flags=re.I)
+            changed = True
     return str(soup) if changed else markup
 
 
@@ -1690,6 +1752,119 @@ def _fit_photo_cards(markup: str, variant: str = 'mobile') -> str:
         img['style'] = ';'.join(x.strip() for x in keep)
         changed = True
     return str(soup) if changed else markup
+
+
+_SHOWCASE_BLOCK_NAMES = (
+    'HERO',
+    'SPEC STRIP',
+    'LIGHT FEATURE SPLIT',
+    'DARK FEATURE SPLIT',
+    'CAPABILITY TRIO',
+    'TRUST SPLIT',
+    'FINAL RECAP',
+)
+
+
+def _showcase_blocks(soup: BeautifulSoup) -> list:
+    """Return the seven ordered visual blocks inside the single root section."""
+    root = soup.find('section')
+    if root is None:
+        return []
+    blocks = root.find_all(recursive=False)
+    # Some models add one redundant inner wrapper despite the prompt. Keep the
+    # comments useful by annotating that wrapper's ordered children.
+    if len(blocks) == 1:
+        nested = blocks[0].find_all(recursive=False)
+        if len(nested) >= len(_SHOWCASE_BLOCK_NAMES):
+            blocks = nested
+    return blocks[:len(_SHOWCASE_BLOCK_NAMES)]
+
+
+def _set_css(style: str, prop: str, value: str) -> str:
+    """Set one inline declaration without accumulating contradictory copies."""
+    pattern = re.compile(rf'(^|;)\s*{re.escape(prop)}\s*:[^;]*', re.I)
+    cleaned = pattern.sub(lambda match: match.group(1), style or '').strip().strip(';')
+    return (cleaned + ';' if cleaned else '') + f'{prop}:{value}'
+
+
+def _showcase_label(block) -> object | None:
+    """Find the short identity/eyebrow label that precedes a block's first h2."""
+    heading = block.find('h2')
+    if heading is None:
+        return None
+    descendants = list(block.descendants)
+    heading_index = next((index for index, node in enumerate(descendants) if node is heading), -1)
+    if heading_index < 0:
+        return None
+    candidates = []
+    for index, node in enumerate(descendants[:heading_index]):
+        if getattr(node, 'name', None) not in ('div', 'span', 'p'):
+            continue
+        if node.find(True, recursive=False) is not None:
+            continue
+        text = node.get_text(' ', strip=True)
+        if text and len(text) <= 80:
+            candidates.append((index, node))
+    return candidates[-1][1] if candidates else None
+
+
+def _finalize_showcase_layout(
+    markup: str,
+    variant: str = 'desktop',
+    dark_edition: bool = False,
+) -> str:
+    """Stabilize Showcase labels, desktop grids and block comments."""
+    soup = BeautifulSoup(markup or '', 'html.parser')
+    blocks = _showcase_blocks(soup)
+    if not blocks:
+        return markup
+
+    # Hero, feature eyebrows and Final Recap badge are one visual component.
+    label_width = '280px' if variant == 'desktop' else 'fit-content'
+    for index in (0, 2, 3, 6):
+        if index >= len(blocks):
+            continue
+        label = _showcase_label(blocks[index])
+        if label is None:
+            continue
+        dark = dark_edition or index in (0, 3, 6)
+        label['style'] = (
+            'display:inline-flex;align-items:center;justify-content:center;min-height:34px;'
+            f'width:{label_width};max-width:100%;padding:7px 14px;border:1px solid #19BCC9;'
+            'border-radius:999px;box-sizing:border-box;font-size:12px;line-height:1.25;'
+            'font-weight:900;letter-spacing:.08em;text-transform:uppercase;'
+            + ('color:#C9F0F4;background:rgba(26,33,40,.72)'
+               if dark else 'color:#157985;background:#FFFFFF')
+        )
+
+    if variant == 'desktop':
+        for grid in soup.find_all(style=True):
+            style = grid.get('style') or ''
+            flat = style.replace(' ', '').lower()
+            if 'display:grid' not in flat or 'grid-template-columns' not in flat:
+                continue
+            grid['style'] = _set_css(style, 'align-items', 'stretch')
+            for card in grid.find_all(recursive=False):
+                if getattr(card, 'name', None) not in ('div', 'section', 'figure'):
+                    continue
+                card_style = _set_css(card.get('style') or '', 'height', '100%')
+                card_style = _set_css(card_style, 'box-sizing', 'border-box')
+                if card.find('img') is not None and card.find('h3') is not None and card.find('h2') is None:
+                    card_style = _set_css(card_style, 'display', 'flex')
+                    card_style = _set_css(card_style, 'flex-direction', 'column')
+                card['style'] = card_style
+
+    # Rebuild markers on every pass, so relayout and translation cannot leave
+    # stale, translated or duplicated comments.
+    for comment in list(soup.find_all(string=lambda value: (
+        isinstance(value, Comment) and 'ARTLINE BLOCK ' in str(value)
+    ))):
+        comment.extract()
+    blocks = _showcase_blocks(soup)
+    for index, (block, name) in enumerate(zip(blocks, _SHOWCASE_BLOCK_NAMES), start=1):
+        block.insert_before(Comment(f' ARTLINE BLOCK {index:02d}: {name} START '))
+        block.insert_after(Comment(f' ARTLINE BLOCK {index:02d}: {name} END '))
+    return str(soup)
 
 
 def _fit_mobile_hero(markup: str, hero_url: str) -> str:
@@ -2238,6 +2413,7 @@ HTML:
             output = _fit_mobile_hero(output, hero)
         output = _fit_photo_cards(output, variant)
         output = _never_crop_product_photos(output)
+        output = _fit_framed_images(output)
         output = _frame_contained_photos(output)
         output = _harmonize_radii(output)
         prompt_text = style.prompt or ''
@@ -2247,6 +2423,12 @@ HTML:
             output = _apply_podium_spin360(output, hero, rotation or [])
         elif _PODIUM_SPIN_MARKER in prompt_text:
             output = _apply_podium_spin(output, hero)
+        if (getattr(style, 'name', '') or '').startswith('ARTLINE Showcase'):
+            output = _finalize_showcase_layout(
+                output,
+                variant,
+                dark_edition=getattr(style, 'name', '') == 'ARTLINE Showcase Dark',
+            )
         return output, input_tokens, output_tokens, ''
     except Exception as exc:
         logger.exception('generate_html fell back to deterministic template for %s/%s', language, variant)
