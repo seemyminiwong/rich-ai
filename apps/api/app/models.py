@@ -237,11 +237,15 @@ class Landing(Base):
     products_json: Mapped[str] = mapped_column(Text, default='[]')     # проби: name/image/price/old_price/url
     html: Mapped[str] = mapped_column(Text, default='')
     text_model: Mapped[str] = mapped_column(String, default='')
-    # Тематичний AI-фон hero: генерується як сцена навколо РЕАЛЬНОГО фото
-    # головного товару (референс-edit, товар не вигадується).
-    with_hero: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Фон hero: 'ai' - тематична сцена за темою акції (text-to-image, без
+    # товару), 'custom' - завантажене операторм фото, 'none' - фірмовий градієнт.
+    with_hero: Mapped[bool] = mapped_column(Boolean, default=True)  # legacy, читається як ai/none
+    hero_mode: Mapped[str] = mapped_column(String, default='ai')
+    custom_hero_url: Mapped[str] = mapped_column(Text, default='')
     hero_url: Mapped[str] = mapped_column(Text, default='')
     image_cost: Mapped[float] = mapped_column(Float, default=0)
+    # Стиль-шаблон промпта лендінгу (керований «ARTLINE Landing» або власний).
+    style_id: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[Status] = mapped_column(Enum(Status), default=Status.queued)
     stage: Mapped[str] = mapped_column(String, default='queued')
     error: Mapped[str] = mapped_column(Text, default='')

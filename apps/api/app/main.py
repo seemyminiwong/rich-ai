@@ -28,6 +28,7 @@ from app.tasks import bill_extra, image_rate, process_landing, process_project, 
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
 from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, is_public_http_url, parse_page, safe_client, sanitize_html, style_image_prompt, text_client
+from app.landing import LANDING_PROMPT, LANDING_STYLE_NAME
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.version import __version__
 from app.bulk_import import BulkCSVError, MAX_BULK_CSV_BYTES, parse_bulk_csv, split_bulk_values
@@ -176,6 +177,21 @@ MANAGED_STYLES = [
             'hero_prompt': '',
             'feature_prompt': '',
             'negative_prompt': PODIUM_NEGATIVE_PROMPT,
+        },
+    },
+    {
+        # НЕ стиль rich-картки: шаблон промо-ЛЕНДІНГІВ (розділ «Лендінги»).
+        # У селекторі стилів проєкту не показується; редагується тут, у рушії
+        # стилів, з версіями і diff. Плейсхолдери {CAMPAIGN}/{PRODUCTS}/{LANGUAGE}
+        # обов'язкові - без них генерація відкотиться на вбудований шаблон.
+        'name': LANDING_STYLE_NAME,
+        'default': False,
+        'values': {
+            'description': 'Шаблон промо-лендінгів (розділ «Лендінги»): hero за темою акції, сітка товарів з цінами і кнопками «Купити», переваги. Плейсхолдери {CAMPAIGN}, {PRODUCTS}, {LANGUAGE} — обовʼязкові.',
+            'prompt': LANDING_PROMPT,
+            'hero_prompt': '',
+            'feature_prompt': '',
+            'negative_prompt': '',
         },
     },
 ]
@@ -2221,7 +2237,10 @@ class LandingIn(BaseModel):
     product_urls: list[str] = Field(default_factory=list, max_length=24)
     listing_url: str = Field(default='', max_length=1000)
     text_model: str = Field(default='', max_length=100)
-    with_hero: bool = True
+    with_hero: bool = True  # legacy; hero_mode має пріоритет
+    hero_mode: str = Field(default='', max_length=10)  # ai | custom | none
+    custom_hero_url: str = Field(default='', max_length=1000)
+    style_id: str | None = Field(default=None, max_length=200)
 
 
 def landing_dict(x, full=False):
@@ -2231,6 +2250,8 @@ def landing_dict(x, full=False):
          'status': x.status.value, 'stage': x.stage, 'error': x.error,
          'fallback_reason': x.fallback_reason, 'estimated_cost': x.estimated_cost,
          'with_hero': bool(getattr(x, 'with_hero', True)), 'hero_url': getattr(x, 'hero_url', '') or '',
+         'hero_mode': getattr(x, 'hero_mode', '') or 'ai', 'custom_hero_url': getattr(x, 'custom_hero_url', '') or '',
+         'style_id': getattr(x, 'style_id', None),
          'image_cost': float(getattr(x, 'image_cost', 0) or 0),
          'text_model': x.text_model, 'owner_id': x.owner_id,
          'created_at': x.created_at, 'finished_at': x.finished_at,
@@ -2272,13 +2293,31 @@ def landing_create(payload: LandingIn, db: Session = Depends(get_db), user=Depen
         raise HTTPException(400, 'Сторінка акції недоступна або не публічна')
     if not urls and not listing:
         raise HTTPException(400, 'Додайте хоча б один URL товару або сторінку акції')
+    hero_mode = payload.hero_mode or ('ai' if payload.with_hero else 'none')
+    if hero_mode not in ('ai', 'custom', 'none'):
+        hero_mode = 'ai'
+    custom_hero = payload.custom_hero_url.strip()
+    if hero_mode == 'custom':
+        if not custom_hero:
+            raise HTTPException(400, 'Оберіть файл фону або інший режим hero')
+        # Або завантажений через студію файл, або публічний URL - як фото проєктів.
+        if not (strip_media_query(custom_hero).startswith('/media/uploads/') or is_public_http_url(custom_hero)):
+            raise HTTPException(400, 'Фон hero: завантажте файл через діалог або дайте публічний URL')
+    style_id = None
+    if payload.style_id:
+        style_row = db.get(Style, payload.style_id)
+        if not style_row:
+            raise HTTPException(400, 'Обраний стиль лендінгу не знайдено')
+        style_id = style_row.id
     landing = Landing(
         name=payload.name.strip(), campaign_title=payload.campaign_title.strip(),
         campaign_subtitle=payload.campaign_subtitle.strip(), period=payload.period.strip(),
         language=payload.language if payload.language in ('ua', 'ru') else 'ua',
         source_urls_json=json.dumps(urls), listing_url=listing,
         text_model=payload.text_model.strip() or settings.openai_text_model,
-        with_hero=payload.with_hero,
+        with_hero=hero_mode == 'ai', hero_mode=hero_mode,
+        custom_hero_url=custom_hero if hero_mode == 'custom' else '',
+        style_id=style_id,
         owner_id=user.id, status=Status.queued, stage='queued')
     db.add(landing); db.flush()
     audit(db, user, 'landing.create', 'landing', landing.id, {'urls': len(urls), 'listing': bool(listing)})
