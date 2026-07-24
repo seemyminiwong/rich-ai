@@ -907,3 +907,85 @@ def watchdog_stuck_projects():
             db.commit()
             send_alert('Watchdog проєктів:\n' + '\n'.join(f'• {message}' for message in alerts))
         return {'flagged': len(alerts)}
+
+
+@celery.task(bind=True, max_retries=0)
+def process_landing(self, landing_id: str):
+    """Промо-лендінг: проби товарів (безкоштовно) -> одна AI-генерація сторінки.
+
+    Події проєктів (Event) тут не пишуться - у них FK на projects; стан лендінгу
+    живе в його власних полях stage/status/error.
+    """
+    from app.models import Landing
+    from app.landing import extract_product_links, generate_landing_html, probe_landing_product
+
+    started = time.time()
+    with SessionLocal() as db:
+        landing = db.scalar(select(Landing).where(Landing.id == landing_id).with_for_update())
+        if not landing or landing.status == Status.processing:
+            return
+        landing.status = Status.processing
+        landing.stage = 'probe'
+        landing.error = ''
+        db.commit()
+        try:
+            urls = [u for u in json.loads(landing.source_urls_json or '[]') if u]
+            if landing.listing_url:
+                try:
+                    for url in extract_product_links(landing.listing_url):
+                        if url not in urls:
+                            urls.append(url)
+                except Exception as exc:
+                    logger.warning('Landing %s: listing parse failed: %s', landing.id, exc)
+            urls = urls[:24]
+            if not urls:
+                raise RuntimeError('Не знайдено жодного товару: додайте URL товарів або перевірте сторінку акції')
+            products, failed = [], []
+            for url in urls:
+                try:
+                    probe = probe_landing_product(url)
+                    if probe.get('name'):
+                        products.append(probe)
+                    else:
+                        failed.append(url)
+                except Exception:
+                    failed.append(url)
+            if not products:
+                raise RuntimeError('Жодну сторінку товару не вдалося прочитати')
+            landing.products_json = json.dumps(products, ensure_ascii=False)
+            landing.stage = 'generate'
+            db.commit()
+
+            model = landing.text_model or settings.openai_text_model
+            campaign = {
+                'name': landing.name, 'campaign_title': landing.campaign_title,
+                'campaign_subtitle': landing.campaign_subtitle, 'period': landing.period,
+                'language': landing.language,
+            }
+            html_out, input_tokens, output_tokens, reason = generate_landing_html(campaign, products, model)
+            landing.html = html_out
+            landing.fallback_reason = reason or ''
+            landing.input_tokens = int(input_tokens or 0)
+            landing.output_tokens = int(output_tokens or 0)
+            input_rate, output_rate = text_rate(model)
+            landing.estimated_cost = round(
+                landing.input_tokens / 1_000_000 * input_rate
+                + landing.output_tokens / 1_000_000 * output_rate, 6)
+            add_spend(landing.estimated_cost)
+            add_user_spend(landing.owner_id or '', landing.estimated_cost)
+            landing.status = Status.done
+            landing.stage = 'done' if not reason else 'fallback'
+            landing.finished_at = now()
+            db.commit()
+            logger.info('Landing %s done in %.0fs: %d products, %d failed, $%.4f',
+                        landing.id, time.time() - started, len(products), len(failed), landing.estimated_cost)
+        except Exception as exc:
+            db.rollback()
+            landing = db.get(Landing, landing_id)
+            if landing:
+                landing.status = Status.error
+                landing.stage = 'error'
+                landing.error = str(exc)[:500]
+                landing.finished_at = now()
+                db.commit()
+            logger.exception('Landing %s failed', landing_id)

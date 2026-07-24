@@ -15,16 +15,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote, urlencode
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, HttpUrl, ValidationError
 from sqlalchemy import delete as sa_delete, func, select, text
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import Base, SessionLocal, engine, ensure_schema, get_db, run_migrations
-from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Project, Review, Role, Status, Style, StyleVersion, User
+from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Landing, Project, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
-from app.tasks import bill_extra, image_rate, process_project, text_rate, translate_project
+from app.tasks import bill_extra, image_rate, process_landing, process_project, text_rate, translate_project
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
 from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, is_public_http_url, parse_page, safe_client, sanitize_html, style_image_prompt, text_client
@@ -2209,6 +2209,117 @@ def project_blocks_all_png(project_id: str, run: int = 0, db: Session = Depends(
     name = _archive_name(f'{project.name}-v{target_run}-all', 'blocks')
     return StreamingResponse(combined, media_type='application/zip',
                              headers={'Content-Disposition': f'attachment; filename="{name}-png.zip"'})
+
+
+# --- Промо-лендінги -----------------------------------------------------------
+class LandingIn(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    campaign_title: str = Field(default='', max_length=300)
+    campaign_subtitle: str = Field(default='', max_length=300)
+    period: str = Field(default='', max_length=100)
+    language: str = Field(default='ua', max_length=5)
+    product_urls: list[str] = Field(default_factory=list, max_length=24)
+    listing_url: str = Field(default='', max_length=1000)
+    text_model: str = Field(default='', max_length=100)
+
+
+def landing_dict(x, full=False):
+    d = {'id': x.id, 'name': x.name, 'campaign_title': x.campaign_title,
+         'campaign_subtitle': x.campaign_subtitle, 'period': x.period,
+         'language': x.language, 'listing_url': x.listing_url,
+         'status': x.status.value, 'stage': x.stage, 'error': x.error,
+         'fallback_reason': x.fallback_reason, 'estimated_cost': x.estimated_cost,
+         'text_model': x.text_model, 'owner_id': x.owner_id,
+         'created_at': x.created_at, 'finished_at': x.finished_at,
+         'product_count': len(json.loads(x.products_json or '[]'))}
+    if full:
+        d['html'] = x.html
+        d['products'] = json.loads(x.products_json or '[]')
+        d['source_urls'] = json.loads(x.source_urls_json or '[]')
+    return d
+
+
+def _landing_or_404(db, landing_id: str):
+    landing = db.get(Landing, landing_id)
+    if not landing:
+        raise HTTPException(404, 'Лендінг не знайдено')
+    return landing
+
+
+@app.get('/api/landings')
+def landings(db: Session = Depends(get_db), user=Depends(current)):
+    rows = db.scalars(select(Landing).order_by(Landing.created_at.desc()).limit(200)).all()
+    return [landing_dict(x) for x in rows]
+
+
+@app.get('/api/landings/{landing_id}')
+def landing_get(landing_id: str, db: Session = Depends(get_db), user=Depends(current)):
+    return landing_dict(_landing_or_404(db, landing_id), full=True)
+
+
+@app.post('/api/landings')
+def landing_create(payload: LandingIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
+    check_action(user.id, 'landing', 6); check_budget(); check_user_budget(user)
+    urls = [u.strip() for u in payload.product_urls if u.strip()]
+    bad = [u for u in urls if not is_public_http_url(u)]
+    if bad:
+        raise HTTPException(400, f'Недоступні URL товарів: {", ".join(bad[:3])}')
+    listing = payload.listing_url.strip()
+    if listing and not is_public_http_url(listing):
+        raise HTTPException(400, 'Сторінка акції недоступна або не публічна')
+    if not urls and not listing:
+        raise HTTPException(400, 'Додайте хоча б один URL товару або сторінку акції')
+    landing = Landing(
+        name=payload.name.strip(), campaign_title=payload.campaign_title.strip(),
+        campaign_subtitle=payload.campaign_subtitle.strip(), period=payload.period.strip(),
+        language=payload.language if payload.language in ('ua', 'ru') else 'ua',
+        source_urls_json=json.dumps(urls), listing_url=listing,
+        text_model=payload.text_model.strip() or settings.openai_text_model,
+        owner_id=user.id, status=Status.queued, stage='queued')
+    db.add(landing); db.flush()
+    audit(db, user, 'landing.create', 'landing', landing.id, {'urls': len(urls), 'listing': bool(listing)})
+    db.commit()
+    process_landing.delay(landing.id)
+    return landing_dict(landing)
+
+
+@app.post('/api/landings/{landing_id}/run')
+def landing_rerun(landing_id: str, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
+    check_action(user.id, 'landing', 6); check_budget(); check_user_budget(user)
+    landing = _landing_or_404(db, landing_id)
+    if landing.status == Status.processing:
+        raise HTTPException(409, 'Лендінг вже генерується')
+    landing.status = Status.queued; landing.stage = 'queued'; landing.error = ''
+    audit(db, user, 'landing.rerun', 'landing', landing.id); db.commit()
+    process_landing.delay(landing.id)
+    return landing_dict(landing)
+
+
+@app.put('/api/landings/{landing_id}')
+def landing_save(landing_id: str, payload: HtmlIn, db: Session = Depends(get_db), user=Depends(require_perm('project.edit_html'))):
+    from app.landing import sanitize_landing_html
+    landing = _landing_or_404(db, landing_id)
+    landing.html = sanitize_landing_html(payload.html)
+    audit(db, user, 'landing.edit', 'landing', landing.id); db.commit()
+    return landing_dict(landing, full=True)
+
+
+@app.delete('/api/landings/{landing_id}')
+def landing_delete(landing_id: str, db: Session = Depends(get_db), user=Depends(require_perm('project.delete'))):
+    landing = _landing_or_404(db, landing_id)
+    audit(db, user, 'landing.delete', 'landing', landing.id)
+    db.delete(landing); db.commit()
+    return {'ok': True}
+
+
+@app.get('/api/landings/{landing_id}/page.html')
+def landing_download(landing_id: str, db: Session = Depends(get_db), user=Depends(current)):
+    landing = _landing_or_404(db, landing_id)
+    if not (landing.html or '').strip():
+        raise HTTPException(409, 'Сторінка ще не згенерована')
+    name = _archive_name(landing.name, landing.id[:8])
+    return Response(landing.html, media_type='text/html; charset=utf-8',
+                    headers={'Content-Disposition': f'attachment; filename="landing-{name}.html"'})
 
 
 @app.put('/api/artifacts/{artifact_id}')
