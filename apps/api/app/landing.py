@@ -52,7 +52,9 @@ def sanitize_landing_html(markup: str) -> str:
             if attr.startswith('on') or attr not in _LANDING_ALLOWED_ATTRS:
                 del tag.attrs[attr]
                 continue
-            if attr in ('src', 'href') and not flat.startswith(('http://', 'https://', '/')):
+            # data:image/ дозволено: скачаний standalone-файл інлайнить фон hero,
+            # інакше /media-посилання померло б поза мережею студії.
+            if attr in ('src', 'href') and not flat.startswith(('http://', 'https://', '/', 'data:image/')):
                 del tag.attrs[attr]
                 continue
             if attr == 'style' and ('javascript:' in flat or 'expression(' in flat or '@import' in flat):
@@ -131,6 +133,57 @@ def _chunk(campaign: dict, key: str, default: str = '') -> str:
     return html_lib.escape(str(campaign.get(key) or default))
 
 
+def generate_landing_hero(landing_id: str, campaign: dict, products: list[dict],
+                          image_model: str, quality: str = 'medium'):
+    """Тематичний фон hero: сцена НАВКОЛО реального фото головного товару.
+
+    Та сама політика, що в rich-пайплайні: згенероване зображення - це
+    трансформація справжнього продуктового фото (референс-edit), товар не
+    вигадується. Без референсу фону просто не буде - сторінка лишиться на
+    градієнті, це чесніше за вигаданий продукт.
+    Повертає (url, ok, reason)."""
+    from app.pipeline import generate_image
+    reference = next((p.get('image') for p in products if p.get('image')), '')
+    if not reference:
+        return '', False, 'Немає жодного фото товару для референсу'
+    names = ', '.join(p.get('name', '')[:60] for p in products[:3] if p.get('name'))
+    title = campaign.get('campaign_title') or campaign.get('name') or ''
+    prompt = (
+        f'Wide cinematic promo banner background for a retail sale campaign "{title}". '
+        f'Featured products: {names}. '
+        'Build an atmospheric thematic environment around the exact product from the reference photo: '
+        'dramatic dark scene with depth, soft volumetric light, subtle cyan (#19BCC9) accent glow, '
+        'premium tech-store mood. The product stands hero-lit on the RIGHT THIRD of the frame; '
+        'the LEFT two thirds stay dark, clean and uncluttered for headline text overlay. '
+        'Strictly NO text, NO logos, NO watermarks, NO people. Photorealistic, high detail.'
+    )
+    return generate_image(prompt, landing_id, 'hero', image_model, quality,
+                          reference_url=reference, size='1536x1024')
+
+
+def inline_media_images(markup: str) -> str:
+    """Standalone-файл має жити без сервера студії: кожен /media-src інлайниться
+    в data:URI. Зовнішні CDN-посилання лишаються як є."""
+    from pathlib import Path
+    import base64
+    from app.config import settings
+    from app.media import strip_media_query
+    soup = BeautifulSoup(markup or '', 'html.parser')
+    media_root = Path(settings.media_dir).resolve()
+    changed = False
+    for img in soup.find_all('img'):
+        src = img.get('src') or ''
+        if not strip_media_query(src).startswith('/media/'):
+            continue
+        candidate = (media_root / strip_media_query(src).removeprefix('/media/')).resolve()
+        if media_root not in candidate.parents or not candidate.is_file():
+            continue
+        suffix = candidate.suffix.lower().lstrip('.') or 'webp'
+        img['src'] = f'data:image/{suffix};base64,' + base64.b64encode(candidate.read_bytes()).decode()
+        changed = True
+    return str(soup) if changed else markup
+
+
 def deterministic_landing(campaign: dict, products: list[dict]) -> str:
     """Аварійний шаблон: та сама структура, що в AI-версії, нуль токенів.
     Темне промо-hero -> сітка товарів з цінами і кнопками -> переваги."""
@@ -166,10 +219,13 @@ def deterministic_landing(campaign: dict, products: list[dict]) -> str:
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title></head>
 <body style="margin:0;background:#F5F7FA;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif">
 <section style="max-width:1240px;margin:0 auto;padding:14px;box-sizing:border-box">
-<div style="background:linear-gradient(135deg,#101010,#1A2128);border:1px solid #35393F;border-radius:32px;padding:64px 28px;text-align:center">
+<div style="position:relative;overflow:hidden;background:{'#101010' if campaign.get('hero_url') else 'linear-gradient(135deg,#101010,#1A2128)'};border:1px solid #35393F;border-radius:32px;padding:64px 28px;text-align:center">
+{f'<img src="{html_lib.escape(str(campaign.get("hero_url")))}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center"><div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(16,16,16,.55) 0%,rgba(16,16,16,.82) 100%)"></div>' if campaign.get('hero_url') else ''}
+<div style="position:relative;z-index:1">
 {f'<div style="display:inline-block;background:rgba(25,188,201,.12);border:1px solid #19BCC9;color:#C9F0F4;padding:9px 16px;border-radius:999px;font-weight:900;font-size:13px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:18px">{_chunk(campaign, "period")}</div>' if campaign.get('period') else ''}
 <h1 style="margin:0 0 12px;font-size:52px;line-height:1.02;font-weight:950;color:#FFFFFF">{title}</h1>
 {f'<p style="margin:0;color:#C9F0F4;font-weight:700;font-size:20px">{_chunk(campaign, "campaign_subtitle")}</p>' if campaign.get('campaign_subtitle') else ''}
+</div>
 </div>
 <div style="margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">{''.join(cards)}</div>
 <div style="margin:18px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">{adv}</div>
@@ -190,7 +246,7 @@ STRICT RULES
 DESIGN SYSTEM (ARTLINE)
 - Canvas #F5F7FA; dark surfaces #101010/#1A2128 border #35393F; light cards #FFFFFF border #D0D7DE; accent cyan #19BCC9 (dark) / #157985 (light). Radii: sections 28-32px, cards 18-22px, chips/buttons 999px. Heavy weights: h1/h2 950, prices 950.
 - Page structure, in order:
-  1. PROMO HERO - dark gradient section: period chip (if given), huge campaign title, subtitle. Centered.
+  1. PROMO HERO - {HERO_RULE}
   2. PRODUCT GRID - responsive grid of white cards: white image slot (fixed height, img object-fit:contain, never cropped), product name, price (old-style big 950; if the name suggests Refurbished/discount you still only show given price_text), cyan pill CTA «{BUY}» linking to the product url.
   3. ADVANTAGES - three dark cards with short confident claims (official warranty, support, delivery) - no invented specifics, no numbers not present in data.
 - Mobile-friendly: grid uses repeat(auto-fit,minmax(240px,1fr)); hero title scales down via the media-query <style> block.
@@ -204,10 +260,26 @@ PRODUCTS JSON
 '''
 
 
+_HERO_RULE_IMAGE = (
+    'full-bleed thematic photo hero. Wrapper: position:relative;overflow:hidden;'
+    'border-radius:32px;background:#101010. FIRST CHILD is <img src="{HERO_URL}" alt="" '
+    'style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center"> '
+    '(exactly this URL, never another). Above it one overlay div position:absolute;inset:0;'
+    'background:linear-gradient(90deg,rgba(16,16,16,.92) 0%,rgba(16,16,16,.55) 55%,rgba(16,16,16,.05) 100%) '
+    '- transparent on the right where the product stands. Content layer position:relative;z-index:1;'
+    'min-height:480px;padding:70px 46px;display:flex;flex-direction:column;justify-content:center;'
+    'max-width:640px: period chip (if given), huge campaign title (h1, white, 950), subtitle. '
+    'Left-aligned over the dark side.')
+_HERO_RULE_GRADIENT = ('dark gradient section (linear-gradient(135deg,#101010,#1A2128)): '
+                       'period chip (if given), huge campaign title, subtitle. Centered.')
+
+
 def build_landing_prompt(campaign: dict, products: list[dict]) -> str:
     lang = campaign.get('language') or 'ua'
+    hero_url = str(campaign.get('hero_url') or '')
     safe_products = [{k: p.get(k, '') for k in ('name', 'price_text', 'image', 'url')} for p in products]
     return (LANDING_PROMPT
+            .replace('{HERO_RULE}', _HERO_RULE_IMAGE.replace('{HERO_URL}', hero_url) if hero_url else _HERO_RULE_GRADIENT)
             .replace('{LANGUAGE}', 'українська' if lang == 'ua' else 'русский')
             .replace('{BUY}', 'Купити' if lang == 'ua' else 'Купить')
             .replace('{CAMPAIGN}', json.dumps({

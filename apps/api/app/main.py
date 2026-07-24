@@ -2221,6 +2221,7 @@ class LandingIn(BaseModel):
     product_urls: list[str] = Field(default_factory=list, max_length=24)
     listing_url: str = Field(default='', max_length=1000)
     text_model: str = Field(default='', max_length=100)
+    with_hero: bool = True
 
 
 def landing_dict(x, full=False):
@@ -2229,6 +2230,8 @@ def landing_dict(x, full=False):
          'language': x.language, 'listing_url': x.listing_url,
          'status': x.status.value, 'stage': x.stage, 'error': x.error,
          'fallback_reason': x.fallback_reason, 'estimated_cost': x.estimated_cost,
+         'with_hero': bool(getattr(x, 'with_hero', True)), 'hero_url': getattr(x, 'hero_url', '') or '',
+         'image_cost': float(getattr(x, 'image_cost', 0) or 0),
          'text_model': x.text_model, 'owner_id': x.owner_id,
          'created_at': x.created_at, 'finished_at': x.finished_at,
          'product_count': len(json.loads(x.products_json or '[]'))}
@@ -2275,6 +2278,7 @@ def landing_create(payload: LandingIn, db: Session = Depends(get_db), user=Depen
         language=payload.language if payload.language in ('ua', 'ru') else 'ua',
         source_urls_json=json.dumps(urls), listing_url=listing,
         text_model=payload.text_model.strip() or settings.openai_text_model,
+        with_hero=payload.with_hero,
         owner_id=user.id, status=Status.queued, stage='queued')
     db.add(landing); db.flush()
     audit(db, user, 'landing.create', 'landing', landing.id, {'urls': len(urls), 'listing': bool(listing)})
@@ -2317,8 +2321,12 @@ def landing_download(landing_id: str, db: Session = Depends(get_db), user=Depend
     landing = _landing_or_404(db, landing_id)
     if not (landing.html or '').strip():
         raise HTTPException(409, 'Сторінка ще не згенерована')
+    from app.landing import inline_media_images
+    # Standalone-файл: /media-зображення (AI-фон hero) інлайняться в data:URI,
+    # щоб сторінка жила без сервера студії.
+    page = inline_media_images(landing.html)
     name = _archive_name(landing.name, landing.id[:8])
-    return Response(landing.html, media_type='text/html; charset=utf-8',
+    return Response(page, media_type='text/html; charset=utf-8',
                     headers={'Content-Disposition': f'attachment; filename="landing-{name}.html"'})
 
 
