@@ -221,6 +221,34 @@ class CriticReport(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
+class Landing(Base):
+    """Промо-лендінг кампанії (на кшталт artline.ua/solution/*): багато товарів,
+    ціни та кнопки «Купити». Окремо від Project: інша модель даних (N товарів,
+    жодних AI-зображень) і інший вихід (standalone-сторінка, а не фрагмент)."""
+    __tablename__ = 'landings'
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    name: Mapped[str] = mapped_column(String, index=True)
+    campaign_title: Mapped[str] = mapped_column(Text, default='')     # «Знижки до -50%»
+    campaign_subtitle: Mapped[str] = mapped_column(Text, default='')  # «До 4-ї річниці Bambu Lab»
+    period: Mapped[str] = mapped_column(String, default='')           # «15.06–15.07»
+    language: Mapped[str] = mapped_column(String, default='ua')
+    source_urls_json: Mapped[str] = mapped_column(Text, default='[]')  # URL товарів від оператора
+    listing_url: Mapped[str] = mapped_column(Text, default='')         # сторінка акції/категорії
+    products_json: Mapped[str] = mapped_column(Text, default='[]')     # проби: name/image/price/old_price/url
+    html: Mapped[str] = mapped_column(Text, default='')
+    text_model: Mapped[str] = mapped_column(String, default='')
+    status: Mapped[Status] = mapped_column(Enum(Status), default=Status.queued)
+    stage: Mapped[str] = mapped_column(String, default='queued')
+    error: Mapped[str] = mapped_column(Text, default='')
+    fallback_reason: Mapped[str] = mapped_column(Text, default='')
+    estimated_cost: Mapped[float] = mapped_column(Float, default=0)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey(f'{settings.db_schema}.users.id'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class AppSetting(Base):
     """Runtime configuration the root admin edits from the UI (API keys, provider).
 
