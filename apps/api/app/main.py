@@ -2235,6 +2235,7 @@ class LandingIn(BaseModel):
     period: str = Field(default='', max_length=100)
     language: str = Field(default='ua', max_length=5)
     product_urls: list[str] = Field(default_factory=list, max_length=24)
+    category_urls: list[str] = Field(default_factory=list, max_length=24)
     listing_url: str = Field(default='', max_length=1000)
     text_model: str = Field(default='', max_length=100)
     with_hero: bool = True  # legacy; hero_mode має пріоритет
@@ -2255,11 +2256,14 @@ def landing_dict(x, full=False):
          'image_cost': float(getattr(x, 'image_cost', 0) or 0),
          'text_model': x.text_model, 'owner_id': x.owner_id,
          'created_at': x.created_at, 'finished_at': x.finished_at,
-         'product_count': len(json.loads(x.products_json or '[]'))}
+         'product_count': len(json.loads(x.products_json or '[]')),
+         'category_count': len(json.loads(getattr(x, 'categories_json', None) or '[]'))}
     if full:
         d['html'] = x.html
         d['products'] = json.loads(x.products_json or '[]')
+        d['categories'] = json.loads(getattr(x, 'categories_json', None) or '[]')
         d['source_urls'] = json.loads(x.source_urls_json or '[]')
+        d['source_categories'] = json.loads(getattr(x, 'source_categories_json', None) or '[]')
     return d
 
 
@@ -2285,14 +2289,15 @@ def landing_get(landing_id: str, db: Session = Depends(get_db), user=Depends(cur
 def landing_create(payload: LandingIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
     check_action(user.id, 'landing', 6); check_budget(); check_user_budget(user)
     urls = [u.strip() for u in payload.product_urls if u.strip()]
-    bad = [u for u in urls if not is_public_http_url(u)]
+    category_urls = [u.strip() for u in payload.category_urls if u.strip()]
+    bad = [u for u in urls + category_urls if not is_public_http_url(u)]
     if bad:
-        raise HTTPException(400, f'Недоступні URL товарів: {", ".join(bad[:3])}')
+        raise HTTPException(400, f'Недоступні URL: {", ".join(bad[:3])}')
     listing = payload.listing_url.strip()
     if listing and not is_public_http_url(listing):
         raise HTTPException(400, 'Сторінка акції недоступна або не публічна')
-    if not urls and not listing:
-        raise HTTPException(400, 'Додайте хоча б один URL товару або сторінку акції')
+    if not urls and not listing and not category_urls:
+        raise HTTPException(400, 'Додайте хоча б один URL товару, категорії або сторінку акції')
     hero_mode = payload.hero_mode or ('ai' if payload.with_hero else 'none')
     if hero_mode not in ('ai', 'custom', 'none'):
         hero_mode = 'ai'
@@ -2314,6 +2319,7 @@ def landing_create(payload: LandingIn, db: Session = Depends(get_db), user=Depen
         campaign_subtitle=payload.campaign_subtitle.strip(), period=payload.period.strip(),
         language=payload.language if payload.language in ('ua', 'ru') else 'ua',
         source_urls_json=json.dumps(urls), listing_url=listing,
+        source_categories_json=json.dumps(category_urls),
         text_model=payload.text_model.strip() or settings.openai_text_model,
         with_hero=hero_mode == 'ai', hero_mode=hero_mode,
         custom_hero_url=custom_hero if hero_mode == 'custom' else '',

@@ -235,6 +235,9 @@ class Landing(Base):
     source_urls_json: Mapped[str] = mapped_column(Text, default='[]')  # URL товарів від оператора
     listing_url: Mapped[str] = mapped_column(Text, default='')         # сторінка акції/категорії
     products_json: Mapped[str] = mapped_column(Text, default='[]')     # проби: name/image/price/old_price/url
+    # Категорії акції (сітка карток-посилань на каталог, як на /solution/easter-2026)
+    source_categories_json: Mapped[str] = mapped_column(Text, default='[]')  # URL від оператора
+    categories_json: Mapped[str] = mapped_column(Text, default='[]')         # проби: name/image/url
     html: Mapped[str] = mapped_column(Text, default='')
     text_model: Mapped[str] = mapped_column(String, default='')
     # Фон hero: 'ai' - тематична сцена за темою акції (text-to-image, без

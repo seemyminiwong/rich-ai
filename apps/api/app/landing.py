@@ -112,6 +112,16 @@ def probe_landing_product(url: str) -> dict:
     }
 
 
+def probe_landing_category(url: str) -> dict:
+    """Проба сторінки категорії: назва (з <title> без хвостів) і перше зображення
+    (зазвичай og:image). Безкоштовно, без AI."""
+    page = fetch_html(url)
+    _product, images, title, _text = parse_page(page, url)
+    name = re.split(r'[|·—]', title or '')[0].strip()
+    name = re.sub(r'\s*(купити|купить|в Україні|в Украине|ARTLINE|Artline).*$', '', name, flags=re.I).strip(' -–')
+    return {'url': url, 'name': name[:80] or url.rsplit('/', 1)[-1], 'image': next(iter(images), '')}
+
+
 def extract_product_links(listing_url: str, cap: int = MAX_PRODUCTS) -> list[str]:
     """Посилання на товари зі сторінки акції/категорії (шаблон /product/)."""
     page = fetch_html(listing_url)
@@ -212,12 +222,24 @@ def inline_media_images(markup: str) -> str:
     return str(soup) if changed else markup
 
 
-def deterministic_landing(campaign: dict, products: list[dict]) -> str:
+def deterministic_landing(campaign: dict, products: list[dict], categories: list[dict] | None = None) -> str:
     """Аварійний шаблон: та сама структура, що в AI-версії, нуль токенів.
-    Темне промо-hero -> сітка товарів з цінами і кнопками -> переваги."""
+    Темне промо-hero -> сітка категорій -> сітка товарів -> переваги."""
     lang = campaign.get('language') or 'ua'
     buy = 'Купити' if lang == 'ua' else 'Купить'
     title = _chunk(campaign, 'campaign_title') or _chunk(campaign, 'name')
+    categories = categories or []
+    category_cards = ''.join(
+        f'<a href="{html_lib.escape(c.get("url") or "")}" rel="noopener" style="display:flex;flex-direction:column;align-items:center;gap:10px;'
+        f'background:#FFFFFF;border:1px solid #D0D7DE;border-radius:20px;padding:18px;text-decoration:none">'
+        + (f'<img src="{html_lib.escape(c.get("image") or "")}" alt="{html_lib.escape(c.get("name") or "")}" loading="lazy" '
+           f'style="width:100%;height:120px;object-fit:contain">' if c.get('image') else '')
+        + f'<span style="color:#101010;font-weight:900;font-size:15px;text-align:center">{html_lib.escape(c.get("name") or "")}</span></a>'
+        for c in categories)
+    categories_html = (f'<h2 style="margin:26px 0 14px;font-size:30px;font-weight:950;color:#101010;text-align:center">'
+                       f'{"Категорії акційних товарів" if lang == "ua" else "Категории акционных товаров"}</h2>'
+                       f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px">{category_cards}</div>'
+                       ) if categories else ''
     cards = []
     for p in products:
         img = html_lib.escape(p.get('image') or '')
@@ -255,7 +277,8 @@ def deterministic_landing(campaign: dict, products: list[dict]) -> str:
 {f'<p style="margin:0;color:#C9F0F4;font-weight:700;font-size:20px">{_chunk(campaign, "campaign_subtitle")}</p>' if campaign.get('campaign_subtitle') else ''}
 </div>
 </div>
-<div style="margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">{''.join(cards)}</div>
+{categories_html}
+{f'<div style="margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">{"".join(cards)}</div>' if cards else ''}
 <div style="margin:18px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">{adv}</div>
 </section>
 </body></html>'''
@@ -275,13 +298,17 @@ DESIGN SYSTEM (ARTLINE)
 - Canvas #F5F7FA; dark surfaces #101010/#1A2128 border #35393F; light cards #FFFFFF border #D0D7DE; accent cyan #19BCC9 (dark) / #157985 (light). Radii: sections 28-32px, cards 18-22px, chips/buttons 999px. Heavy weights: h1/h2 950, prices 950.
 - Page structure, in order:
   1. PROMO HERO - {HERO_RULE}
-  2. PRODUCT GRID - responsive grid of white cards: white image slot (fixed height, img object-fit:contain, never cropped), product name, price (old-style big 950; if the name suggests Refurbished/discount you still only show given price_text), cyan pill CTA «{BUY}» linking to the product url.
-  3. ADVANTAGES - three dark cards with short confident claims (official warranty, support, delivery) - no invented specifics, no numbers not present in data.
-- Mobile-friendly: grid uses repeat(auto-fit,minmax(240px,1fr)); hero title scales down via the media-query <style> block.
-- Wrap each of the three sections in comments: <!-- LANDING BLOCK 01: HERO START --> ... END, 02: PRODUCTS, 03: ADVANTAGES.
+  2. CATEGORY GRID (only if CATEGORIES JSON is non-empty) - centered h2 section title, then a responsive grid of white category cards: image on top (height ~120px, object-fit:contain), category name below (900 weight, centered). THE WHOLE CARD is one <a> linking to the exact category url. Use ONLY categories from CATEGORIES JSON - exact names, exact image URLs, exact urls; if a category has no image, render the card with the name only.
+  3. PRODUCT GRID (only if PRODUCTS JSON is non-empty) - responsive grid of white cards: white image slot (fixed height, img object-fit:contain, never cropped), product name, price (old-style big 950; if the name suggests Refurbished/discount you still only show given price_text), cyan pill CTA «{BUY}» linking to the product url.
+  4. ADVANTAGES - three dark cards with short confident claims (official warranty, support, delivery) - no invented specifics, no numbers not present in data.
+- Mobile-friendly: grids use repeat(auto-fit,minmax(240px,1fr)) (categories minmax(180px,1fr)); hero title scales down via the media-query <style> block.
+- Wrap each section in comments: <!-- LANDING BLOCK 01: HERO START --> ... END, 02: CATEGORIES, 03: PRODUCTS, 04: ADVANTAGES (skip a number entirely if its section is absent).
 
 CAMPAIGN
 {CAMPAIGN}
+
+CATEGORIES JSON
+{CATEGORIES}
 
 PRODUCTS JSON
 {PRODUCTS}
@@ -302,10 +329,12 @@ _HERO_RULE_GRADIENT = ('dark gradient section (linear-gradient(135deg,#101010,#1
                        'period chip (if given), huge campaign title, subtitle. Centered.')
 
 
-def build_landing_prompt(campaign: dict, products: list[dict], template: str = '') -> str:
+def build_landing_prompt(campaign: dict, products: list[dict], template: str = '',
+                         categories: list[dict] | None = None) -> str:
     lang = campaign.get('language') or 'ua'
     hero_url = str(campaign.get('hero_url') or '')
     safe_products = [{k: p.get(k, '') for k in ('name', 'price_text', 'image', 'url')} for p in products]
+    safe_categories = [{k: c.get(k, '') for k in ('name', 'image', 'url')} for c in (categories or [])]
     base = template if template and all(ph in template for ph in LANDING_PLACEHOLDERS) else LANDING_PROMPT
     return (base
             .replace('{HERO_RULE}', _HERO_RULE_IMAGE.replace('{HERO_URL}', hero_url) if hero_url else _HERO_RULE_GRADIENT)
@@ -316,16 +345,18 @@ def build_landing_prompt(campaign: dict, products: list[dict], template: str = '
                 'subtitle': campaign.get('campaign_subtitle') or '',
                 'period': campaign.get('period') or '',
             }, ensure_ascii=False))
+            .replace('{CATEGORIES}', json.dumps(safe_categories, ensure_ascii=False))
             .replace('{PRODUCTS}', json.dumps(safe_products, ensure_ascii=False)))
 
 
-def generate_landing_html(campaign: dict, products: list[dict], model: str, template: str = ''):
+def generate_landing_html(campaign: dict, products: list[dict], model: str, template: str = '',
+                          categories: list[dict] | None = None):
     """(html, input_tokens, output_tokens, fallback_reason). Ніколи не кидає:
     відмова AI -> детермінований шаблон, гроші за токени не втрачаються."""
     from app.pipeline import _responses_create, _usage_counts, public_fallback_reason
-    fallback = deterministic_landing(campaign, products)
+    fallback = deterministic_landing(campaign, products, categories)
     try:
-        prompt = build_landing_prompt(campaign, products, template)
+        prompt = build_landing_prompt(campaign, products, template, categories)
         response = _responses_create(model, prompt, 16000)
         raw = response.output_text or ''
         match = re.search(r'<!doctype html.*</html>', raw, re.I | re.S) or re.search(r'<html.*</html>', raw, re.I | re.S)
