@@ -953,15 +953,32 @@ def process_landing(self, landing_id: str):
             if not products:
                 raise RuntimeError('Жодну сторінку товару не вдалося прочитати')
             landing.products_json = json.dumps(products, ensure_ascii=False)
-            landing.stage = 'generate'
-            db.commit()
-
-            model = landing.text_model or settings.openai_text_model
             campaign = {
                 'name': landing.name, 'campaign_title': landing.campaign_title,
                 'campaign_subtitle': landing.campaign_subtitle, 'period': landing.period,
                 'language': landing.language,
             }
+
+            # Тематичний фон hero: сцена навколо реального фото головного товару.
+            # Відмова генерації не валить лендінг - сторінка живе на градієнті.
+            landing.image_cost = 0
+            landing.hero_url = ''
+            if getattr(landing, 'with_hero', True):
+                from app.landing import generate_landing_hero
+                landing.stage = 'images'
+                db.commit()
+                image_model = settings.openai_image_model
+                hero_url, ok, reason = generate_landing_hero(landing.id, campaign, products, image_model, 'medium')
+                if ok and hero_url:
+                    landing.hero_url = hero_url
+                    landing.image_cost = image_rate(image_model, 'medium')
+                    campaign['hero_url'] = hero_url
+                else:
+                    logger.warning('Landing %s: hero background skipped: %s', landing.id, reason)
+
+            landing.stage = 'generate'
+            db.commit()
+            model = landing.text_model or settings.openai_text_model
             html_out, input_tokens, output_tokens, reason = generate_landing_html(campaign, products, model)
             landing.html = html_out
             landing.fallback_reason = reason or ''
@@ -970,7 +987,8 @@ def process_landing(self, landing_id: str):
             input_rate, output_rate = text_rate(model)
             landing.estimated_cost = round(
                 landing.input_tokens / 1_000_000 * input_rate
-                + landing.output_tokens / 1_000_000 * output_rate, 6)
+                + landing.output_tokens / 1_000_000 * output_rate
+                + float(landing.image_cost or 0), 6)
             add_spend(landing.estimated_cost)
             add_user_spend(landing.owner_id or '', landing.estimated_cost)
             landing.status = Status.done
