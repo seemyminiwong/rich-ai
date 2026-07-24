@@ -959,11 +959,16 @@ def process_landing(self, landing_id: str):
                 'language': landing.language,
             }
 
-            # Тематичний фон hero: сцена навколо реального фото головного товару.
-            # Відмова генерації не валить лендінг - сторінка живе на градієнті.
+            # Фон hero за режимом: 'ai' - тематична сцена ЗА ТЕМОЮ АКЦІЇ
+            # (text-to-image, без товару), 'custom' - завантажене фото,
+            # 'none' - фірмовий градієнт. Відмова генерації не валить лендінг.
             landing.image_cost = 0
             landing.hero_url = ''
-            if getattr(landing, 'with_hero', True):
+            hero_mode = getattr(landing, 'hero_mode', '') or ('ai' if getattr(landing, 'with_hero', True) else 'none')
+            if hero_mode == 'custom' and (getattr(landing, 'custom_hero_url', '') or '').strip():
+                landing.hero_url = landing.custom_hero_url.strip()
+                campaign['hero_url'] = landing.hero_url
+            elif hero_mode == 'ai':
                 from app.landing import generate_landing_hero
                 landing.stage = 'images'
                 db.commit()
@@ -979,7 +984,15 @@ def process_landing(self, landing_id: str):
             landing.stage = 'generate'
             db.commit()
             model = landing.text_model or settings.openai_text_model
-            html_out, input_tokens, output_tokens, reason = generate_landing_html(campaign, products, model)
+            # Шаблон промпта - керований стиль «ARTLINE Landing» або обраний
+            # оператором лендінговий стиль; правки в рушії стилів діють одразу.
+            from app.landing import LANDING_PLACEHOLDERS, LANDING_STYLE_NAME
+            template = ''
+            style_row = (db.get(Style, landing.style_id) if getattr(landing, 'style_id', None)
+                         else db.scalar(select(Style).where(Style.name == LANDING_STYLE_NAME)))
+            if style_row and all(ph in (style_row.prompt or '') for ph in LANDING_PLACEHOLDERS):
+                template = style_row.prompt
+            html_out, input_tokens, output_tokens, reason = generate_landing_html(campaign, products, model, template)
             landing.html = html_out
             landing.fallback_reason = reason or ''
             landing.input_tokens = int(input_tokens or 0)

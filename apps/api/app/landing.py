@@ -21,6 +21,9 @@ from app.pipeline import fetch_html, parse_page, is_public_http_url
 logger = logging.getLogger('artline.landing')
 
 MAX_PRODUCTS = 24
+LANDING_STYLE_NAME = 'ARTLINE Landing'
+# Обов'язкові плейсхолдери шаблона лендінгу; стиль без них - не лендінговий.
+LANDING_PLACEHOLDERS = ('{CAMPAIGN}', '{PRODUCTS}', '{LANGUAGE}')
 
 _LANDING_ALLOWED_TAGS = {
     'html', 'head', 'meta', 'title', 'body', 'style',
@@ -135,30 +138,55 @@ def _chunk(campaign: dict, key: str, default: str = '') -> str:
 
 def generate_landing_hero(landing_id: str, campaign: dict, products: list[dict],
                           image_model: str, quality: str = 'medium'):
-    """Тематичний фон hero: сцена НАВКОЛО реального фото головного товару.
+    """Тематичний фон hero: атмосферна сцена ЗА ТЕМОЮ АКЦІЇ, без товару.
 
-    Та сама політика, що в rich-пайплайні: згенероване зображення - це
-    трансформація справжнього продуктового фото (референс-edit), товар не
-    вигадується. Без референсу фону просто не буде - сторінка лишиться на
-    градієнті, це чесніше за вигаданий продукт.
+    Це не продуктове зображення (для них діє правило референс-edit), а чиста
+    декорація кампанії: середовище, світло, настрій. Товар на фоні заборонений -
+    тож і вигадати його неможливо. Text-to-image, лише OpenAI-провайдер.
     Повертає (url, ok, reason)."""
-    from app.pipeline import generate_image
-    reference = next((p.get('image') for p in products if p.get('image')), '')
-    if not reference:
-        return '', False, 'Немає жодного фото товару для референсу'
-    names = ', '.join(p.get('name', '')[:60] for p in products[:3] if p.get('name'))
+    import base64
+    from pathlib import Path
+    from app.config import settings
+    from app.media import media_url
+    from app.pipeline import _with_retry, image_client, image_provider, image_ready
+    if image_provider(image_model) != 'openai':
+        return '', False, 'Тематичний фон підтримує лише OpenAI-моделі зображень'
+    if not image_ready(image_model):
+        return '', False, 'OpenAI API key не налаштовано'
     title = campaign.get('campaign_title') or campaign.get('name') or ''
+    subtitle = campaign.get('campaign_subtitle') or ''
+    hints = ', '.join(dict.fromkeys(filter(None, (
+        (p.get('brand') or '').strip() for p in products[:6])))) or ''
+    categories = ', '.join(p.get('name', '')[:40] for p in products[:3] if p.get('name'))
     prompt = (
-        f'Wide cinematic promo banner background for a retail sale campaign "{title}". '
-        f'Featured products: {names}. '
-        'Build an atmospheric thematic environment around the exact product from the reference photo: '
-        'dramatic dark scene with depth, soft volumetric light, subtle cyan (#19BCC9) accent glow, '
-        'premium tech-store mood. The product stands hero-lit on the RIGHT THIRD of the frame; '
-        'the LEFT two thirds stay dark, clean and uncluttered for headline text overlay. '
-        'Strictly NO text, NO logos, NO watermarks, NO people. Photorealistic, high detail.'
+        f'Wide cinematic hero background for a retail promo campaign. Campaign theme: "{title}". '
+        + (f'Context: "{subtitle}". ' if subtitle else '')
+        + (f'Product domain hints (for the MOOD only): {hints or categories}. ' if (hints or categories) else '')
+        + 'Design an atmospheric thematic ENVIRONMENT that visualizes the campaign theme: '
+          'depth, soft volumetric light, subtle festive or technological accents matching the theme, '
+          'dark premium palette with a restrained cyan (#19BCC9) glow. '
+          'STRICTLY FORBIDDEN: any products, devices, packaging, text, letters, numbers, logos, watermarks, people, hands. '
+          'Pure scenery only. The LEFT two thirds stay darker and uncluttered for headline text overlay. '
+          'Photorealistic, high detail, no clutter.'
     )
-    return generate_image(prompt, landing_id, 'hero', image_model, quality,
-                          reference_url=reference, size='1536x1024')
+    try:
+        options = dict(model=image_model, prompt=prompt, size='1536x1024',
+                       quality=quality, output_format='webp')
+        response = _with_retry(lambda: image_client().images.generate(**options))
+        item = response.data[0]
+        raw = base64.b64decode(item.b64_json) if getattr(item, 'b64_json', None) else b''
+        if not raw and getattr(item, 'url', None):
+            from app.pipeline import fetch_bytes_capped, safe_client
+            with safe_client(timeout=120) as http:
+                raw = fetch_bytes_capped(http, item.url)
+        if not raw:
+            return '', False, 'OpenAI не повернув зображення'
+        folder = Path(settings.media_dir) / landing_id
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / 'hero.webp').write_bytes(raw)
+        return media_url(landing_id, 'hero.webp'), True, ''
+    except Exception as exc:
+        return '', False, str(exc)[:300]
 
 
 def inline_media_images(markup: str) -> str:
@@ -274,11 +302,12 @@ _HERO_RULE_GRADIENT = ('dark gradient section (linear-gradient(135deg,#101010,#1
                        'period chip (if given), huge campaign title, subtitle. Centered.')
 
 
-def build_landing_prompt(campaign: dict, products: list[dict]) -> str:
+def build_landing_prompt(campaign: dict, products: list[dict], template: str = '') -> str:
     lang = campaign.get('language') or 'ua'
     hero_url = str(campaign.get('hero_url') or '')
     safe_products = [{k: p.get(k, '') for k in ('name', 'price_text', 'image', 'url')} for p in products]
-    return (LANDING_PROMPT
+    base = template if template and all(ph in template for ph in LANDING_PLACEHOLDERS) else LANDING_PROMPT
+    return (base
             .replace('{HERO_RULE}', _HERO_RULE_IMAGE.replace('{HERO_URL}', hero_url) if hero_url else _HERO_RULE_GRADIENT)
             .replace('{LANGUAGE}', 'українська' if lang == 'ua' else 'русский')
             .replace('{BUY}', 'Купити' if lang == 'ua' else 'Купить')
@@ -290,13 +319,13 @@ def build_landing_prompt(campaign: dict, products: list[dict]) -> str:
             .replace('{PRODUCTS}', json.dumps(safe_products, ensure_ascii=False)))
 
 
-def generate_landing_html(campaign: dict, products: list[dict], model: str):
+def generate_landing_html(campaign: dict, products: list[dict], model: str, template: str = ''):
     """(html, input_tokens, output_tokens, fallback_reason). Ніколи не кидає:
     відмова AI -> детермінований шаблон, гроші за токени не втрачаються."""
     from app.pipeline import _responses_create, _usage_counts, public_fallback_reason
     fallback = deterministic_landing(campaign, products)
     try:
-        prompt = build_landing_prompt(campaign, products)
+        prompt = build_landing_prompt(campaign, products, template)
         response = _responses_create(model, prompt, 16000)
         raw = response.output_text or ''
         match = re.search(r'<!doctype html.*</html>', raw, re.I | re.S) or re.search(r'<html.*</html>', raw, re.I | re.S)
