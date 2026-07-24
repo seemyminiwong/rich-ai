@@ -917,7 +917,7 @@ def process_landing(self, landing_id: str):
     живе в його власних полях stage/status/error.
     """
     from app.models import Landing
-    from app.landing import extract_product_links, generate_landing_html, probe_landing_product
+    from app.landing import extract_product_links, generate_landing_html, probe_landing_category, probe_landing_product
 
     started = time.time()
     with SessionLocal() as db:
@@ -938,8 +938,9 @@ def process_landing(self, landing_id: str):
                 except Exception as exc:
                     logger.warning('Landing %s: listing parse failed: %s', landing.id, exc)
             urls = urls[:24]
-            if not urls:
-                raise RuntimeError('Не знайдено жодного товару: додайте URL товарів або перевірте сторінку акції')
+            category_urls = [u for u in json.loads(getattr(landing, 'source_categories_json', None) or '[]') if u][:24]
+            if not urls and not category_urls:
+                raise RuntimeError('Не знайдено жодного товару чи категорії: додайте посилання або перевірте сторінку акції')
             products, failed = [], []
             for url in urls:
                 try:
@@ -950,9 +951,16 @@ def process_landing(self, landing_id: str):
                         failed.append(url)
                 except Exception:
                     failed.append(url)
-            if not products:
-                raise RuntimeError('Жодну сторінку товару не вдалося прочитати')
+            categories = []
+            for url in category_urls:
+                try:
+                    categories.append(probe_landing_category(url))
+                except Exception:
+                    failed.append(url)
+            if not products and not categories:
+                raise RuntimeError('Жодну сторінку товару чи категорії не вдалося прочитати')
             landing.products_json = json.dumps(products, ensure_ascii=False)
+            landing.categories_json = json.dumps(categories, ensure_ascii=False)
             campaign = {
                 'name': landing.name, 'campaign_title': landing.campaign_title,
                 'campaign_subtitle': landing.campaign_subtitle, 'period': landing.period,
@@ -992,7 +1000,7 @@ def process_landing(self, landing_id: str):
                          else db.scalar(select(Style).where(Style.name == LANDING_STYLE_NAME)))
             if style_row and all(ph in (style_row.prompt or '') for ph in LANDING_PLACEHOLDERS):
                 template = style_row.prompt
-            html_out, input_tokens, output_tokens, reason = generate_landing_html(campaign, products, model, template)
+            html_out, input_tokens, output_tokens, reason = generate_landing_html(campaign, products, model, template, categories)
             landing.html = html_out
             landing.fallback_reason = reason or ''
             landing.input_tokens = int(input_tokens or 0)
