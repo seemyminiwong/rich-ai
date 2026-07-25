@@ -1001,6 +1001,9 @@ def process_landing(self, landing_id: str):
             if style_row and all(ph in (style_row.prompt or '') for ph in LANDING_PLACEHOLDERS):
                 template = style_row.prompt
             html_out, input_tokens, output_tokens, reason = generate_landing_html(campaign, products, model, template, categories)
+            if style_row is not None:
+                from app.pipeline import apply_palette, style_palette
+                html_out = apply_palette(html_out, style_palette(style_row))
             landing.html = html_out
             landing.fallback_reason = reason or ''
             landing.input_tokens = int(input_tokens or 0)

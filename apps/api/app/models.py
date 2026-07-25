@@ -72,6 +72,10 @@ class Style(Base):
     feature_prompt: Mapped[str] = mapped_column(Text, default='')
     negative_prompt: Mapped[str] = mapped_column(Text, default='')
     score_json: Mapped[str] = mapped_column(Text, default='{}')
+    # Кольорова схема стилю: 4 токени (accent/dark/dark_soft/light_soft).
+    # Сітку тримає промпт, кольори накладаються механічно ПІСЛЯ генерації -
+    # тому зміна схеми не може зламати верстку. Порожньо = фірмові кольори.
+    palette_json: Mapped[str] = mapped_column(Text, default='{}')
     preview_html: Mapped[str] = mapped_column(Text, default='')
     # Еталон формату (few-shot): якщо заданий, підмішується в промпт як приклад.
     golden_html: Mapped[str] = mapped_column(Text, default='')

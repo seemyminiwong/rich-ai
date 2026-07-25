@@ -57,6 +57,17 @@
 .style-context .row{align-items:center;gap:10px}
 .style-context+.critic-note{margin:0 0 12px}
 @media(max-width:760px){.style-context{flex-direction:column;align-items:stretch}}
+/* Кольорова схема стилю: смужка-превʼю і сітка пікерів. */
+.palette-strip{display:flex;gap:10px;margin:12px 0}
+.palette-strip span{flex:1;display:flex;align-items:center;gap:10px;border-radius:12px;padding:14px}
+.palette-strip i{width:22px;height:22px;border-radius:999px;flex:none}
+.palette-strip b{font-size:13px;font-weight:800}
+.palette-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.palette-item{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:var(--surface)}
+.palette-item span{font-weight:800;font-size:14px}
+.palette-item small{display:block;color:var(--muted);font-weight:400;font-size:12px;margin-top:2px}
+.palette-item input[type=color]{width:52px;height:36px;border:1px solid var(--border);border-radius:10px;padding:2px;background:#fff;flex:none;cursor:pointer}
+@media(max-width:760px){.palette-grid{grid-template-columns:1fr}.palette-strip{flex-direction:column}}
 .style-savebar{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:42px;padding-top:4px}
 .style-savebar span{color:var(--muted);font-size:12px;font-weight:700}
 .style-savebar span.bad{color:var(--danger)}
