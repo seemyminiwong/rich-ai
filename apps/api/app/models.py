@@ -82,6 +82,19 @@ class Style(Base):
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class Palette(Base):
+    """Іменований кольоровий пресет (бренд-схема): 4 токени поверх канону.
+
+    Обирається у стилі (вкладка «Кольори») або в момент запуску проєкту/лендінгу.
+    У проєкт зберігається ЗНІМОК токенів - пізніші правки пресета не
+    переписують минулі сторінки."""
+    __tablename__ = 'palettes'
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    name: Mapped[str] = mapped_column(String, unique=True)
+    tokens_json: Mapped[str] = mapped_column(Text, default='{}')
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
 class Project(Base):
     __tablename__ = 'projects'
     id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
@@ -106,6 +119,8 @@ class Project(Base):
     gallery_json: Mapped[str] = mapped_column(Text, default='[]')
     # Кадри 360°-серії (Podium 3D 360): підписані /media-URL по колу, за порядком.
     rotation_json: Mapped[str] = mapped_column(Text, default='[]')
+    # Знімок кольорової схеми, обраної при запуску ({} = схема стилю).
+    palette_json: Mapped[str] = mapped_column(Text, default='{}')
     error: Mapped[str] = mapped_column(Text, default='')
     duration_seconds: Mapped[float] = mapped_column(Float, default=0)
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
@@ -253,6 +268,8 @@ class Landing(Base):
     image_cost: Mapped[float] = mapped_column(Float, default=0)
     # Стиль-шаблон промпта лендінгу (керований «ARTLINE Landing» або власний).
     style_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Знімок кольорової схеми, обраної при запуску ({} = схема стилю).
+    palette_json: Mapped[str] = mapped_column(Text, default='{}')
     status: Mapped[Status] = mapped_column(Enum(Status), default=Status.queued)
     stage: Mapped[str] = mapped_column(String, default='queued')
     error: Mapped[str] = mapped_column(Text, default='')

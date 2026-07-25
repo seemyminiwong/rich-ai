@@ -2426,7 +2426,7 @@ def public_fallback_reason(exc: Exception) -> str:
     return f'внутрішня помилка генерації ({type(exc).__name__})'
 
 
-def generate_html(product, style, language, variant, hero, feature, model: str, gallery=None, rotation=None):
+def generate_html(product, style, language, variant, hero, feature, model: str, gallery=None, rotation=None, palette: dict | None = None):
     """Return (html, input_tokens, output_tokens, fallback_reason).
 
     fallback_reason is '' when the AI response was used, otherwise a short reason
@@ -2490,12 +2490,13 @@ HTML:
                 dark_edition=getattr(style, 'name', '') == 'ARTLINE Showcase Dark',
             )
         # Кольорова схема - НАЙОСТАННІШИЙ прохід: сітка вже зафіксована всіма
-        # гардами, підміна кольорів її гарантовано не чіпає.
-        output = apply_palette(output, style_palette(style))
+        # гардами, підміна кольорів її гарантовано не чіпає. Схема, обрана при
+        # запуску проєкту (palette), має пріоритет над схемою стилю.
+        output = apply_palette(output, palette or style_palette(style))
         return output, input_tokens, output_tokens, ''
     except Exception as exc:
         logger.exception('generate_html fell back to deterministic template for %s/%s', language, variant)
-        return apply_palette(fallback, style_palette(style)), 0, 0, public_fallback_reason(exc)
+        return apply_palette(fallback, palette or style_palette(style)), 0, 0, public_fallback_reason(exc)
 
 
 def _translation_template(markup: str):

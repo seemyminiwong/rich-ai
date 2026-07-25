@@ -86,6 +86,15 @@ def image_rate(model: str, quality: str):
     return float(row.get(quality, row.get('medium', 0.07)) or 0.07)
 
 
+def _project_palette(project) -> dict | None:
+    """Знімок схеми, обраної при запуску проєкту; None = діє схема стилю."""
+    try:
+        tokens = json.loads(getattr(project, 'palette_json', None) or '{}') or {}
+    except Exception:
+        tokens = {}
+    return tokens or None
+
+
 def recalculate_cost(project):
     input_rate, output_rate = text_rate(project.text_model)
     project.text_cost = (
@@ -547,7 +556,8 @@ def process_project(self, project_id, reuse_images=False):
                         if rich_html is None:
                             log(db, project, 'content', f'Створення майстер-макета {master_language.upper()} / {variant} · {project.text_model}', progress)
                             rich_html, generated_in, generated_out, fallback_reason = generate_html(
-                                product, style, master_language, variant, hero, feature, project.text_model, gallery=page_gallery, rotation=rotation_frames
+                                product, style, master_language, variant, hero, feature, project.text_model, gallery=page_gallery, rotation=rotation_frames,
+                                palette=_project_palette(project),
                             )
                             added_input += generated_in
                             added_output += generated_out
@@ -618,7 +628,8 @@ def process_project(self, project_id, reuse_images=False):
                             # Offline/no-key fallback still uses the deterministic
                             # template, whose structure is identical for all languages.
                             rich_html, added_input, added_output, fallback_reason = generate_html(
-                                product, style, language, variant, hero, feature, project.text_model, gallery=page_gallery, rotation=rotation_frames
+                                product, style, language, variant, hero, feature, project.text_model, gallery=page_gallery, rotation=rotation_frames,
+                                palette=_project_palette(project),
                             )
                             if fallback_reason and settings.openai_api_key:
                                 fallback_hits.append(f'{language.upper()}/{variant}: {fallback_reason}')
@@ -1001,9 +1012,9 @@ def process_landing(self, landing_id: str):
             if style_row and all(ph in (style_row.prompt or '') for ph in LANDING_PLACEHOLDERS):
                 template = style_row.prompt
             html_out, input_tokens, output_tokens, reason = generate_landing_html(campaign, products, model, template, categories)
-            if style_row is not None:
-                from app.pipeline import apply_palette, style_palette
-                html_out = apply_palette(html_out, style_palette(style_row))
+            from app.pipeline import apply_palette, style_palette
+            landing_palette = _project_palette(landing) or (style_palette(style_row) if style_row is not None else None)
+            html_out = apply_palette(html_out, landing_palette)
             landing.html = html_out
             landing.fallback_reason = reason or ''
             landing.input_tokens = int(input_tokens or 0)

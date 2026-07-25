@@ -22,7 +22,7 @@ from sqlalchemy import delete as sa_delete, func, select, text
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import Base, SessionLocal, engine, ensure_schema, get_db, run_migrations
-from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Landing, Project, Review, Role, Status, Style, StyleVersion, User
+from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Landing, Palette, Project, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
 from app.tasks import bill_extra, image_rate, process_landing, process_project, text_rate, translate_project
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
@@ -197,6 +197,16 @@ MANAGED_STYLES = [
 ]
 
 
+BUILTIN_PALETTES = [
+    ('ARTLINE Cyan', {}),  # фірмова: порожні токени = канонічні кольори
+    ('Ocean', {'accent': '#3B82F6', 'dark': '#0B1D33', 'dark_soft': '#132A47', 'light_soft': '#F2F6FB'}),
+    ('Ember', {'accent': '#F97316', 'dark': '#1A120B', 'dark_soft': '#2A1D12', 'light_soft': '#FBF5EF'}),
+    ('Forest', {'accent': '#16A34A', 'dark': '#0D1A12', 'dark_soft': '#16281C', 'light_soft': '#F1F7F2'}),
+    ('Grape', {'accent': '#8B5CF6', 'dark': '#140F22', 'dark_soft': '#221A38', 'light_soft': '#F5F3FB'}),
+    ('Lime', {'accent': '#A3E635', 'dark': '#141A0B', 'dark_soft': '#202B12', 'light_soft': '#F6FAEE'}),
+]
+
+
 def seed():
     with SessionLocal() as db:
         user = db.scalar(select(User).where(User.email == settings.admin_email))
@@ -227,6 +237,11 @@ def seed():
                     setattr(style, key, value)
                 current_version = db.scalar(select(func.max(StyleVersion.version)).where(StyleVersion.style_id == style.id)) or 0
                 db.add(StyleVersion(style_id=style.id, version=current_version + 1, prompt=style.prompt, hero_prompt=style.hero_prompt, feature_prompt=style.feature_prompt))
+        # Вбудовані кольорові пресети: створюються один раз; правки/видалення
+        # оператора не переписуються (сид лише додає відсутні за назвою).
+        for preset_name, tokens in BUILTIN_PALETTES:
+            if not db.scalar(select(Palette).where(Palette.name == preset_name)):
+                db.add(Palette(name=preset_name, tokens_json=json.dumps(tokens)))
         # The spec default wins as long as the operator has not promoted a CUSTOM
         # style: switching between managed defaults follows the code, a manual
         # custom choice is never overridden.
@@ -346,6 +361,7 @@ class ProjectIn(BaseModel):
     name: str = Field(default='', max_length=300)
     source_url: HttpUrl
     style_id: str | None = Field(default=None, max_length=200)
+    palette_id: str | None = Field(default=None, max_length=200)
     languages: list[str] = Field(default_factory=lambda: ['ua', 'ru'], max_length=10)
     variants: list[str] = Field(default_factory=lambda: ['desktop', 'mobile'], max_length=10)
     text_model: str | None = Field(default=None, max_length=200)
@@ -418,6 +434,7 @@ class ReviewIn(BaseModel):
     checklist: dict[str, bool] = Field(default_factory=dict)
 class RerunIn(BaseModel):
     style_id: str | None = None
+    palette_id: str | None = None
     languages: list[str] | None = None
     variants: list[str] | None = None
     reuse_images: bool = False
@@ -1260,6 +1277,7 @@ def _project_values(payload: ProjectIn, db: Session) -> tuple[dict, Style]:
 def _new_project_record(payload: ProjectIn, db: Session, user) -> tuple[Project, Style]:
     values, style = _project_values(payload, db)
     project = Project(owner_id=user.id, status=Status.queued, stage='queued', **values)
+    project.palette_json = resolve_palette_snapshot(db, payload.palette_id)
     db.add(project)
     db.flush()
     return project, style
@@ -1951,6 +1969,8 @@ def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends
     _lock_bulk_commit(db)
     style = db.get(Style, p.style_id)
     if not style: raise HTTPException(400, 'Обраний стиль не знайдено')
+    if payload and payload.palette_id is not None:
+        p.palette_json = resolve_palette_snapshot(db, payload.palette_id or None)
     p.run_index = (getattr(p, 'run_index', 1) or 1) + 1
     p.status = Status.queued; p.stage = 'dispatch_pending'; p.progress = 0; p.error = ''; p.input_tokens = 0; p.output_tokens = 0; p.image_count = 0; p.text_request_count = 0; p.image_request_count = 0; p.text_cost = 0; p.image_cost = 0; p.estimated_cost = 0; p.reserved_cost = 0
     _reserve_project_run(db, user, p, style)
@@ -2228,6 +2248,64 @@ def project_blocks_all_png(project_id: str, run: int = 0, db: Session = Depends(
                              headers={'Content-Disposition': f'attachment; filename="{name}-png.zip"'})
 
 
+# --- Кольорові пресети (бренд-схеми) ------------------------------------------
+class PaletteIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    tokens: dict = Field(default_factory=dict)
+
+
+def palette_dict(x):
+    return {'id': x.id, 'name': x.name, 'tokens': json.loads(x.tokens_json or '{}'), 'created_at': x.created_at}
+
+
+def _clean_tokens(tokens: dict) -> dict:
+    from app.pipeline import PALETTE_TOKENS, _HEX_RE
+    return {k: v.strip().upper() for k, v in (tokens or {}).items()
+            if k in PALETTE_TOKENS and isinstance(v, str) and _HEX_RE.match(v.strip())}
+
+
+@app.get('/api/palettes')
+def palettes(db: Session = Depends(get_db), user=Depends(current)):
+    return [palette_dict(x) for x in db.scalars(select(Palette).order_by(Palette.created_at)).all()]
+
+
+@app.post('/api/palettes')
+def palette_create(payload: PaletteIn, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
+    if db.scalar(select(Palette).where(Palette.name == payload.name.strip())):
+        raise HTTPException(400, 'Пресет із такою назвою вже існує')
+    p = Palette(name=payload.name.strip(), tokens_json=json.dumps(_clean_tokens(payload.tokens)))
+    db.add(p); db.flush(); audit(db, user, 'palette.create', 'palette', p.id); db.commit()
+    return palette_dict(p)
+
+
+@app.put('/api/palettes/{palette_id}')
+def palette_update(palette_id: str, payload: PaletteIn, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
+    p = db.get(Palette, palette_id)
+    if not p: raise HTTPException(404, 'Пресет не знайдено')
+    p.name = payload.name.strip(); p.tokens_json = json.dumps(_clean_tokens(payload.tokens))
+    audit(db, user, 'palette.update', 'palette', p.id); db.commit()
+    return palette_dict(p)
+
+
+@app.delete('/api/palettes/{palette_id}')
+def palette_delete(palette_id: str, db: Session = Depends(get_db), user=Depends(require_perm('style.manage'))):
+    p = db.get(Palette, palette_id)
+    if not p: raise HTTPException(404, 'Пресет не знайдено')
+    audit(db, user, 'palette.delete', 'palette', p.id)
+    db.delete(p); db.commit()
+    return {'ok': True}
+
+
+def resolve_palette_snapshot(db, palette_id: str | None) -> str:
+    """Знімок токенів пресета на момент запуску ('{}' = схема стилю)."""
+    if not palette_id:
+        return '{}'
+    p = db.get(Palette, palette_id)
+    if not p:
+        raise HTTPException(400, 'Обраний кольоровий пресет не знайдено')
+    return json.dumps(json.loads(p.tokens_json or '{}'))
+
+
 # --- Промо-лендінги -----------------------------------------------------------
 class LandingIn(BaseModel):
     name: str = Field(min_length=2, max_length=200)
@@ -2241,6 +2319,7 @@ class LandingIn(BaseModel):
     text_model: str = Field(default='', max_length=100)
     with_hero: bool = True  # legacy; hero_mode має пріоритет
     hero_mode: str = Field(default='', max_length=10)  # ai | custom | none
+    palette_id: str | None = Field(default=None, max_length=200)
     custom_hero_url: str = Field(default='', max_length=1000)
     style_id: str | None = Field(default=None, max_length=200)
 
@@ -2325,6 +2404,7 @@ def landing_create(payload: LandingIn, db: Session = Depends(get_db), user=Depen
         with_hero=hero_mode == 'ai', hero_mode=hero_mode,
         custom_hero_url=custom_hero if hero_mode == 'custom' else '',
         style_id=style_id,
+        palette_json=resolve_palette_snapshot(db, payload.palette_id),
         owner_id=user.id, status=Status.queued, stage='queued')
     db.add(landing); db.flush()
     audit(db, user, 'landing.create', 'landing', landing.id, {'urls': len(urls), 'listing': bool(listing)})
