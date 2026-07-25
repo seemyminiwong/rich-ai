@@ -1566,6 +1566,66 @@ def _harmonize_radii(markup: str) -> str:
     return str(soup) if changed else markup
 
 
+_HEX_RE = re.compile(r'^#[0-9a-fA-F]{6}$')
+# Канонічні фірмові кольори, у яких ЗАВЖДИ генерують промпти. Палітра стилю -
+# це мапа поверх них: сітка й типографіка незмінні, кольори підмінюються
+# механічно після генерації. 4 інтуїтивні токени; решта відтінків - похідні.
+PALETTE_TOKENS = {'accent': '#19BCC9', 'dark': '#101010', 'dark_soft': '#1A2128', 'light_soft': '#F5F7FA'}
+
+
+def _hex_rgb(value: str) -> tuple[int, int, int]:
+    return int(value[1:3], 16), int(value[3:5], 16), int(value[5:7], 16)
+
+
+def _mix(value: str, target: str, ratio: float) -> str:
+    """value -> target на ratio (0..1). Для похідних відтінків палітри."""
+    a, b = _hex_rgb(value), _hex_rgb(target)
+    return '#%02X%02X%02X' % tuple(round(a[i] + (b[i] - a[i]) * ratio) for i in range(3))
+
+
+def apply_palette(markup: str, palette: dict | None) -> str:
+    """Перефарбувати готову сторінку за палітрою стилю. Тільки заміна кольорів -
+    жодного дотику до розмітки, тому зламати сітку неможливо."""
+    if not markup or not palette:
+        return markup
+    clean = {k: v.strip() for k, v in palette.items()
+             if k in PALETTE_TOKENS and isinstance(v, str) and _HEX_RE.match(v.strip())}
+    clean = {k: v for k, v in clean.items() if v.upper() != PALETTE_TOKENS[k].upper()}
+    if not clean:
+        return markup
+    mapping: dict[str, str] = {}
+    if 'accent' in clean:
+        accent = clean['accent']
+        mapping['#19BCC9'] = accent
+        mapping['#157985'] = _mix(accent, '#000000', 0.25)   # акцент на світлому - темніший
+        mapping['#C9F0F4'] = _mix(accent, '#FFFFFF', 0.78)   # блідий відтінок для тексту на темному
+    if 'dark' in clean:
+        mapping['#101010'] = clean['dark']
+    if 'dark_soft' in clean:
+        dark_soft = clean['dark_soft']
+        mapping['#1A2128'] = dark_soft
+        mapping['#252525'] = _mix(dark_soft, '#FFFFFF', 0.05)
+        mapping['#35393F'] = _mix(dark_soft, '#FFFFFF', 0.16)  # темна межа - похідна
+    if 'light_soft' in clean:
+        mapping['#F5F7FA'] = clean['light_soft']
+        mapping['#F7F8FA'] = clean['light_soft']
+    out = markup
+    for canon, target in mapping.items():
+        out = re.sub(re.escape(canon), target, out, flags=re.I)
+    if 'accent' in clean:
+        r, g, b = _hex_rgb(clean['accent'])
+        out = re.sub(r'rgba\(\s*25\s*,\s*188\s*,\s*201\s*,', f'rgba({r},{g},{b},', out)
+    return out
+
+
+def style_palette(style) -> dict:
+    """Палітра зі стилю (db-обʼєкт або SimpleNamespace); порожньо = фірмова."""
+    try:
+        return json.loads(getattr(style, 'palette_json', None) or '{}') or {}
+    except Exception:
+        return {}
+
+
 def _is_scene_asset(src: str) -> bool:
     """Згенерована сцена (hero/feature) - її можна кадрувати; решта - реальні
     кадри товару (галерея, завантаження, product-reference), їх різати не можна."""
@@ -2429,10 +2489,13 @@ HTML:
                 variant,
                 dark_edition=getattr(style, 'name', '') == 'ARTLINE Showcase Dark',
             )
+        # Кольорова схема - НАЙОСТАННІШИЙ прохід: сітка вже зафіксована всіма
+        # гардами, підміна кольорів її гарантовано не чіпає.
+        output = apply_palette(output, style_palette(style))
         return output, input_tokens, output_tokens, ''
     except Exception as exc:
         logger.exception('generate_html fell back to deterministic template for %s/%s', language, variant)
-        return fallback, 0, 0, public_fallback_reason(exc)
+        return apply_palette(fallback, style_palette(style)), 0, 0, public_fallback_reason(exc)
 
 
 def _translation_template(markup: str):
