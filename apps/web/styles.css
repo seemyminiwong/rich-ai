@@ -57,6 +57,13 @@
 .style-context .row{align-items:center;gap:10px}
 .style-context+.critic-note{margin:0 0 12px}
 @media(max-width:760px){.style-context{flex-direction:column;align-items:stretch}}
+/* Пресети кольорових схем: чіпи з трьома крапками палітри. */
+.palette-presets{margin:12px 0}
+.preset-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:999px;background:var(--surface);padding:8px 12px;font-weight:800;font-size:13px;cursor:pointer;transition:.15s}
+.preset-chip:hover{border-color:var(--cyan)}
+.preset-chip i{width:14px;height:14px;border-radius:999px;border:1px solid rgba(0,0,0,.08)}
+.preset-chip b{margin-left:4px;color:var(--muted);font-weight:900}
+.preset-chip b:hover{color:var(--danger)}
 /* Кольорова схема стилю: смужка-превʼю і сітка пікерів. */
 .palette-strip{display:flex;gap:10px;margin:12px 0}
 .palette-strip span{flex:1;display:flex;align-items:center;gap:10px;border-radius:12px;padding:14px}
