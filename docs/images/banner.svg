@@ -43,9 +43,9 @@
     <rect x="1020" y="228" width="16" height="16" opacity="0.25"/>
   </g>
   <g font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
-    <text x="72" y="132" font-size="64" font-weight="900" fill="#FFFFFF" letter-spacing="2">ARTLINE</text>
-    <text x="72" y="188" font-size="44" font-weight="800" fill="#19BCC9" letter-spacing="6">RICH STUDIO</text>
-    <text x="72" y="238" font-size="19" fill="#D0D7DE">AI-платформа rich-контенту: URL товару → готова картка і промо-лендінг</text>
+    <text x="72" y="128" font-size="64" font-weight="900" fill="#FFFFFF" letter-spacing="2">ARTLINE</text>
+    <text x="72" y="184" font-size="44" font-weight="800" fill="#19BCC9" letter-spacing="6">RICH STUDIO</text>
+    <text x="72" y="244" font-size="19" fill="#D0D7DE">AI-платформа rich-контенту: URL товару → готова картка і промо-лендінг</text>
   </g>
-  <rect x="72" y="90" width="56" height="6" rx="3" fill="#19BCC9"/>
+  <rect x="74" y="200" width="120" height="5" rx="2.5" fill="#19BCC9" opacity="0.85"/>
 </svg>
