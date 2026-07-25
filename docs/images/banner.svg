@@ -6,46 +6,65 @@
       <stop offset="1" stop-color="#16232A"/>
     </linearGradient>
     <radialGradient id="glow" cx="0.78" cy="0.45" r="0.55">
-      <stop offset="0" stop-color="#19BCC9" stop-opacity="0.28"/>
+      <stop offset="0" stop-color="#19BCC9" stop-opacity="0.30"/>
       <stop offset="0.55" stop-color="#19BCC9" stop-opacity="0.08"/>
       <stop offset="1" stop-color="#19BCC9" stop-opacity="0"/>
     </radialGradient>
+    <clipPath id="frame"><rect width="1200" height="300" rx="24"/></clipPath>
   </defs>
+  <style>
+    /* Той самий настрій, що на екрані входу: мʼяке дихання світіння і
+       мерехтіння пікселів. prefers-reduced-motion вимикає рух. */
+    @keyframes glowPulse{0%,100%{opacity:.55}50%{opacity:1}}
+    @keyframes blink{0%,100%{opacity:var(--lo)}50%{opacity:var(--hi)}}
+    .glow{animation:glowPulse 5.4s ease-in-out infinite}
+    .px{animation:blink var(--d) ease-in-out infinite;animation-delay:var(--s)}
+    @media (prefers-reduced-motion:reduce){.glow,.px{animation:none}}
+  </style>
   <rect width="1200" height="300" rx="24" fill="url(#bg)"/>
-  <rect width="1200" height="300" rx="24" fill="url(#glow)"/>
+  <g clip-path="url(#frame)"><rect class="glow" width="1200" height="300" fill="url(#glow)"/></g>
   <rect x="0.5" y="0.5" width="1199" height="299" rx="23.5" fill="none" stroke="#35393F"/>
-  <!-- пиксельное поле справа — мотив экрана загрузки студии -->
+  <!-- пиксельное поле: каждый квадрат «дышит» со своим периодом и фазой -->
   <g fill="#19BCC9">
-    <rect x="880" y="60" width="16" height="16" opacity="0.9"/>
-    <rect x="908" y="60" width="16" height="16" opacity="0.25"/>
-    <rect x="964" y="60" width="16" height="16" opacity="0.5"/>
-    <rect x="1048" y="60" width="16" height="16" opacity="0.18"/>
-    <rect x="852" y="88" width="16" height="16" opacity="0.35"/>
-    <rect x="908" y="88" width="16" height="16" opacity="0.85"/>
-    <rect x="936" y="88" width="16" height="16" opacity="0.4"/>
-    <rect x="1020" y="88" width="16" height="16" opacity="0.6"/>
-    <rect x="1104" y="88" width="16" height="16" opacity="0.22"/>
-    <rect x="880" y="116" width="16" height="16" opacity="0.55"/>
-    <rect x="964" y="116" width="16" height="16" opacity="0.95"/>
-    <rect x="992" y="116" width="16" height="16" opacity="0.3"/>
-    <rect x="1076" y="116" width="16" height="16" opacity="0.45"/>
-    <rect x="852" y="144" width="16" height="16" opacity="0.2"/>
-    <rect x="936" y="144" width="16" height="16" opacity="0.65"/>
-    <rect x="1020" y="144" width="16" height="16" opacity="0.9"/>
-    <rect x="1104" y="144" width="16" height="16" opacity="0.35"/>
-    <rect x="908" y="172" width="16" height="16" opacity="0.5"/>
-    <rect x="992" y="172" width="16" height="16" opacity="0.28"/>
-    <rect x="1048" y="172" width="16" height="16" opacity="0.75"/>
-    <rect x="880" y="200" width="16" height="16" opacity="0.3"/>
-    <rect x="964" y="200" width="16" height="16" opacity="0.55"/>
-    <rect x="1076" y="200" width="16" height="16" opacity="0.2"/>
-    <rect x="936" y="228" width="16" height="16" opacity="0.4"/>
-    <rect x="1020" y="228" width="16" height="16" opacity="0.25"/>
+    <rect class="px" style="--lo:.15;--hi:.9;--d:3.8s;--s:0s"    x="880"  y="60"  width="16" height="16"/>
+    <rect class="px" style="--lo:.08;--hi:.5;--d:5.1s;--s:.7s"   x="908"  y="60"  width="16" height="16"/>
+    <rect class="px" style="--lo:.1;--hi:.65;--d:4.4s;--s:1.6s"  x="964"  y="60"  width="16" height="16"/>
+    <rect class="px" style="--lo:.05;--hi:.4;--d:6s;--s:2.4s"    x="1048" y="60"  width="16" height="16"/>
+    <rect class="px" style="--lo:.1;--hi:.55;--d:4.9s;--s:1.1s"  x="852"  y="88"  width="16" height="16"/>
+    <rect class="px" style="--lo:.2;--hi:.95;--d:3.5s;--s:.4s"   x="908"  y="88"  width="16" height="16"/>
+    <rect class="px" style="--lo:.1;--hi:.6;--d:5.6s;--s:2.9s"   x="936"  y="88"  width="16" height="16"/>
+    <rect class="px" style="--lo:.15;--hi:.8;--d:4.2s;--s:1.9s"  x="1020" y="88"  width="16" height="16"/>
+    <rect class="px" style="--lo:.06;--hi:.42;--d:6.4s;--s:.9s"  x="1104" y="88"  width="16" height="16"/>
+    <rect class="px" style="--lo:.12;--hi:.7;--d:4.6s;--s:2.2s"  x="880"  y="116" width="16" height="16"/>
+    <rect class="px" style="--lo:.25;--hi:1;--d:3.9s;--s:1.4s"   x="964"  y="116" width="16" height="16"/>
+    <rect class="px" style="--lo:.08;--hi:.5;--d:5.8s;--s:.2s"   x="992"  y="116" width="16" height="16"/>
+    <rect class="px" style="--lo:.1;--hi:.62;--d:4.1s;--s:3.1s"  x="1076" y="116" width="16" height="16"/>
+    <rect class="px" style="--lo:.05;--hi:.38;--d:6.2s;--s:1.8s" x="852"  y="144" width="16" height="16"/>
+    <rect class="px" style="--lo:.15;--hi:.85;--d:4s;--s:2.7s"   x="936"  y="144" width="16" height="16"/>
+    <rect class="px" style="--lo:.22;--hi:.95;--d:3.6s;--s:.6s"  x="1020" y="144" width="16" height="16"/>
+    <rect class="px" style="--lo:.09;--hi:.55;--d:5.3s;--s:2s"   x="1104" y="144" width="16" height="16"/>
+    <rect class="px" style="--lo:.12;--hi:.68;--d:4.7s;--s:1.2s" x="908"  y="172" width="16" height="16"/>
+    <rect class="px" style="--lo:.07;--hi:.45;--d:5.9s;--s:3.4s" x="992"  y="172" width="16" height="16"/>
+    <rect class="px" style="--lo:.18;--hi:.9;--d:3.7s;--s:.8s"   x="1048" y="172" width="16" height="16"/>
+    <rect class="px" style="--lo:.08;--hi:.5;--d:5.2s;--s:2.5s"  x="880"  y="200" width="16" height="16"/>
+    <rect class="px" style="--lo:.12;--hi:.7;--d:4.3s;--s:1.5s"  x="964"  y="200" width="16" height="16"/>
+    <rect class="px" style="--lo:.05;--hi:.35;--d:6.6s;--s:.3s"  x="1076" y="200" width="16" height="16"/>
+    <rect class="px" style="--lo:.1;--hi:.6;--d:4.8s;--s:2.8s"   x="936"  y="228" width="16" height="16"/>
+    <rect class="px" style="--lo:.07;--hi:.45;--d:5.5s;--s:1s"   x="1020" y="228" width="16" height="16"/>
+  </g>
+  <!-- Офіційний wordmark ARTLINE (docs/images/artline-logo.svg), масштаб 5x -->
+  <g transform="translate(72,66) scale(5)" fill="#FFFFFF">
+    <path d="M8.62745 18.8235H6.03922L5.17647 21.8352H0L3.45098 4.51758H11.2157L14.6667 21.8352H9.4902L8.62745 18.8235ZM6.90196 8.28228L6.03922 15.0588H8.62745L7.76471 8.28228H6.90196Z"/>
+    <path d="M23.294 15.0588H20.7058V21.8352H15.5293V4.51758H25.0195L28.4705 6.7764V11.294L25.8822 13.5529L28.4705 15.0588V21.8352H23.294V15.0588ZM23.294 7.52934H20.7058V11.294H23.294V7.52934Z"/>
+    <path d="M3.45093 0H42.2745V3.01176H38.8235V21.8353H33.647V3.01176H3.45093V0Z"/>
+    <path d="M43.1377 0H48.3142V18.8235H88.0004V21.8353H43.1377V0Z"/>
+    <path d="M53.4902 0H58.6667V17.3176H53.4902V0Z"/>
+    <path d="M67.2937 9.03529V17.3176H62.1172V0H66.4309L69.8819 8.28235V0H75.0584V17.3176H70.7446L67.2937 9.03529Z"/>
+    <path d="M77.6475 0H88.0004V3.01176H82.8239V6.77647H87.1377V9.78824H82.8239V14.3059H88.0004V17.3176H77.6475V0Z"/>
   </g>
   <g font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
-    <text x="72" y="128" font-size="64" font-weight="900" fill="#FFFFFF" letter-spacing="2">ARTLINE</text>
-    <text x="72" y="184" font-size="44" font-weight="800" fill="#19BCC9" letter-spacing="6">RICH STUDIO</text>
-    <text x="72" y="244" font-size="19" fill="#D0D7DE">AI-платформа rich-контенту: URL товару → готова картка і промо-лендінг</text>
+    <text x="72" y="222" font-size="40" font-weight="800" fill="#19BCC9" letter-spacing="8">RICH STUDIO</text>
+    <text x="72" y="258" font-size="18" fill="#D0D7DE">AI-платформа rich-контенту: URL товару → готова картка і промо-лендінг</text>
   </g>
-  <rect x="74" y="200" width="120" height="5" rx="2.5" fill="#19BCC9" opacity="0.85"/>
+  <rect x="74" y="232" width="110" height="4" rx="2" fill="#19BCC9" opacity="0.85"/>
 </svg>
