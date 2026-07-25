@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-label="ARTLINE Rich Studio">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101010"/>
+      <stop offset="0.6" stop-color="#1A2128"/>
+      <stop offset="1" stop-color="#16232A"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.78" cy="0.45" r="0.55">
+      <stop offset="0" stop-color="#19BCC9" stop-opacity="0.28"/>
+      <stop offset="0.55" stop-color="#19BCC9" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#19BCC9" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="300" rx="24" fill="url(#bg)"/>
+  <rect width="1200" height="300" rx="24" fill="url(#glow)"/>
+  <rect x="0.5" y="0.5" width="1199" height="299" rx="23.5" fill="none" stroke="#35393F"/>
+  <!-- пиксельное поле справа — мотив экрана загрузки студии -->
+  <g fill="#19BCC9">
+    <rect x="880" y="60" width="16" height="16" opacity="0.9"/>
+    <rect x="908" y="60" width="16" height="16" opacity="0.25"/>
+    <rect x="964" y="60" width="16" height="16" opacity="0.5"/>
+    <rect x="1048" y="60" width="16" height="16" opacity="0.18"/>
+    <rect x="852" y="88" width="16" height="16" opacity="0.35"/>
+    <rect x="908" y="88" width="16" height="16" opacity="0.85"/>
+    <rect x="936" y="88" width="16" height="16" opacity="0.4"/>
+    <rect x="1020" y="88" width="16" height="16" opacity="0.6"/>
+    <rect x="1104" y="88" width="16" height="16" opacity="0.22"/>
+    <rect x="880" y="116" width="16" height="16" opacity="0.55"/>
+    <rect x="964" y="116" width="16" height="16" opacity="0.95"/>
+    <rect x="992" y="116" width="16" height="16" opacity="0.3"/>
+    <rect x="1076" y="116" width="16" height="16" opacity="0.45"/>
+    <rect x="852" y="144" width="16" height="16" opacity="0.2"/>
+    <rect x="936" y="144" width="16" height="16" opacity="0.65"/>
+    <rect x="1020" y="144" width="16" height="16" opacity="0.9"/>
+    <rect x="1104" y="144" width="16" height="16" opacity="0.35"/>
+    <rect x="908" y="172" width="16" height="16" opacity="0.5"/>
+    <rect x="992" y="172" width="16" height="16" opacity="0.28"/>
+    <rect x="1048" y="172" width="16" height="16" opacity="0.75"/>
+    <rect x="880" y="200" width="16" height="16" opacity="0.3"/>
+    <rect x="964" y="200" width="16" height="16" opacity="0.55"/>
+    <rect x="1076" y="200" width="16" height="16" opacity="0.2"/>
+    <rect x="936" y="228" width="16" height="16" opacity="0.4"/>
+    <rect x="1020" y="228" width="16" height="16" opacity="0.25"/>
+  </g>
+  <g font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+    <text x="72" y="132" font-size="64" font-weight="900" fill="#FFFFFF" letter-spacing="2">ARTLINE</text>
+    <text x="72" y="188" font-size="44" font-weight="800" fill="#19BCC9" letter-spacing="6">RICH STUDIO</text>
+    <text x="72" y="238" font-size="19" fill="#D0D7DE">AI-платформа rich-контенту: URL товару → готова картка і промо-лендінг</text>
+  </g>
+  <rect x="72" y="90" width="56" height="6" rx="3" fill="#19BCC9"/>
+</svg>

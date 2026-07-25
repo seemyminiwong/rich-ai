@@ -1,10 +1,37 @@
+<p align="center">
+  <img src="docs/images/banner.svg" alt="ARTLINE Rich Studio" width="100%">
+</p>
+
+<p align="center">
+  <b>Посилання на товар → готова rich-картка. Посилання на товари й категорії → готовий промо-лендінг.</b><br>
+  Факти — лише зі сторінки товару · зображення — з реального фото · публікує людина
+</p>
+
+<p align="center">
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-Python%203.12-19BCC9?style=flat-square">
+  <img alt="Celery" src="https://img.shields.io/badge/Celery-Redis-19BCC9?style=flat-square">
+  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-Alembic-19BCC9?style=flat-square">
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-19BCC9?style=flat-square">
+  <img alt="License" src="https://img.shields.io/badge/License-PolyForm%20NC%201.0.0-555?style=flat-square">
+</p>
+
 # ARTLINE Rich Studio
 
-**Внутрішня платформа ARTLINE: посилання на товар → готовий rich-контент для його картки.**
+Ви вставляєте URL товару. Студія читає сторінку, витягує з неї підтверджені факти, верстає rich-HTML окремо під десктоп і під мобільну — потрібними мовами, домальовує сцену навколо **реального фото товару** і віддає результат людині на перевірку. А з посилань на товари й категорії збирає **промо-лендінг** кампанії — з цінами, кнопками «Купити» і тематичним AI-фоном.
 
-Ви вставляєте URL товару. Студія читає сторінку, витягує з неї підтверджені факти, верстає rich-HTML окремо під десктоп і під мобільну — потрібними мовами, домальовує сцену навколо **реального фото товару** і віддає результат людині на перевірку.
+## Як це виглядає
 
-![Створення промо-лендінгу в ARTLINE Rich Studio](docs/images/landing-create-dialog.png)
+| | |
+|---|---|
+| ![Створення промо-лендінгу](docs/images/landing-create-dialog.png) | *Тут буде скрін: сторінка «Проєкти»* |
+
+*Діалог створення лендінгу: товари, категорії, стиль і режим фону hero.*
+
+<!--
+  Галерея добирається: щоб додати скріни, покладіть їх у docs/images/ і додайте рядок у таблицю.
+  Рекомендовані кадри: projects.png (список проєктів), preview.png (готова rich-сторінка),
+  styles.png (рушій стилів), landing-page.png (готовий лендінг).
+-->
 
 ## Навіщо це
 
