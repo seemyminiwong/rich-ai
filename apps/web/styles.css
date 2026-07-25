@@ -95,6 +95,10 @@
 .palette-item span{font-weight:800;font-size:14px}
 .palette-item small{display:block;color:var(--muted);font-weight:400;font-size:12px;margin-top:2px}
 .palette-item input[type=color]{width:52px;height:36px;border:1px solid var(--border);border-radius:10px;padding:2px;background:#fff;flex:none;cursor:pointer}
+.radius-item{grid-column:1/-1}
+.radius-control{display:flex;align-items:center;gap:12px;flex:1;max-width:340px}
+.radius-control input[type=range]{flex:1;accent-color:var(--cyan)}
+.radius-control b{min-width:44px;text-align:right;font-size:14px}
 @media(max-width:760px){.palette-grid{grid-template-columns:1fr}.palette-strip{flex-direction:column}}
 .style-savebar{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:42px;padding-top:4px}
 .style-savebar span{color:var(--muted);font-size:12px;font-weight:700}

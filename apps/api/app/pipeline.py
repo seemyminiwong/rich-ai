@@ -1583,11 +1583,33 @@ def _mix(value: str, target: str, ratio: float) -> str:
     return '#%02X%02X%02X' % tuple(round(a[i] + (b[i] - a[i]) * ratio) for i in range(3))
 
 
+def _apply_radius_scale(markup: str, scale: float) -> str:
+    """Глобальний масштаб скруглень: кожен border-radius множиться на scale.
+    Капсули (>=100px) і відсоткові радіуси не чіпаються - пігулка лишається
+    пігулкою, коло колом. Розмітка не змінюється взагалі."""
+    if abs(scale - 1.0) < 0.01:
+        return markup
+
+    def repl(match):
+        value = float(match.group(1))
+        if value >= 100:
+            return match.group(0)
+        return f'border-radius:{max(0, round(value * scale))}px'
+
+    return re.sub(r'border-radius:\s*([\d.]+)px', repl, markup)
+
+
 def apply_palette(markup: str, palette: dict | None) -> str:
-    """Перефарбувати готову сторінку за палітрою стилю. Тільки заміна кольорів -
-    жодного дотику до розмітки, тому зламати сітку неможливо."""
+    """Застосувати схему оформлення стилю: кольори + масштаб скруглень.
+    Тільки заміна значень - жодного дотику до розмітки, зламати сітку неможливо."""
     if not markup or not palette:
         return markup
+    # Скругления: токен 'radius' - множник 0..2 (1 = фірмові).
+    try:
+        radius = float(palette.get('radius', 1) or 1)
+    except Exception:
+        radius = 1.0
+    markup = _apply_radius_scale(markup, min(2.0, max(0.0, radius)))
     clean = {k: v.strip() for k, v in palette.items()
              if k in PALETTE_TOKENS and isinstance(v, str) and _HEX_RE.match(v.strip())}
     clean = {k: v for k, v in clean.items() if v.upper() != PALETTE_TOKENS[k].upper()}

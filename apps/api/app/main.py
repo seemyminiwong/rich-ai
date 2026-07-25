@@ -2260,8 +2260,16 @@ def palette_dict(x):
 
 def _clean_tokens(tokens: dict) -> dict:
     from app.pipeline import PALETTE_TOKENS, _HEX_RE
-    return {k: v.strip().upper() for k, v in (tokens or {}).items()
-            if k in PALETTE_TOKENS and isinstance(v, str) and _HEX_RE.match(v.strip())}
+    out = {k: v.strip().upper() for k, v in (tokens or {}).items()
+           if k in PALETTE_TOKENS and isinstance(v, str) and _HEX_RE.match(v.strip())}
+    # 'radius' - множник скруглень 0..2 (1 = фірмові, не зберігаємо).
+    try:
+        radius = float((tokens or {}).get('radius', 1))
+        if 0 <= radius <= 2 and abs(radius - 1) >= 0.01:
+            out['radius'] = round(radius, 2)
+    except Exception:
+        pass
+    return out
 
 
 @app.get('/api/palettes')
