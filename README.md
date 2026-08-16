@@ -187,12 +187,10 @@ PYTHONPATH=apps/api pytest -q tests
 
 Це **source-available**, а не open-source ліцензія: код можна вивчати, змінювати й використовувати для **некомерційних** цілей (особисте навчання, дослідження, хобі, освітні та благодійні організації). **Будь-яке комерційне використання заборонене** без окремої письмової згоди правовласника.
 
-Правовласник — `Copyright 2026 seemyminiwong`. Для комерційної ліцензії, питань і пропозицій: **yehorshuliak@gmail.com**.
+Правовласник — `Copyright 2026 seemyminiwong`. Щодо комерційної ліцензії, питань і пропозицій — див. розділ [Контакти](#контакти).
 
 ## Контакти
 
-Автор і правовласник — **yehorshuliak@gmail.com** ([github.com/seemyminiwong](https://github.com/seemyminiwong)).
-Пишіть щодо комерційної ліцензії, співпраці або питань по проєкту.
-
-- Питання й ідеї — **[Discussions](https://github.com/seemyminiwong/rich-ai/discussions)**.
+- Питання й ідеї — [Discussions](https://github.com/seemyminiwong/rich-ai/discussions).
+- Комерційна ліцензія та співпраця — через профіль автора: [github.com/seemyminiwong](https://github.com/seemyminiwong).
 - Знайшли вразливість — не створюйте публічний issue: [SECURITY.md](SECURITY.md).
