@@ -100,7 +100,7 @@ checks = {
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
     'base style version bumped': 'BASE_STYLE_VERSION = "12.61"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
-    'images may not carry added text': prompts.count('ZERO added text') == 2 and 'never by rendering words' in prompts,
+    'images may not carry added text': prompts.count('ZERO added text') == 3 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
     'ui shows balance or own spend, never a guess': 'function balanceStrip' in web and 'витрачено студією за 30 днів' in web,
@@ -115,7 +115,7 @@ checks = {
     'feature falls back to real photo': 'def select_feature_photo' in pipeline and 'feature generation failed' in tasks,
     'key feature fallback kept': 'def select_key_feature' in pipeline and 'select_key_feature(product)' in tasks,
     'rerun can reuse existing images': 'def process_project(self, project_id, reuse_images=False)' in tasks and "feature_mode = 'reused'" in tasks and 'reuse_images: bool = False' in main and '_dispatch_project_once(db, p, reuse_images=reuse)' in main and 'function reuseImagesField' in web,
-    'viewpoint locked in image prompts': prompts.count('VIEWPOINT LOCK') == 6 and 'working-angle' not in prompts and prompts.count('no substituted product variant') == 2,
+    'viewpoint locked in image prompts': prompts.count('VIEWPOINT LOCK') == 8 and 'working-angle' not in prompts and prompts.count('no substituted product variant') == 2,
     'image prompts ban redrawn logos': prompts.count('LOGOS, LABELS AND TEXT ON THE PRODUCT') == 6 and prompts.count('garbled') >= 6,
     'base prompt bans meta text': 'NEVER DESCRIBE THE PAGE OR THE IMAGES' in prompts and 'could not be pasted onto a different product' in prompts,
     'hero canvas has rounded corners': prompts.count('The Hero section itself must carry border-radius:12px') == 2 and prompts.count('including the Hero background canvas') == 2 and 'border-radius:12px;background:{hero_css}' in pipeline,
@@ -220,6 +220,7 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'promo showcase style seeded and locked': "'ARTLINE Showcase Promo'" in web.split('MANAGED_STYLE_NAMES=')[1].split(']')[0] and 'SHOWCASE_PROMO_STYLE_NAME' in main and 'PROMO EDITION OVERRIDES' in prompts and 'BRAND + MODEL CODE' not in prompts.split('PROMO EDITION OVERRIDES')[1] and prompts.count('LOGOS, PLACEHOLDERS AND TEXT ON THE PRODUCT') == 2,
     'style ab/golden/usage counter': "@app.post('/api/styles/{style_id}/ab')" in main and "@app.post('/api/styles/{style_id}/golden')" in main and 'def _golden_example' in pipeline and 'usage_count' in main and 'function runStyleAB' in web and 'function pinGolden' in web and '0008_style_golden' in ' '.join(str(x) for x in (root / 'apps/api/alembic/versions').iterdir()),
     'style tooling: real stats, free dry-run, diff, real-product preview': "@app.get('/api/styles/{style_id}/stats')" in main and "@app.post('/api/styles/dry-run')" in main and 'def build_prompt' in pipeline and 'POST_GENERATION_GUARANTEES' in pipeline and 'function lineDiff' in web and 'function runStyleDryRun' in web and 'style.improve' not in web.split('applyImprove')[0][-1:] and "generated['current']" in main and 'sample_project_id' in main,
     'per-block png export via optional chromium service': (root / 'apps/shots/server.py').exists() and "@app.get('/api/artifacts/{artifact_id}/blocks.zip')" in main and 'shots_enabled' in main and 'downloadBlocks' in web and 'profiles: ["shots"]' in (root / 'docker-compose.yml').read_text(encoding='utf-8') and "query_selector_all(':scope" not in (root / 'apps/shots/server.py').read_text(encoding='utf-8') and 'Сервіс знімків відповів' in main,
