@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.61"
+BASE_STYLE_VERSION = "12.62"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -955,3 +955,52 @@ CONSTRAINTS
 Photorealistic product photography. No text or labels added by the model, redrawn or garbled markings, invented lettering, fabricated brand marks, captions, arrows, dimension lines, callouts, diagrams, UI, people, hands, wrists, duplicate products, invented accessories or packaging, glow effects not physically present, smoke, particles, cheap snapshot look or watermark.'''
 
 SHOWCASE_PROMO_NEGATIVE_PROMPT = r'''Do not create a new, approximate or similar product. Do not redraw, redesign, restyle, recolor, simplify, distort, duplicate, mirror or replace the supplied product. Do not alter geometry, proportions, thickness, edge profile, perspective, materials, surface finish, colour segments or any visible marking. Do not shift, saturate, unify or grade the product colours, and do not blend distinct colour segments into a gradient. Do not regenerate, re-letter, redraw, sharpen or complete any existing logo, placeholder lettering, engraved marking, printed mark or sticker - preserve them exactly as pixels from the source photograph. Do not add a logo to a blank product and do not erase one that exists. No alternative viewpoint, no rotated, turned, re-posed, re-shot or re-rendered product, no substituted colourway, size or variant. No synthesized letterforms; no garbled, warped, smeared, mirrored, doubled, misspelled or invented lettering; no fake brand marks; no invented slogans or company names. No invented packaging, gift boxes, display stands, hangtags, accessories, sample sets or quantity arrangements that are not in the source photograph. No text, letters, captions, badges, arrows, dimension lines, callouts, diagrams, price tags, UI, watermarks, people, hands, wrists, arms, models wearing the product, clutter, fantasy scenery, neon styling, smoke, sparks, particles, lens flares, excessive glow or completely black backgrounds. Avoid a cheap, dull, flat, low-contrast, amateur or generic stock look. The image must contain ZERO added text in any language - the only readable characters allowed are those physically present on the real product in the source photograph. Preserve the original product identity exactly. If accurate preservation is not possible, keep the original product and make only minimal environment, framing and lighting changes.'''
+
+
+# --- Промо: фотографічний бриф і бренд-схема (2026-08-19) --------------------
+# Стиль «ARTLINE Showcase Promo» уже описує, ЩО кадр має показати. Не описаного
+# лишалось те, ЯК кадр знімають, - і саме на цьому Hero виходив «десь у офісі»:
+# модель не має брифу з об'єктивом, світлом і поверхнею, тому вигадує сцену
+# сама. Тут це дописано окремими секціями в кінець (останні інструкції модель
+# слухає найкраще), а не хірургією по чужому тексту.
+
+_PROMO_SHOOTING_BRIEF = """
+
+SHOOTING BRIEF (this overrides any vaguer lighting or surface instruction above)
+- Camera: 85-100 mm macro-capable lens at f/2.8-f/4, slightly above the surface (10-20 degrees), the supplied product pose kept exactly as photographed.
+- Light: one large soft key from the upper left (window or softbox), a gentle rim from behind-right that separates the product edge from the surface, soft fill so nothing is crushed to black.
+- Shadow: one realistic soft contact shadow directly under the product. A product without a contact shadow floats and is a defect.
+- Surface: exactly ONE calm tactile matte surface - light warm concrete, pale oak, natural linen, matte off-white paper or a light stone slab. No patterned cloth, no desk clutter, no props.
+- Material truth: silicone, textile and coated plastic read matte with one soft wide highlight; metal and enamel get one crisp specular edge. A uniform plastic gloss over everything is a defect.
+- Depth of field falls off gently behind the product; the text-safe area stays clean, evenly lit and slightly softer than the product.
+"""
+
+_PROMO_MACRO_BRIEF = """
+
+MACRO BRIEF (this overrides any vaguer lighting or surface instruction above)
+- Camera: 100 mm macro at f/4-f/5.6, the supplied product pose unchanged; the crop does the work, never a new shot.
+- Light: soft raking light across the marked area so relief casts its own micro-shadow - embossing, debossing and engraving are judged by that shadow, not by colour.
+- Texture must survive: the silicone grain, the fabric weave, the enamel meniscus, the tooling marks on metal. A smoothed, denoised, plastic-looking surface is a defect.
+- Surface family stays the same as the Hero (light warm concrete, pale oak, linen, matte paper); the background falls into soft focus, never into pure white emptiness.
+- Square canvas: keep the marked area and the product edges clear of the frame edges.
+"""
+
+SHOWCASE_PROMO_HERO_PROMPT = SHOWCASE_PROMO_HERO_PROMPT + _PROMO_SHOOTING_BRIEF
+SHOWCASE_PROMO_FEATURE_PROMPT = SHOWCASE_PROMO_FEATURE_PROMPT + _PROMO_MACRO_BRIEF
+
+if 'SHOOTING BRIEF' not in SHOWCASE_PROMO_HERO_PROMPT or 'MACRO BRIEF' not in SHOWCASE_PROMO_FEATURE_PROMPT:
+    raise RuntimeError('PROMO photographic briefs were not appended')
+
+# Бренд-схема breloki.eu. У промпті лишаються канонічні токени ARTLINE, а кольори
+# накладає apply_palette() ПІСЛЯ генерації - тому зміна схеми не може зламати
+# верстку, і правка hex не потребує релізу.
+#
+# Увага: сайт віддає CSS лише через Elementor/WP Rocket, у розмітці hex немає -
+# значення нижче зняті на око з вигляду сайту і є ОРІЄНТИРОМ. Точні кольори
+# правляться у розділі «Палітри»: сид не переписує наявний пресет.
+BRELOKI_PALETTE = {
+    'accent': '#F26A21',       # теплий акцент кнопок
+    'dark': '#1B1F24',         # графіт замість чорного ARTLINE
+    'dark_soft': '#2A3038',    # мʼякий графіт панелей
+    'light_soft': '#F6F4F0',   # тепле світле тло секцій
+}

@@ -1249,6 +1249,15 @@ _ENVIRONMENTS = (
     (('крісло', 'кресло', 'стіл', 'стол'), 'a bright ergonomic home-office corner'),
     (('роутер', 'маршрутизатор', 'комутатор', 'коммутатор', 'мереж', 'сетев'),
      'a neat network shelf or small rack area with tidy cabling in soft focus'),
+    # 2026-08-19: промо-гаджети (breloki.eu). Доти будь-який брелок падав у
+    # «clean professional space» - модель малювала офіс із моніторами навколо
+    # брелока. Тут середовище - предметний стіл фотографа, не робоче місце.
+    (('брелок', 'брелк', 'brelok', 'keychain', 'keyring', 'key ring', 'опаск', 'браслет', 'opask', 'wristband',
+      'пінс', 'значок', 'przypink', 'pin ', 'pins', 'магніт', 'магнит', 'magnes', 'magnet', 'нашивк', 'naszywk',
+      'patch', 'смич', 'ланьярд', 'smycz', 'lanyard', 'відкривач', 'otwieracz', 'opener', 'бейдж', 'badge',
+      'гаджет', 'gadżet', 'gadget', 'сувенір', 'reklamow'),
+     'a product photographer\'s tabletop: one calm matte surface (light warm concrete, pale oak, linen or matte off-white paper), '
+     'soft window light, shallow depth of field, nothing else on the table'),
 )
 
 
