@@ -55,6 +55,11 @@ from app.prompts import (
     SHOWCASE_NEGATIVE_PROMPT,
     SHOWCASE_STYLE_NAME,
     SHOWCASE_STYLE_PROMPT,
+    SHOWCASE_PROMO_FEATURE_PROMPT,
+    SHOWCASE_PROMO_HERO_PROMPT,
+    SHOWCASE_PROMO_NEGATIVE_PROMPT,
+    SHOWCASE_PROMO_STYLE_NAME,
+    SHOWCASE_PROMO_STYLE_PROMPT,
     DEFAULT_FEATURE_PROMPT,
     DEFAULT_HERO_PROMPT,
     DEFAULT_NEGATIVE_PROMPT,
@@ -155,6 +160,20 @@ MANAGED_STYLES = [
             'hero_prompt': '',
             'feature_prompt': '',
             'negative_prompt': PODIUM_NEGATIVE_PROMPT,
+        },
+    },
+    {
+        # Та сама геометрія, що в Showcase (сім блоків, ритм, гарди), але інший
+        # контракт змісту: промо-товар із логотипом продають техніка нанесення,
+        # кольори, розміри й строк, а не модельний код і ват.
+        'name': SHOWCASE_PROMO_STYLE_NAME,
+        'default': False,
+        'values': {
+            'description': 'Showcase для промо-продукції з логотипом (браслети, брелоки, ручки, кружки): техніки нанесення, Pantone, розміри, тираж і строк замість модельних кодів. Без цін.',
+            'prompt': SHOWCASE_PROMO_STYLE_PROMPT,
+            'hero_prompt': SHOWCASE_PROMO_HERO_PROMPT,
+            'feature_prompt': SHOWCASE_PROMO_FEATURE_PROMPT,
+            'negative_prompt': SHOWCASE_PROMO_NEGATIVE_PROMPT,
         },
     },
     {

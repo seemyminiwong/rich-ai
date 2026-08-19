@@ -6,7 +6,7 @@ const STATUS={draft:'Чернетка',queued:'У черзі',processing:'Ген
 const STAGE={dispatch_pending:'Очікування передачі воркеру',queued:'Очікування запуску',queued_delayed:'Довге очікування в черзі',pausing:'Завершення паузи',cancelling:'Завершення скасування',scrape:'Читання сторінки',extract:'Аналіз товару',images:'Підготовка зображень',content:'Створення rich-контенту',review:'Готово до перевірки',approved:'Схвалено',changes_requested:'Потрібні зміни',error:'Помилка',paused:'Призупинено',cancelled:'Скасовано'};
 const ROLE_LABEL={admin:'Адміністратор',editor:'Редактор',reviewer:'Рев’юер',viewer:'Перегляд'};
 const CRITIC_LABEL={html:'HTML-структура',facts:'Фактологія',accessibility:'Доступність',marketing:'Маркетинг',llm:'AI-рецензент'};
-const MANAGED_STYLE_NAMES=['ARTLINE Base','ARTLINE Engineering','ARTLINE Showcase','ARTLINE Showcase Dark','ARTLINE Podium','ARTLINE Podium 3D','ARTLINE Podium 3D 360','ARTLINE Podium 3D 360 Dark','ARTLINE Podium 3D Scroll','ARTLINE Landing'];
+const MANAGED_STYLE_NAMES=['ARTLINE Base','ARTLINE Engineering','ARTLINE Showcase','ARTLINE Showcase Dark','ARTLINE Showcase Promo','ARTLINE Podium','ARTLINE Podium 3D','ARTLINE Podium 3D 360','ARTLINE Podium 3D 360 Dark','ARTLINE Podium 3D Scroll','ARTLINE Landing'];
 // Лендінгові стилі (шаблони промо-сторінок) не мають зʼявлятись у селекторах
 // стилів rich-проєктів - і навпаки: у діалозі лендінгу лише вони.
 const isLandingStyle=s=>(s?.name||'').startsWith('ARTLINE Landing')||((s?.prompt||'').includes('{PRODUCTS}'));

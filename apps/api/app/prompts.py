@@ -820,3 +820,138 @@ PODIUM360DARK_STYLE_PROMPT = _p360d
 
 if 'PODIUM-3D-360' not in PODIUM360DARK_STYLE_PROMPT or '#0D1013' not in PODIUM360DARK_STYLE_PROMPT:
     raise RuntimeError('PODIUM 360 DARK style derivation failed')
+
+# --- ARTLINE Showcase Promo --------------------------------------------------
+# Промо-продукція з логотипом (браслети, брелоки, ручки, кружки, ленти).
+# Покупець тут не порівнює модельні коди - він питає: чи нанесете моє лого,
+# якою технікою, в яких кольорах і розмірах, від якого тиражу і за скільки днів.
+# Тому геометрія Showcase лишається один-в-один (ті самі сім блоків, ритм і
+# гарди), а змінюється КОНТРАКТ ЗМІСТУ секцій. Ім'я навмисно починається з
+# 'ARTLINE Showcase' - інакше _finalize_showcase_layout не підхопить стиль.
+
+SHOWCASE_PROMO_STYLE_NAME = 'ARTLINE Showcase Promo'
+
+
+def _promo_swap_line(text: str, prefix: str, new_line: str) -> str:
+    """Replace one contract line by its stable prefix.
+
+    Exact-string surgery on a 90-line prompt broke silently every time a comma
+    moved, so the anchor is the shortest unique line prefix and a miss raises.
+    """
+    lines = text.split('\n')
+    for index, line in enumerate(lines):
+        if line.startswith(prefix):
+            lines[index] = new_line
+            return '\n'.join(lines)
+    raise RuntimeError(f'ARTLINE Showcase Promo derivation failed: no line starts with {prefix!r}')
+
+
+SHOWCASE_PROMO_STYLE_PROMPT = SHOWCASE_STYLE_PROMPT
+SHOWCASE_PROMO_STYLE_PROMPT = _promo_swap_line(
+    SHOWCASE_PROMO_STYLE_PROMPT,
+    '- NAME APPEARS ONCE PER SECTION:',
+    '- NAME APPEARS ONCE PER SECTION: the badge carries only the shop or brand and the product category (for example "BRELOKI.EU · OPASKI SILIKONOWE"), the h2 names the product exactly once. Badge text duplicating the h2 is a defect. The same rule applies to the final recap badge.',
+)
+SHOWCASE_PROMO_STYLE_PROMPT = _promo_swap_line(
+    SHOWCASE_PROMO_STYLE_PROMPT,
+    '- HERO TYPOGRAPHY:',
+    '- HERO TYPOGRAPHY: the h2 is the product plus its branding promise in the target language, at most six words (for example "Opaski silikonowe z logo") - never a manufacturer code, an SKU, a catalogue index or a full keyword-stuffed shop title: a four-line all-caps wall is a defect. The production parameters move to the subtitle as compact specs separated by " · " (for example "silikon · Pantone C · nadruk do 4 kolorów · tłoczenie · 10-14 dni roboczych"). The paragraph below stays a fluent sentence, not a spec list.',
+)
+SHOWCASE_PROMO_STYLE_PROMPT = _promo_swap_line(
+    SHOWCASE_PROMO_STYLE_PROMPT,
+    '- The exact brand and model appear in the Hero badge',
+    '- The product category appears in the Hero badge, once mid-page and in the final recap. The buyer\'s own logo is a placeholder, never a named company.',
+)
+SHOWCASE_PROMO_STYLE_PROMPT += """
+
+PROMO EDITION OVERRIDES (these override every earlier instruction that assumes a technical device with a model code and engineering specifications)
+
+WHO IS READING
+A company, foundation, club, school or agency ordering a BRANDED PROMOTIONAL PRODUCT in quantity. They never compare model codes, wattage or MPPT counts. They decide on six questions: can my logo be applied, by which technique, in which colours, in which sizes, from what quantity, and how long production takes. Every section must answer one of those six. A section that answers none is a defect.
+
+NAMING AND THE CLIENT LOGO
+- There is no "brand + model code" anywhere on this page. Products are named by what they are.
+- The client's logo is NEVER named, invented or imagined. Write "Twoje logo", "Ваш логотип" or the target-language equivalent. A fictional company name, slogan or brand mark in the copy is a defect.
+- Personalisation vocabulary belongs to the target language of the page: use the words the local promo industry uses for printing, embossing and debossing, not literal translations from English.
+
+SECTION CONTRACT (numbering, canvases, radii, shared labels and the ARTLINE BLOCK comments stay exactly as specified above - only what the sections SAY changes)
+2. SPEC STRIP - the four values are ORDER numbers, not engineering ones: the number of print colours, the size range in mm, the production lead time in working days, and the strongest remaining confirmed order fact (minimum quantity, width in mm, or the number of available marking techniques). The single dark card holds the number that most often blocks a decision - the lead time, unless Product JSON proves another one weighs more.
+3. LIGHT FEATURE SPLIT = MARKING TECHNIQUES. The h2 names the techniques; the paragraph explains in one breath what each one does to the surface of the product; the dark chip row lists the confirmed techniques verbatim from Product JSON (surface print, debossed, debossed and colour-filled, embossed, embossed with print). Never invent a technique Product JSON does not list, and never promise a combination it does not confirm.
+4. DARK FEATURE SPLIT = COLOURS AND EFFECTS. The 2x2 stat tiles carry confirmed colour facts: the colour system (for example Pantone C), the maximum number of colours in one print, and the special effects (segmented, swirl, glow-in-the-dark). When Product JSON states a limit - effects that cannot be combined, colour counts above the maximum quoted individually - that limit is stated plainly in the paragraph. An honest limit converts better than a promise the factory cannot keep.
+5. CAPABILITY TRIO = SIZES AND WHO THEY FIT. One card per confirmed size, each with its number in mm and the audience it is made for (adults, teenagers, children). If the product has no size ladder, one card per confirmed application (events, charity campaigns, staff identification). Every card still opens with a real gallery frame.
+6. TRUST SPLIT = HOW TO ORDER. The four tiles answer, from Product JSON only: which artwork formats to send (vector first, then acceptable raster), what the buyer receives before production starts (free visualisation, graphic support, correction of the artwork), the lead time and whether express production exists, and the ordering step or working hours. REGISTRY DATA STAYS BANNED (SKU, article number, internal code, EAN, country of origin).
+7. FINAL RECAP - the three pills are the three facts a buyer repeats to their manager: colours, size, lead time.
+
+PROMO TONE
+- Never state a price, a unit cost, a discount, a delivery fee or a payment method, even when Product JSON contains one. The shop page sells; this page explains.
+- Never promise a quantity, a deadline, a technique or a free service Product JSON does not confirm. A missing fact is dropped, never estimated, never rounded up.
+- No superlatives without a number behind them. "Popular in promo campaigns" is allowed only if Product JSON says so.
+- Bulk ordering is the context: speak to somebody buying hundreds of units for other people, not to one person buying one for themselves.
+
+PROMO SELF-CHECK (in addition to the final self-check above)
+- the h2 carries no model code, no SKU and no invented client brand; the badge is shop plus category;
+- every technique, colour, effect, size and deadline traces to Product JSON verbatim;
+- confirmed limits are stated, not hidden;
+- there is no price, discount, delivery cost or payment method anywhere on the page;
+- the four spec-strip numbers are order numbers and the dark one is the lead time unless Product JSON proves otherwise;
+- all seven ARTLINE BLOCK comments, the dark/light rhythm and the shared label component are untouched.
+"""
+
+if ('PROMO EDITION OVERRIDES' not in SHOWCASE_PROMO_STYLE_PROMPT
+        or 'SECTION SET, IN ORDER' not in SHOWCASE_PROMO_STYLE_PROMPT
+        or 'BRAND + MODEL CODE' in SHOWCASE_PROMO_STYLE_PROMPT
+        or not SHOWCASE_PROMO_STYLE_NAME.startswith(SHOWCASE_STYLE_NAME)):
+    raise RuntimeError('ARTLINE Showcase Promo style derivation failed')
+
+
+# Промо-фото живе за іншими правилами, ніж інженерне: товар однотонний і дрібний,
+# а вирішує масштаб нанесення. Заборона синтезувати літери лишається найсуворішою
+# інструкцією - плейсхолдер «TWOJE LOGO» з реального кадру модель зобов'язана
+# зберегти як пікселі, а не «домалювати».
+
+SHOWCASE_PROMO_HERO_PROMPT = r'''INTENDED USE
+Create a photorealistic promotional-product Hero background for an ARTLINE rich-content page by editing the supplied real product photograph. The image must read as a credible branded-merchandise catalogue shot: the product is small, tactile and made in quantity.
+
+SCENE
+Build exactly ONE environment: the one described in the ENVIRONMENT line of the request. Nothing else defines the scene. Keep it a clean, tidy, plausible promotional context - a neutral studio surface, a soft-lit tabletop, an uncluttered event or office surface. Never place products of another category in the frame unless the ENVIRONMENT line names them. No people, no hands, no wrists, no models wearing the product.
+
+SUBJECT
+The supplied product is immutable and remains the unmistakable subject. Preserve its exact geometry, proportions, perspective, thickness, edge profile, surface finish, colour segments and every visible marking. Change only the surrounding environment, overall lighting and natural contact shadows.
+
+COLOUR IS THE PRODUCT
+Promotional buyers choose by colour, so colour accuracy outranks mood. Do not shift, saturate, unify, harmonise or "grade" the product colours, and never merge distinct colour segments into a gradient. Silicone, textile and coated plastic read as matte with a soft wide highlight - a glossy plastic look is a defect.
+
+LOGOS, PLACEHOLDERS AND TEXT ON THE PRODUCT
+The applied logo, placeholder lettering ("TWOJE LOGO", "YOUR LOGO"), engraved marking or printed mark visible on the product is pixel data to be preserved from the source photograph, never content to be regenerated, sharpened, completed, translated, re-lettered or "improved". Do not synthesize letterforms anywhere in the image. Do not add a logo to a blank product, and do not remove one that is there. If a marking cannot be reproduced faithfully at the chosen framing, keep it naturally out of focus or outside the frame - unreadable because of depth of field is acceptable, fake or garbled is not.
+
+VIEWPOINT LOCK - THE CAMERA IS FIXED
+The supplied photograph defines the camera. Do not rotate, turn, tilt, re-pose, re-angle, re-shoot or re-render the product from any viewpoint other than the exact one supplied. You may crop, scale and reposition the existing product pixels inside the canvas, and you may change what is behind and around them - nothing else. A close-up means cropping into the supplied photograph. You have no information about surfaces the source frame does not show, so a new viewpoint would be invention.
+
+COMPOSITION
+This image will be used as a full-bleed CSS background with HTML text over it. For desktop, keep the complete product primarily on the right at approximately 38-46% of the canvas and reserve uncluttered, darker text-safe space on the left. For mobile, keep the complete product in the upper 45-55% and reserve a calm darker text-safe area below. Keep the marking area and the product edges away from crop edges. Soft, even, slightly directional light with realistic contact shadow; restrained dark neutrals with at most a subtle #19BCC9 environmental accent.
+
+CONSTRAINTS
+Photorealistic product photography. No text, letters, captions, logos added by the model, redrawn or garbled markings, invented lettering, fabricated brand marks, badges, panels, UI, callouts, measurement lines, people, hands, wrists, duplicated products in impossible arrangements, invented accessories or packaging, fantasy scenery, neon styling, smoke, particles, excessive glow, cheap snapshot look or watermark.'''
+
+SHOWCASE_PROMO_FEATURE_PROMPT = r'''INTENDED USE
+Create a photorealistic ARTLINE Feature image for a promotional product by editing the supplied real product photograph. The image must make ONE confirmed branding property visually legible - the marking technique, the colour system or the surface finish - and must not repeat the Hero scene.
+
+FEATURE STORY
+The single property to communicate is supplied in the request as "SINGLE FEATURE TO COMMUNICATE". Build the composition around exactly that property by cropping into the supplied photograph: bring the marked area, the colour transition or the surface texture close enough that a buyer can judge it. If the property cannot be shown truthfully from the supplied frame, show a truthful close-up of the relevant visible area instead - never stage a demonstration that did not happen.
+
+SUBJECT PRESERVATION
+Preserve the exact real product: geometry, proportions, thickness, perspective, materials, colour segments, finish and every visible marking. Change only framing, surrounding environment, lighting and contact shadows. Never create a similar product, a different colourway, a second size or an imaginary sample set.
+
+LOGOS, PLACEHOLDERS AND TEXT ON THE PRODUCT
+A macro crop magnifies this risk more than any other shot. The applied logo, placeholder lettering, engraving or print is pixel data preserved from the source photograph - never regenerated, re-lettered, sharpened, completed or translated. Do not synthesize letterforms anywhere in the image. A marking blurred by depth of field is acceptable; an approximate, warped, smeared or invented one is a defect that voids the image.
+
+VIEWPOINT LOCK - THE CAMERA IS FIXED
+The supplied photograph defines the camera. Do not rotate, turn, tilt, re-pose, re-angle or re-shoot the product. Crop, scale and reposition the existing pixels; change only what is behind and around them.
+
+COMPOSITION
+A clean, tactile composition distinct from the Hero. The product or the marked area occupies about 60-75% of the frame, stays sharp and fully readable, on bright neutral surfaces (#FFFFFF, #F7F8FA, #EAEEF2) unless the confirmed property needs a darker setting (glow-in-the-dark). Soft raking light is welcome where it reveals relief - embossing and debossing are sold by their shadow.
+
+CONSTRAINTS
+Photorealistic product photography. No text or labels added by the model, redrawn or garbled markings, invented lettering, fabricated brand marks, captions, arrows, dimension lines, callouts, diagrams, UI, people, hands, wrists, duplicate products, invented accessories or packaging, glow effects not physically present, smoke, particles, cheap snapshot look or watermark.'''
+
+SHOWCASE_PROMO_NEGATIVE_PROMPT = r'''Do not create a new, approximate or similar product. Do not redraw, redesign, restyle, recolor, simplify, distort, duplicate, mirror or replace the supplied product. Do not alter geometry, proportions, thickness, edge profile, perspective, materials, surface finish, colour segments or any visible marking. Do not shift, saturate, unify or grade the product colours, and do not blend distinct colour segments into a gradient. Do not regenerate, re-letter, redraw, sharpen or complete any existing logo, placeholder lettering, engraved marking, printed mark or sticker - preserve them exactly as pixels from the source photograph. Do not add a logo to a blank product and do not erase one that exists. No alternative viewpoint, no rotated, turned, re-posed, re-shot or re-rendered product, no substituted colourway, size or variant. No synthesized letterforms; no garbled, warped, smeared, mirrored, doubled, misspelled or invented lettering; no fake brand marks; no invented slogans or company names. No invented packaging, gift boxes, display stands, hangtags, accessories, sample sets or quantity arrangements that are not in the source photograph. No text, letters, captions, badges, arrows, dimension lines, callouts, diagrams, price tags, UI, watermarks, people, hands, wrists, arms, models wearing the product, clutter, fantasy scenery, neon styling, smoke, sparks, particles, lens flares, excessive glow or completely black backgrounds. Avoid a cheap, dull, flat, low-contrast, amateur or generic stock look. The image must contain ZERO added text in any language - the only readable characters allowed are those physically present on the real product in the source photograph. Preserve the original product identity exactly. If accurate preservation is not possible, keep the original product and make only minimal environment, framing and lighting changes.'''
