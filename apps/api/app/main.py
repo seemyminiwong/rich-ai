@@ -49,6 +49,7 @@ from app.prompts import (
     SHOWCASE_DARK_STYLE_PROMPT,
     PODIUM360DARK_STYLE_NAME,
     PODIUM360DARK_STYLE_PROMPT,
+    BRELOKI_PALETTE,
     LICENSE_COMMENT,
     SHOWCASE_FEATURE_PROMPT,
     SHOWCASE_HERO_PROMPT,
@@ -167,6 +168,9 @@ MANAGED_STYLES = [
         # контракт змісту: промо-товар із логотипом продають техніка нанесення,
         # кольори, розміри й строк, а не модельний код і ват.
         'name': SHOWCASE_PROMO_STYLE_NAME,
+        # 2026-08-19: бренд-схема breloki.eu як СТАРТОВА схема стилю. Далі вона
+        # належить оператору (вкладка «Кольори») і сидом не переписується.
+        'palette': BRELOKI_PALETTE,
         'default': False,
         'values': {
             'description': 'Showcase для промо-продукції з логотипом (браслети, брелоки, ручки, кружки): техніки нанесення, Pantone, розміри, тираж і строк замість модельних кодів. Без цін.',
@@ -223,6 +227,9 @@ BUILTIN_PALETTES = [
     ('Forest', {'accent': '#16A34A', 'dark': '#0D1A12', 'dark_soft': '#16281C', 'light_soft': '#F1F7F2'}),
     ('Grape', {'accent': '#8B5CF6', 'dark': '#140F22', 'dark_soft': '#221A38', 'light_soft': '#F5F3FB'}),
     ('Lime', {'accent': '#A3E635', 'dark': '#141A0B', 'dark_soft': '#202B12', 'light_soft': '#F6FAEE'}),
+    # 2026-08-19: бренд-схема breloki.eu для стилю «ARTLINE Showcase Promo».
+    # Орієнтовні значення (див. BRELOKI_PALETTE); точні hex правляться тут, у UI.
+    ('Breloki', dict(BRELOKI_PALETTE)),
 ]
 
 
@@ -248,6 +255,10 @@ def seed():
                     for item in db.scalars(select(Style)).all():
                         item.is_default = False
                 style = Style(name=spec['name'], is_default=bool(spec['default']), **values)
+                # Схема кольорів - лише стартове значення: далі вона належить
+                # оператору (вкладка «Кольори»), тому в порівняння нижче не входить.
+                if spec.get('palette'):
+                    style.palette_json = json.dumps(spec['palette'])
                 db.add(style)
                 db.flush()
                 db.add(StyleVersion(style_id=style.id, version=1, prompt=style.prompt, hero_prompt=style.hero_prompt, feature_prompt=style.feature_prompt))

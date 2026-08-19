@@ -30,6 +30,7 @@ from app.pipeline import (
     select_feature_photo,
     select_key_feature,
     style_image_prompt,
+    style_palette,
     translate_html,
     critic_html,
 )
@@ -304,6 +305,11 @@ def process_project(self, project_id, reuse_images=False):
                 raise RuntimeError('Selected style no longer exists')
             style = SimpleNamespace(
                 id=style_row.id, name=style_row.name, hero_prompt=style_row.hero_prompt, feature_prompt=style_row.feature_prompt, negative_prompt=style_row.negative_prompt,
+                # 2026-08-19: без palette_json тут style_palette(style) завжди
+                # повертав {} - схема стилю (вкладка «Кольори») ніколи не
+                # доходила до сторінки, працював лише пресет, обраний при
+                # запуску проєкту. Живий випадок: Promo (Breloki) виходив ціановим.
+                palette_json=getattr(style_row, 'palette_json', '') or '{}',
                 # Do not inject unrelated global knowledge documents. Product facts
                 # come only from this page until documents have an explicit product link.
                 prompt=style_row.prompt
@@ -381,6 +387,13 @@ def process_project(self, project_id, reuse_images=False):
                 style_hero = style_image_prompt(style.prompt, 'HERO_IMAGE') or style.hero_prompt.strip()
                 style_feature = style_image_prompt(style.prompt, 'FEATURE_IMAGE') or style.feature_prompt.strip()
                 negative = getattr(style, 'negative_prompt', '').strip()
+                # 2026-08-19: акцент бренду потрапляє і в сцену, а не лише в HTML.
+                # Доти Hero жив у «холодних нейтралях ARTLINE» незалежно від
+                # обраної палітри - для сторінки breloki.eu це чужий колір.
+                # Промпти дозволяють акцент лише як дрібний елемент боке/краю
+                # поверхні, тому підказка безпечна для будь-якого стилю.
+                _accent = (_project_palette(project) or style_palette(style) or {}).get('accent')
+                brand_accent = f"BRAND ACCENT: {_accent} - allowed only as a small out-of-focus environmental accent, never on the product or as a flood.\n" if _accent else ''
                 facts = json.dumps(product, ensure_ascii=False)[:5000]
                 requested_variants = [value for value in project.variants.split(',') if value]
                 hero_by_variant = {}
@@ -403,7 +416,7 @@ def process_project(self, project_id, reuse_images=False):
                         size, width, height, composition = hero_specs.get(variant, hero_specs['desktop'])
                         log(db, project, 'images', f'Створення Hero {variant} · {project.image_model}', 24 + offset * 5)
                         hero_prompt = (
-                            f"{style_hero}\nENVIRONMENT: {hero_environment(product)}\n"
+                            f"{style_hero}\nENVIRONMENT: {hero_environment(product)}\n{brand_accent}"
                             f"Canvas requirement: {composition}. "
                             f"Render specifically at {size}; do not crop important product parts.\n"
                             f"Negative requirements: {negative}\nProduct: {product_name}. Verified product facts: {facts}"
@@ -592,7 +605,7 @@ def process_project(self, project_id, reuse_images=False):
                                 "(for example: finished printed parts for speed or calibration features, connected equipment "
                                 "for connectivity features, the relevant material for material-support features). "
                                 "Someone who reads the description and then looks at the image must see the connection immediately.\n\n"
-                                f"ART DIRECTION:\n{style_feature}\n"
+                                f"ART DIRECTION:\n{style_feature}\n{brand_accent}"
                                 f"Negative requirements: {negative}\nProduct: {product_name}."
                             )
                             generated_url, feature_generated, feature_error = generate_image(
