@@ -1726,18 +1726,35 @@ def _probe_media_surface(src: str) -> tuple[bool, str | None]:
     Двозначність важлива: (True, None) означає «кадр Є, але його периметр
     строкатий» - тобто це знімок СЕРЕДОВИЩА (інтер'єр, вулиця), а не студійний
     рендер на рівному тлі. Такий кадр можна кадрувати cover'ом; рендер - ніколи.
+
+    Локальні /media читаються з диска, зовнішні URL - однією викачкою через
+    safe_client (SSRF-гард і стеля розміру всередині). Результат кешується на
+    процес: пости-обробка ганяє ті самі кадри по кілька разів і по два варіанти.
     """
     canonical = (src or '').split('?', 1)[0]
-    if not canonical.startswith('/media/'):
+    is_local = canonical.startswith('/media/')
+    is_remote = canonical.startswith(('http://', 'https://'))
+    if not (is_local or is_remote):
         return (False, None)
     if canonical in _surface_color_cache:
         return _surface_color_cache[canonical]
     found, color = False, None
     try:
-        path = Path(settings.media_dir) / canonical[len('/media/'):]
-        if path.is_file():
+        blob = None
+        if is_local:
+            path = Path(settings.media_dir) / canonical[len('/media/'):]
+            if path.is_file():
+                blob = path.read_bytes()
+        elif is_public_http_url(canonical):
+            # Кадри галереї лежать на чужому CDN, локальної копії немає - без
+            # проби вони всі вважались «рендером» і отримували contain, тобто
+            # білі смуги в «трійці можливостей» (жива скарга зі скріншотом).
+            # Одна легка викачка на кадр, результат назавжди в кеші процесу.
+            with safe_client(timeout=6) as http:
+                blob = fetch_bytes_capped(http, canonical, cap_mb=8)
+        if blob:
             found = True
-            image = Image.open(path).convert('RGB')
+            image = Image.open(BytesIO(blob)).convert('RGB')
             image.thumbnail((64, 64))
             px = image.load()
             w, h = image.size
@@ -1877,6 +1894,11 @@ def _fit_framed_images(markup: str) -> str:
     об'єкту вписатись - contain для реального товару, cover для згенерованих
     сцен (hero/feature). Заразом підтягуємо радіус рамки: майже прямий кут (4px)
     серед скруглених карток читається як дефект.
+
+    Contain лишає порожнечу згори й знизу, і якщо слот білий, а кадр темний,
+    у «трійці можливостей» виходить три різні картки замість одного ряду
+    (жива скарга зі скріншотом). Тому слот отримує фон САМОГО кадру: летербокс
+    зливається з фото і ряд читається однорідно.
     """
     soup = BeautifulSoup(markup or '', 'html.parser')
     changed = False
@@ -1906,8 +1928,20 @@ def _fit_framed_images(markup: str) -> str:
         sstyle = slot.get('style') or ''
         m = re.search(r'border-radius\s*:\s*([\d.]+)px', sstyle, re.I)
         if m and float(m.group(1)) != 12 and float(m.group(1)) < 100:
-            slot['style'] = re.sub(r'border-radius\s*:\s*[\d.]+px', 'border-radius:12px', sstyle, count=1, flags=re.I)
+            sstyle = re.sub(r'border-radius\s*:\s*[\d.]+px', 'border-radius:12px', sstyle, count=1, flags=re.I)
+            slot['style'] = sstyle
             changed = True
+        if not scene:
+            surface = _photo_surface_color(img.get('src') or '')
+            if surface:
+                updated = re.sub(r'background(?:-color)?\s*:\s*#[0-9a-fA-F]{3,6}', f'background:{surface}', sstyle, count=1, flags=re.I)
+                if updated == sstyle and 'background' not in sstyle.lower():
+                    updated = sstyle.rstrip().rstrip(';') + f';background:{surface}'
+                if 'overflow' not in updated.lower():
+                    updated = updated.rstrip().rstrip(';') + ';overflow:hidden'
+                if updated != sstyle:
+                    slot['style'] = updated
+                    changed = True
     return str(soup) if changed else markup
 
 
