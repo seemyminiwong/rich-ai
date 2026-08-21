@@ -2031,9 +2031,15 @@ def _showcase_blocks(soup: BeautifulSoup) -> list:
 
 
 def _set_css(style: str, prop: str, value: str) -> str:
-    """Set one inline declaration without accumulating contradictory copies."""
+    """Set one inline declaration without accumulating contradictory copies.
+
+    Видалення властивості лишало «;;» - на повторному проході рядок стилю
+    відрізнявся від попереднього, ідемпотентність фіналайзера рвалась, і
+    relayout завжди «бачив зміни». Порожні декларації схлопуються тут.
+    """
     pattern = re.compile(rf'(^|;)\s*{re.escape(prop)}\s*:[^;]*', re.I)
-    cleaned = pattern.sub(lambda match: match.group(1), style or '').strip().strip(';')
+    cleaned = pattern.sub(lambda match: match.group(1), style or '')
+    cleaned = re.sub(r';{2,}', ';', cleaned).strip().strip(';')
     return (cleaned + ';' if cleaned else '') + f'{prop}:{value}'
 
 
@@ -2104,6 +2110,39 @@ def _finalize_showcase_layout(
                     card_style = _set_css(card_style, 'display', 'flex')
                     card_style = _set_css(card_style, 'flex-direction', 'column')
                 card['style'] = card_style
+
+    # Фото-картки сплітів (блоки 03 і 04) отримують КОНТРАКТНУ висоту слота
+    # механічно. Модель регулярно «забуває» height:420px, і тоді квадратний чи
+    # портретний кадр розтягує картку на ~1000px: секція росте за нею, а поруч
+    # із коротким текстом зяє порожнеча (жива скарга зі скріншотом QUBE).
+    # Фіксована висота повертає ряду контрактні пропорції; спосіб вписування -
+    # за класифікатором кадру: середовище заповнює слот, рендер вписується.
+    slot_height = 420 if variant == 'desktop' else 300
+    for index in (2, 3):
+        if index >= len(blocks):
+            continue
+        cards = [d for d in blocks[index].find_all('div')
+                 if d.find('img') is not None and d.find(['h2', 'h3']) is None]
+        outer = [d for d in cards if not any(a in cards for a in d.parents)]
+        for card in outer:
+            img = card.find('img')
+            if img is None or 'position:absolute' in (img.get('style') or '').replace(' ', '').lower():
+                continue
+            card_style = card.get('style') or ''
+            card_style = _set_css(card_style, 'height', f'{slot_height}px')
+            card_style = _set_css(card_style, 'overflow', 'hidden')
+            card_style = _set_css(card_style, 'box-sizing', 'border-box')
+            if card_style != (card.get('style') or ''):
+                card['style'] = card_style
+            istyle = img.get('style') or ''
+            keep = [d for d in istyle.split(';') if d.strip() and not re.match(
+                r'\s*(width|height|max-width|max-height|aspect-ratio|object-fit|object-position|display)\s*:', d, re.I)]
+            keep += ['display:block', 'width:100%', 'height:100%',
+                     'object-fit:cover' if _is_environment_photo(img.get('src') or '') else 'object-fit:contain',
+                     'object-position:center']
+            new_istyle = ';'.join(x.strip() for x in keep)
+            if new_istyle != istyle:
+                img['style'] = new_istyle
 
     _finalize_faq(soup, dark_edition)
 
@@ -2376,6 +2415,9 @@ def _finalize_faq(soup, dark_edition: bool = False) -> None:
         items[0].insert_before(style_tag)
 
 
+_MOBILE_HERO_TOP = 420
+
+
 def _fit_mobile_hero(markup: str, hero_url: str) -> str:
     """Мобільний Hero: товар цілий, порожнечі немає.
 
@@ -2386,6 +2428,13 @@ def _fit_mobile_hero(markup: str, hero_url: str) -> str:
     краю - товар за контрактом стоїть угорі, тож він видимий повністю, а знизу
     обрізається лише фон рівно там, де закінчився текст. Висоту блока далі
     визначає контент.
+
+    Третя скарга (живий скріншот QUBE): текст стартував з padding-top:300px і
+    накривав НИЗ товару. Арифметика мобільного полотна: ширина 480, кадр 2:3 ->
+    рендер 720px заввишки; товар за фото-контрактом сидить у верхніх 45-55%,
+    тобто до ~396px. Отже верхній падінг контенту мусить бути НЕ МЕНШИМ за
+    _MOBILE_HERO_TOP (420px) - текст починається під товаром, а не поверх нього.
+    Правило механічне: менший падінг піднімаємо, більший не чіпаємо.
     """
     if not markup:
         return markup
@@ -2404,6 +2453,12 @@ def _fit_mobile_hero(markup: str, hero_url: str) -> str:
         cleaned = re.sub(r'background-(?:size|position)\s*:[^;]+;?', '', cleaned, flags=re.I)
         cleaned = cleaned.rstrip().rstrip(';')
         updated = cleaned + ';background-position:center top;background-size:100% auto'
+        pad = re.search(r'padding\s*:\s*([\d.]+)px([^;]*)', updated, re.I)
+        if pad and float(pad.group(1)) < _MOBILE_HERO_TOP:
+            updated = updated[:pad.start()] + f'padding:{_MOBILE_HERO_TOP}px{pad.group(2)}' + updated[pad.end():]
+        pad_top = re.search(r'padding-top\s*:\s*([\d.]+)px', updated, re.I)
+        if pad_top and float(pad_top.group(1)) < _MOBILE_HERO_TOP:
+            updated = updated[:pad_top.start()] + f'padding-top:{_MOBILE_HERO_TOP}px' + updated[pad_top.end():]
         if updated != style:
             node['style'] = updated
             changed = True
