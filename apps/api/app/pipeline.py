@@ -2110,12 +2110,28 @@ def youtube_video_id(url: str) -> str:
 
 
 _VIDEO_SUBLINES = {
-    'ru': 'Полный видеообзор {name} — смотрите прямо на странице товара.',
-    'ua': 'Повний відеоогляд {name} — дивіться просто на сторінці товару.',
-    'uk': 'Повний відеоогляд {name} — дивіться просто на сторінці товару.',
-    'pl': 'Pełna wideoprezentacja {name} — obejrzyj bezpośrednio na stronie produktu.',
-    'en': 'Full video review of {name} — watch it right on the product page.',
+    'ru': 'Полный обзор — смотрите прямо на странице товара.',
+    'ua': 'Повний огляд — дивіться просто на сторінці товару.',
+    'uk': 'Повний огляд — дивіться просто на сторінці товару.',
+    'pl': 'Pełna prezentacja — obejrzyj bezpośrednio na stronie produktu.',
+    'en': 'The full walkthrough — watch it right on the product page.',
 }
+
+
+def _short_product_name(name: str, limit: int = 60) -> str:
+    """Коротке імʼя товару для заголовка блока відео.
+
+    Магазинна назва - це SEO-простиня («... 6KW 48V 2 MPPT Wi-Fi 220/380V
+    Трехфазный (SUN-...)»), і в h2 блока вона виглядала як спам, ще й з
+    дублем коду в дужках. Правило: відрізати хвіст у дужках, стиснути пробіли
+    і обрізати по межі слова близько limit символів.
+    """
+    short = re.sub(r'\s*\([^)]*\)\s*$', '', (name or '').strip())
+    short = re.sub(r'\s+', ' ', short)
+    if len(short) > limit:
+        cut = short[:limit + 1]
+        short = cut[:cut.rfind(' ')] if ' ' in cut else short[:limit]
+    return short.strip(' -—·,')
 
 _VIDEO_WATCH = {
     'ru': 'Смотреть на YouTube', 'ua': 'Дивитися на YouTube', 'uk': 'Дивитися на YouTube',
@@ -2153,31 +2169,23 @@ def inject_video_block(markup: str, video_url: str, language: str = 'ua', dark: 
         return markup
     lang = (language or '').lower()
     heading = _VIDEO_HEADINGS.get(lang, _VIDEO_HEADINGS['en'])
-    sub_tpl = _VIDEO_SUBLINES.get(lang, _VIDEO_SUBLINES['en'])
+    subline = _VIDEO_SUBLINES.get(lang, _VIDEO_SUBLINES['en'])
     watch = _VIDEO_WATCH.get(lang, _VIDEO_WATCH['en'])
-    name = (product_name or '').strip()
+    name = _short_product_name(product_name)
     title = f'{heading} — {name}' if name else heading
-    subline = (sub_tpl.format(name=name) if name else '').strip()
     if dark:
         box = 'background:#1A2128;border:1px solid rgba(255,255,255,.08)'
         title_color, text_color, link_color = '#F5F7FA', '#AFB8C1', '#19BCC9'
     else:
         box = 'background:#FFFFFF;border:1px solid #E3E6EA'
         title_color, text_color, link_color = '#101010', '#555555', '#157985'
-    label = ('display:inline-flex;align-items:center;justify-content:center;'
-             'width:fit-content;max-width:100%;min-height:30px;padding:6px 14px;'
-             'border:1px solid #19BCC9;border-radius:8px;box-sizing:border-box;'
-             'font-size:12px;line-height:1.3;font-weight:900;letter-spacing:.08em;text-transform:uppercase;'
-             + ('color:#C9F0F4;background:rgba(26,33,40,.72)' if dark else 'color:#157985;background:#FFFFFF'))
     embed = f'https://www.youtube-nocookie.com/embed/{video_id}'
     watch_url = f'https://www.youtube.com/watch?v={video_id}'
     poster = f'https://i.ytimg.com/vi/{video_id}/hqdefault.jpg'
-    subline_html = (f'<p style="margin:0 0 18px;font-size:15px;line-height:1.55;color:{text_color};max-width:860px">{subline}</p>'
-                    if subline else '')
+    subline_html = f'<p style="margin:0 0 18px;font-size:15px;line-height:1.55;color:{text_color};max-width:860px">{subline}</p>' 
     block_soup = BeautifulSoup(
         f'<div class="arvid" style="{box};border-radius:12px;padding:34px 30px;margin-top:18px;box-sizing:border-box">'
-        f'<span style="{label}">VIDEO</span>'
-        f'<h2 style="font-size:30px;font-weight:900;margin:14px 0 8px;color:{title_color}">{title}</h2>'
+        f'<h2 style="font-size:30px;font-weight:900;margin:0 0 8px;color:{title_color}">{title}</h2>'
         f'{subline_html}'
         '<div style="position:relative;width:100%;padding-top:56.25%;border-radius:8px;overflow:hidden;background:#101010">'
         f'<img src="{poster}" alt="{title}" loading="lazy" '

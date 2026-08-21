@@ -1137,6 +1137,12 @@ def test_video_block_is_injected_only_with_a_youtube_link_and_survives_sanitize(
     assert 'i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg' in out, 'постер під плеєром'
     assert 'padding-top:56.25%' in out, 'висота без aspect-ratio: старі webview'
     assert 'Відеоогляд — Інвертор DEYE' in out, 'SEO: назва товару в h2'
+    assert '>VIDEO<' not in out, 'зайвий eyebrow-бейдж прибрано'
+    # довга магазинна назва скорочується, дубль коду в дужках відпадає
+    from app.pipeline import _short_product_name
+    long_name = 'Гибридный инвертор DEYE SUN-6K 6KW 48V 2 MPPT Wi-Fi 220/380V Трехфазный (SUN-6K-SG05LP3-EU-SM2)'
+    short = _short_product_name(long_name)
+    assert '(' not in short and len(short) <= 60 and short.startswith('Гибридный инвертор DEYE')
     assert 'Дивитися на YouTube' in out and 'watch?v=dQw4w9WgXcQ' in out, 'видиме посилання'
     assert 'srcdoc' not in out, 'вкладений srcdoc не виживає всередині srcdoc-превʼю'
     assert 'allowfullscreen' in out and 'loading="lazy"' in out
