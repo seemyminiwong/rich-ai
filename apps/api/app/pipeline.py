@@ -1796,6 +1796,7 @@ def style_palette(style) -> dict:
 
 
 _surface_color_cache: dict = {}
+_surface_size_cache: dict = {}
 
 
 def _photo_surface_color(src: str):
@@ -1846,6 +1847,9 @@ def _probe_media_surface(src: str) -> tuple[bool, str | None]:
         if blob:
             found = True
             image = Image.open(BytesIO(blob)).convert('RGB')
+            # Розмір кадру знімаємо ДО thumbnail: за ним підбирається висота
+            # слота, щоб фото лягало без обрізання і без порожніх смуг.
+            _surface_size_cache[canonical] = image.size
             image.thumbnail((64, 64))
             px = image.load()
             w, h = image.size
@@ -1874,6 +1878,21 @@ def _is_environment_photo(src: str) -> bool:
         return True
     found, color = _probe_media_surface(src)
     return found and color is None
+
+
+def _photo_aspect(src: str) -> float | None:
+    """Природне співвідношення сторін кадру (ширина/висота) або None.
+
+    Пробу вже зроблено класифікатором, тож зайвих викачок немає - беремо
+    розмір із того самого кешу.
+    """
+    canonical = (src or '').split('?', 1)[0]
+    if canonical not in _surface_size_cache:
+        _probe_media_surface(canonical)
+    size = _surface_size_cache.get(canonical)
+    if not size or not size[0] or not size[1]:
+        return None
+    return size[0] / size[1]
 
 
 def _is_scene_asset(src: str) -> bool:
@@ -2204,7 +2223,13 @@ def _finalize_showcase_layout(
     # із коротким текстом зяє порожнеча (жива скарга зі скріншотом QUBE).
     # Фіксована висота повертає ряду контрактні пропорції; спосіб вписування -
     # за класифікатором кадру: середовище заповнює слот, рендер вписується.
+    # Висота слота підбирається ПІД КАДР, а не навпаки: фіксовані 420px різали
+    # широкий пакшот-банер (скарга «плохо стало фото» в блоці продуктивності),
+    # а вузький кадр у тому ж слоті давав смуги. Ширина картки - половина
+    # контентного ряду (1212/2 - gap на десктопі, повна ширина на мобільному).
     slot_height = 420 if variant == 'desktop' else 300
+    card_width = 599 if variant == 'desktop' else 460
+    min_slot, max_slot = (300, 460) if variant == 'desktop' else (220, 340)
     for index in (2, 3):
         if index >= len(blocks):
             continue
@@ -2215,8 +2240,22 @@ def _finalize_showcase_layout(
             img = card.find('img')
             if img is None or 'position:absolute' in (img.get('style') or '').replace(' ', '').lower():
                 continue
+            src = img.get('src') or ''
+            aspect = _photo_aspect(src)
+            height = slot_height
+            ideal = None
+            if aspect:
+                ideal = card_width / aspect
+                height = int(max(min_slot, min(max_slot, round(ideal))))
+            scene = _is_environment_photo(src)
+            fit = 'cover' if scene else 'contain'
+            if scene and not _is_scene_asset(src) and ideal and ideal > height * 1.15:
+                # Строкатий периметр дозволяє кадрувати ЛИШЕ дрібно. Тут кадр
+                # довелось би зрізати більш ніж на 15% - а це реальне фото
+                # товару (пакшот, банер), у якого не можна відрізати підставку.
+                fit = 'contain'
             card_style = card.get('style') or ''
-            card_style = _set_css(card_style, 'height', f'{slot_height}px')
+            card_style = _set_css(card_style, 'height', f'{height}px')
             card_style = _set_css(card_style, 'overflow', 'hidden')
             card_style = _set_css(card_style, 'box-sizing', 'border-box')
             if card_style != (card.get('style') or ''):
@@ -2225,11 +2264,14 @@ def _finalize_showcase_layout(
             keep = [d for d in istyle.split(';') if d.strip() and not re.match(
                 r'\s*(width|height|max-width|max-height|aspect-ratio|object-fit|object-position|display)\s*:', d, re.I)]
             keep += ['display:block', 'width:100%', 'height:100%',
-                     'object-fit:cover' if _is_environment_photo(img.get('src') or '') else 'object-fit:contain',
-                     'object-position:center']
+                     f'object-fit:{fit}', 'object-position:center']
             new_istyle = ';'.join(x.strip() for x in keep)
             if new_istyle != istyle:
                 img['style'] = new_istyle
+            if fit == 'contain':
+                surface = _photo_surface_color(src)
+                if surface:
+                    card['style'] = _set_css(card.get('style') or '', 'background', surface)
 
     _finalize_faq(soup, dark_edition)
 

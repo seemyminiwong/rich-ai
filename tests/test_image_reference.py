@@ -1234,7 +1234,15 @@ def test_gallery_frames_on_a_cdn_are_probed_too(tmp_path):
         assert P._is_environment_photo('https://cdn.example/other.webp') is False
 
 
-def test_split_photo_cards_get_the_contract_height(tmp_path):
+def test_split_photo_cards_fit_the_frame_not_a_fixed_slot(tmp_path):
+    """Висота слота йде ЗА кадром, а фото товару не ріжеться глибоко.
+
+    Історія двох скарг: спершу модель забувала height і квадратний кадр
+    роздував картку до ~1000px; фіксовані 420px це полагодили, але зрізали
+    широкий пакшот-банер («плохо стало фото» у блоці продуктивності). Тепер
+    висота рахується з власних пропорцій кадру в межах 300-460px, а глибше
+    ніж на 15% реальне фото товару не кадрується ніколи.
+    """
     from unittest.mock import patch
     from PIL import Image
     import random
@@ -1242,33 +1250,55 @@ def test_split_photo_cards_get_the_contract_height(tmp_path):
 
     (tmp_path / 'p1').mkdir()
     rng = random.Random(5)
-    scene = Image.new('RGB', (64, 64))
-    for x in range(64):
-        for y in range(64):
-            scene.putpixel((x, y), (rng.randrange(80), rng.randrange(40), rng.randrange(40)))
-    scene.save(tmp_path / 'p1' / 'scene.webp', 'WEBP', lossless=True)
+
+    def busy(name, size):
+        img = Image.new('RGB', size)
+        for x in range(size[0]):
+            for y in range(size[1]):
+                img.putpixel((x, y), (rng.randrange(80), rng.randrange(40), rng.randrange(40)))
+        img.save(tmp_path / 'p1' / name, 'WEBP', lossless=True)
+
+    busy('scene.webp', (96, 54))          # реальна широка сцена
+    busy('packshot.webp', (64, 64))       # строкатий, але квадратний кадр товару
     Image.new('RGB', (64, 64), (255, 255, 255)).save(tmp_path / 'p1' / 'render.webp', 'WEBP', lossless=True)
 
-    # модель «забула» height у фото-карток сплітів - квадратний кадр розтягував
-    # картку на ~1000px і поруч із коротким текстом зяяла порожнеча (скарга QUBE)
-    page = ('<section><div><h2>hero</h2></div><div><h2>strip</h2></div>'
-            '<div style="background:#F5F7FA;border-radius:12px;padding:44px;display:grid;grid-template-columns:.92fr 1.08fr;gap:30px">'
-            '<div><span>ПАРАМЕТРИ ЕКРАНА</span><h2>Контраст</h2><p>т</p></div>'
-            '<div style="background:#FFFFFF;border:1px solid #D0D7DE;border-radius:8px;padding:18px">'
-            '<img src="/media/p1/scene.webp?t=a" alt="" style="display:block;width:100%;height:auto"></div></div>'
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">'
-            '<div style="background:#1A2128;border-radius:12px;padding:40px"><span>Л</span><h2>Т</h2></div>'
-            '<div style="background:#FFFFFF;border-radius:12px;padding:22px"><img src="/media/p1/render.webp?t=b" style="width:100%"></div></div>'
-            '<div><h2>trio</h2></div><div><h2>trust</h2></div><div><h2>recap</h2></div></section>')
+    def page(first, second):
+        return ('<section><div><h2>hero</h2></div><div><h2>strip</h2></div>'
+                '<div style="background:#F5F7FA;border-radius:12px;padding:44px;display:grid;grid-template-columns:.92fr 1.08fr;gap:30px">'
+                '<div><span>ПАРАМЕТРИ ЕКРАНА</span><h2>Контраст</h2><p>т</p></div>'
+                f'<div style="background:#FFFFFF;border:1px solid #D0D7DE;border-radius:8px;padding:18px">'
+                f'<img src="{first}" alt="" style="display:block;width:100%;height:auto"></div></div>'
+                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">'
+                '<div style="background:#1A2128;border-radius:12px;padding:40px"><span>Л</span><h2>Т</h2></div>'
+                f'<div style="background:#FFFFFF;border-radius:12px;padding:22px"><img src="{second}" style="width:100%"></div></div>'
+                '<div><h2>trio</h2></div><div><h2>trust</h2></div><div><h2>recap</h2></div></section>')
+
     with patch.object(P.settings, 'media_dir', str(tmp_path)):
         P._surface_color_cache.clear()
-        out = P._finalize_showcase_layout(page, 'desktop')
-        # контрактна висота слота на обох картках; середовище заповнює, рендер вписується
-        assert out.count('height:420px') == 2
-        assert 'object-fit:cover' in out and 'object-fit:contain' in out
+        P._surface_size_cache.clear()
+        out = P._finalize_showcase_layout(page('/media/p1/scene.webp?t=a', '/media/p1/render.webp?t=b'), 'desktop')
+        # 16:9-сцена лягає в слот рівно (599/1.78 ≈ 337) і заповнює його
+        assert 'height:337px' in out and 'object-fit:cover' in out
+        # квадратний рендер вписується цілком, рамка фарбується в його тло
+        assert 'height:460px' in out and 'object-fit:contain' in out
+        assert 'background:#FFFFFF' in out
+        assert 'height:420px' not in out, 'жорсткий слот більше не нав\'язується'
         assert P._finalize_showcase_layout(out, 'desktop') == out, 'повторний прохід - no-op'
         assert ';;' not in out, '_set_css не копить порожні декларації'
-        assert 'height:300px' in P._finalize_showcase_layout(page, 'mobile')
+
+        # строкатий периметр НЕ дає права різати пакшот: 599/1 проти 460 - це 23%
+        deep = P._finalize_showcase_layout(page('/media/p1/packshot.webp?t=c', '/media/p1/render.webp?t=b'), 'desktop')
+        first_card = deep.split('ПАРАМЕТРИ ЕКРАНА')[1]
+        assert 'object-fit:contain' in first_card and 'object-fit:cover' not in first_card
+
+        # мобільний слот масштабується так само (460/1.78 ≈ 259)
+        mob = P._finalize_showcase_layout(page('/media/p1/scene.webp?t=a', '/media/p1/render.webp?t=b'), 'mobile')
+        assert 'height:259px' in mob and 'height:340px' in mob
+
+        # кадр без проби (чужий CDN, офлайн) лишається на контрактній висоті
+        blind = P._finalize_showcase_layout(
+            page('https://cdn.example.com/a.jpg', 'https://cdn.example.com/b.jpg'), 'desktop')
+        assert blind.count('height:420px') == 2 and 'object-fit:contain' in blind
 
 
 def test_bento_style_contract_and_faq_toggle():
