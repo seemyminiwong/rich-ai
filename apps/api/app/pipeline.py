@@ -234,7 +234,8 @@ def sanitize_html(markup: str) -> str:
     # iframe дозволено РІВНО для одного: вбудований YouTube-плеєр (блок відео).
     # Будь-який інший src - у смітник. srcdoc свідомо НЕ в allowlist атрибутів:
     # він виконується в origin батьківської сторінки, тож руками вставлений
-    # srcdoc - це XSS; наш постер інжектиться ПІСЛЯ санітизації.
+    # srcdoc - це XSS. Ми його й самі не використовуємо: превʼю студії рендерить
+    # сторінку через srcdoc, і вкладений srcdoc там розсипається на екрануванні.
     for frame in soup.find_all('iframe'):
         src = (frame.get('src') or '').strip()
         if not src.startswith('https://www.youtube-nocookie.com/embed/'):
@@ -2110,11 +2111,13 @@ def inject_video_block(markup: str, video_url: str, language: str = 'ua', dark: 
 
     Модель про відео не знає нічого - блок вставляє СЕРВЕР механічно (як
     обертання Подіум 3D), тому вмикається він рівно тоді, коли в проєкта є
-    посилання, і не з'їдає жодного токена. Механіка перегляду без жодного JS:
-    <iframe srcdoc> показує постер i.ytimg.com з кнопкою ▶; клік - це навігація
-    самого iframe на embed?autoplay=1, жест користувача, тож автоплей легальний.
-    Якщо чужий редактор зріже srcdoc - лишиться штатний embed-плеєр (теж клік і
-    перегляд на місці); зріже iframe цілком - блок треба тестувати живим.
+    посилання, і не з'їдає жодного токена.
+
+    Всередині - штатний embed youtube-nocookie: він сам малює превʼю-кадр із
+    кнопкою ▶ і грає на місці по кліку. Перша версія показувала свій постер
+    через <iframe srcdoc>, і це виявилось хибним шляхом: превʼю студії саме
+    рендериться через srcdoc, тож вкладений srcdoc розсипався на екрануванні -
+    лишався голий embed, і YouTube писав "Unable to execute JavaScript".
     Ставиться перед FAQ (коментар блока 08), без FAQ - останнім блоком.
     Ідемпотентно: наявний .arvid не чіпаємо (там уже перекладений заголовок).
     """
@@ -2129,18 +2132,6 @@ def inject_video_block(markup: str, video_url: str, language: str = 'ua', dark: 
         box = 'background:#FFFFFF;border:1px solid #E3E6EA'
         title_color = '#101010'
     embed = f'https://www.youtube-nocookie.com/embed/{video_id}'
-    poster = f'https://i.ytimg.com/vi/{video_id}/hqdefault.jpg'
-    srcdoc = (
-        '<style>*{margin:0;padding:0;overflow:hidden}html,body{height:100%}'
-        'a{display:block;position:relative;height:100%}'
-        'img{width:100%;height:100%;object-fit:cover}'
-        'span{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);'
-        'width:76px;height:54px;background:rgba(16,16,16,.82);border-radius:12px;'
-        'display:flex;align-items:center;justify-content:center}'
-        "span::after{content:'';display:block;border-style:solid;"
-        'border-width:11px 0 11px 19px;border-color:transparent transparent transparent #FFFFFF}</style>'
-        f"<a href='{embed}?autoplay=1'><img src='{poster}' alt=''><span></span></a>"
-    )
     block_soup = BeautifulSoup(
         f'<div class="arvid" style="{box};border-radius:12px;padding:26px 30px;margin-top:18px;box-sizing:border-box">'
         f'<h2 style="font-size:32px;font-weight:900;margin:0 0 16px;color:{title_color}">{heading}</h2>'
@@ -2150,7 +2141,6 @@ def inject_video_block(markup: str, video_url: str, language: str = 'ua', dark: 
         'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" '
         'allowfullscreen="" referrerpolicy="strict-origin-when-cross-origin"></iframe>'
         '</div></div>', 'html.parser')
-    block_soup.find('iframe')['srcdoc'] = srcdoc
     block = block_soup.find('div')
     soup = BeautifulSoup(markup, 'html.parser')
     faq_start = soup.find(string=lambda v: isinstance(v, Comment) and 'ARTLINE BLOCK 08: FAQ START' in str(v))
