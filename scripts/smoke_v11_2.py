@@ -187,6 +187,7 @@ checks = {
     'reasoning list derives from chosen models': 'reasoning_models = [x for x in text_models if _is_reasoning_model(x)]' in main,
     'unpriced models are surfaced': "'unpriced'" in main and 'function modelNotes' in web,
     'ai preview iframes sandboxed without scripts': web.count('sandbox="allow-same-origin"') >= 3 and 'allow-scripts' not in web,
+    'browser tab carries the artline icon': 'rel="icon"' in (root / 'apps/web/index.html').read_text(encoding='utf-8') and (root / 'apps/web/favicon-32.png').exists() and (root / 'apps/web/apple-touch-icon.png').exists() and 'COPY favicon-32.png' in (root / 'apps/web/Dockerfile').read_text(encoding='utf-8') and 'png|svg|ico' in nginx,
     'index.html is never cached': 'no-store, must-revalidate' in nginx,
     'assets are immutable': 'max-age=31536000, immutable' in nginx,
     'security headers repeated where add_header breaks inheritance': nginx.count('X-Content-Type-Options') == 4,
