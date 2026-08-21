@@ -219,8 +219,10 @@ def _with_retry(call, attempts=3, base_delay=1.5):
 _ALLOWED_TAGS = {
     'section', 'div', 'h2', 'h3', 'h4', 'p', 'ul', 'ol', 'li',
     'img', 'strong', 'span', 'em', 'b', 'i', 'br', 'small', 'style',
+    # FAQ (Showcase блок 08): нативний акордеон без жодного JS.
+    'details', 'summary',
 }
-_ALLOWED_ATTRS = {'style', 'src', 'alt', 'title', 'width', 'height', 'loading', 'class'}
+_ALLOWED_ATTRS = {'style', 'src', 'alt', 'title', 'width', 'height', 'loading', 'class', 'open'}
 _URL_SAFE_SCHEMES = ('http://', 'https://', '/media/', '/')
 
 
@@ -1416,10 +1418,10 @@ def _apply_podium_spin(markup: str, hero_url: str) -> str:
         f'<div class="ar3d" style="position:relative;transform-style:preserve-3d;-webkit-transform-style:preserve-3d;'
         f'animation:arspin 10s linear infinite;-webkit-animation:arspin 10s linear infinite">'
         f'<img src="{src}" alt="{alt}" style="display:block;width:100%;max-height:520px;object-fit:contain;'
-        f'border-radius:18px;backface-visibility:hidden;-webkit-backface-visibility:hidden;'
+        f'border-radius:12px;backface-visibility:hidden;-webkit-backface-visibility:hidden;'
         f'filter:drop-shadow(0 30px 38px rgba(16,16,16,.22))">'
         f'<img src="{src}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;'
-        f'border-radius:18px;backface-visibility:hidden;-webkit-backface-visibility:hidden;'
+        f'border-radius:12px;backface-visibility:hidden;-webkit-backface-visibility:hidden;'
         f'transform:rotateY(180deg) scaleX(-1);-webkit-transform:rotateY(180deg) scaleX(-1)">'
         f'</div></div>', 'html.parser')
     target.replace_with(wrap)
@@ -1459,7 +1461,7 @@ def _apply_podium_spin360(markup: str, hero_url: str, frames: list[str]) -> str:
         imgs.append(
             f'<img src="{url}" alt="{alt if index == 0 else ""}" loading="lazy" '
             f'style="{position};display:block;width:100%;max-height:520px;object-fit:contain;'
-            f'border-radius:18px;{base_opacity};'
+            f'border-radius:12px;{base_opacity};'
             f'animation:ar360 {duration}s linear infinite;animation-delay:{delay:.3f}s;'
             f'-webkit-animation:ar360 {duration}s linear infinite;-webkit-animation-delay:{delay:.3f}s">')
     wrap = BeautifulSoup(
@@ -1514,7 +1516,7 @@ def _apply_podium_scroll(markup: str, hero_url: str, frames: list[str]) -> str:
         base_opacity = 'opacity:1' if index == 0 else 'opacity:0'
         imgs.append(f'<img class="arf{index}" src="{url}" alt="{alt if index == 0 else ""}" loading="lazy" '
                     f'style="{position};display:block;width:100%;max-height:520px;object-fit:contain;'
-                    f'border-radius:18px;{base_opacity}">')
+                    f'border-radius:12px;{base_opacity}">')
     wrap = BeautifulSoup(
         f'<div class="arwrap" style="max-width:78%;margin:18px auto 0">'
         f'<style>{"".join(css_parts)}</style>'
@@ -1534,13 +1536,37 @@ def _first_px(value: str):
     return float(match.group(1)) if match else None
 
 
+_MAX_SURFACE_RADIUS = 12
+
+
+def _clamp_surface_radii(markup: str) -> str:
+    """Єдиний базовий радіус: жодна поверхня не кругліша за 12px.
+
+    Моделі тягнуться до «преміальних» 28-32px, і навіть точний контракт у
+    промпті їх не зупиняє щоразу. Тому базовий радіус гарантує механіка, а не
+    інструкція: будь-який px-радіус понад 12 обрізається до 12. Капсули
+    (>=100px) і відсоткові радіуси (еліпс тіні 50%) не чіпаються. Запускати
+    ПЕРЕД _harmonize_radii, щоб концентрична формула рахувала від обрізаного
+    зовнішнього значення.
+    """
+    def repl(match):
+        value = float(match.group(1))
+        if value >= 100 or value <= _MAX_SURFACE_RADIUS:
+            return match.group(0)
+        return f'border-radius:{_MAX_SURFACE_RADIUS}px'
+
+    return re.sub(r'border-radius\s*:\s*([\d.]+)px', repl, markup or '', flags=re.I)
+
+
 def _harmonize_radii(markup: str) -> str:
     """Концентричні радіуси: зовнішній = внутрішній + падінг.
 
     Якщо картка має radius 24px і padding 8px, вкладений елемент мусить мати
     16px - інакше кути «розходяться» і композиція виглядає зібраною нашвидкуруч.
     Моделі ставлять радіуси на око (звідси однакові 16 всередині 16), тож
-    рахуємо механічно для КОЖНОГО стилю: inner = outer - padding, мінімум 4px.
+    рахуємо механічно для КОЖНОГО стилю: inner = outer - padding, мінімум 8px
+    (8px - радіус бейджів у Base: вкладена картка лишається помітно круглою,
+    а не майже прямою, і сусідить із зовнішніми 12px як одна система).
     Зачіпаємо лише прямих дітей із власним border-radius; елементи без радіуса
     не отримують його примусово.
     """
@@ -1556,7 +1582,7 @@ def _harmonize_radii(markup: str) -> str:
         pad = _first_px(padding.group(1))
         if pad is None or pad <= 0 or outer_value < 8:
             continue
-        inner_value = max(4.0, round(outer_value - pad))
+        inner_value = max(8.0, round(outer_value - pad))
         for child in outer.find_all(recursive=False):
             child_style = child.get('style') or ''
             child_radius = _RADIUS_RE.search(child_style)
@@ -1657,6 +1683,44 @@ def style_palette(style) -> dict:
         return {}
 
 
+_surface_color_cache: dict = {}
+
+
+def _photo_surface_color(src: str):
+    """Колір власного тла фотографії, якщо він однорідний, інакше None.
+
+    Скарга з життя: рамка для contain-фото завжди біла, а реальні кадри бувають
+    на сірому/бежевому студійному тлі - виходить помітна «латка», особливо коли
+    квадратний кадр вписано в широкий слот. Механічне рішення: відкрити локальний
+    файл /media, зняти медіану пікселів периметра і, якщо периметр однорідний,
+    пофарбувати рамку в цей колір - letterbox стає невидимим на будь-якому тлі.
+    Зовнішні URL не чіпаємо (жодних мережевих запитів у пост-процесингу).
+    """
+    canonical = (src or '').split('?', 1)[0]
+    if not canonical.startswith('/media/'):
+        return None
+    if canonical in _surface_color_cache:
+        return _surface_color_cache[canonical]
+    color = None
+    try:
+        path = Path(settings.media_dir) / canonical[len('/media/'):]
+        if path.is_file():
+            image = Image.open(path).convert('RGB')
+            image.thumbnail((64, 64))
+            px = image.load()
+            w, h = image.size
+            border = ([px[x, 0] for x in range(w)] + [px[x, h - 1] for x in range(w)]
+                      + [px[0, y] for y in range(h)] + [px[w - 1, y] for y in range(h)])
+            med = tuple(sorted(c[i] for c in border)[len(border) // 2] for i in range(3))
+            close = sum(1 for c in border if max(abs(c[i] - med[i]) for i in range(3)) <= 14)
+            if close / len(border) >= 0.82:
+                color = '#%02X%02X%02X' % med
+    except Exception:
+        color = None
+    _surface_color_cache[canonical] = color
+    return color
+
+
 def _is_scene_asset(src: str) -> bool:
     """Згенерована сцена (hero/feature) - її можна кадрувати; решта - реальні
     кадри товару (галерея, завантаження, product-reference), їх різати не можна."""
@@ -1682,10 +1746,13 @@ def _frame_contained_photos(markup: str) -> str:
         parent = img.parent
         parent_style = parent.get('style') or '' if getattr(parent, 'get', None) else ''
         only_child = parent is not None and len(parent.find_all(True, recursive=False)) == 1
+        surface = _photo_surface_color(img.get('src')) 
         if only_child and _RADIUS_RE.search(parent_style):
             updated = parent_style
+            if surface and re.search(r'background\s*:\s*#[0-9a-fA-F]{3,6}\s*(;|$)', updated):
+                updated = re.sub(r'background\s*:\s*#[0-9a-fA-F]{3,6}', f'background:{surface}', updated, count=1)
             if 'background' not in updated.lower():
-                updated = updated.rstrip().rstrip(';') + ';background:#FFFFFF'
+                updated = updated.rstrip().rstrip(';') + ';background:' + (surface or '#FFFFFF')
             if 'overflow' not in updated.lower():
                 updated = updated.rstrip().rstrip(';') + ';overflow:hidden'
             if updated != parent_style:
@@ -1708,7 +1775,7 @@ def _frame_contained_photos(markup: str) -> str:
             size = 'width:100%;height:100%;max-height:100%'
         else:
             size = 'width:100%'
-        frame['style'] = (f'border-radius:{_DEFAULT_IMAGE_RADIUS}px;overflow:hidden;background:#FFFFFF;'
+        frame['style'] = (f'border-radius:{_DEFAULT_IMAGE_RADIUS}px;overflow:hidden;background:{surface or "#FFFFFF"};'
                           f'display:flex;align-items:center;justify-content:center;box-sizing:border-box;{size}')
         img.replace_with(frame)
         frame.append(img)
@@ -1791,8 +1858,8 @@ def _fit_framed_images(markup: str) -> str:
             changed = True
         sstyle = slot.get('style') or ''
         m = re.search(r'border-radius\s*:\s*([\d.]+)px', sstyle, re.I)
-        if m and float(m.group(1)) < 12:
-            slot['style'] = re.sub(r'border-radius\s*:\s*[\d.]+px', 'border-radius:16px', sstyle, count=1, flags=re.I)
+        if m and float(m.group(1)) != 12 and float(m.group(1)) < 100:
+            slot['style'] = re.sub(r'border-radius\s*:\s*[\d.]+px', 'border-radius:12px', sstyle, count=1, flags=re.I)
             changed = True
     return str(soup) if changed else markup
 
@@ -1853,6 +1920,7 @@ _SHOWCASE_BLOCK_NAMES = (
     'CAPABILITY TRIO',
     'TRUST SPLIT',
     'FINAL RECAP',
+    'FAQ',
 )
 
 
@@ -1911,7 +1979,8 @@ def _finalize_showcase_layout(
         return markup
 
     # Hero, feature eyebrows and Final Recap badge are one visual component.
-    label_width = '280px' if variant == 'desktop' else 'fit-content'
+    # Лейбл обіймає СВІЙ текст: фіксована ширина розтягувала капсулу і ламали
+    # текст на два рядки (жива скарга - бейдж героя). Радіус 8px = системний.
     for index in (0, 2, 3, 6):
         if index >= len(blocks):
             continue
@@ -1920,10 +1989,10 @@ def _finalize_showcase_layout(
             continue
         dark = dark_edition or index in (0, 3, 6)
         label['style'] = (
-            'display:inline-flex;align-items:center;justify-content:center;min-height:34px;'
-            f'width:{label_width};max-width:100%;padding:7px 14px;border:1px solid #19BCC9;'
-            'border-radius:999px;box-sizing:border-box;font-size:12px;line-height:1.25;'
-            'font-weight:900;letter-spacing:.08em;text-transform:uppercase;'
+            'display:inline-flex;align-items:center;justify-content:center;'
+            'width:fit-content;max-width:100%;min-height:30px;padding:6px 14px;'
+            'border:1px solid #19BCC9;border-radius:8px;box-sizing:border-box;'
+            'font-size:12px;line-height:1.3;font-weight:900;letter-spacing:.08em;text-transform:uppercase;'
             + ('color:#C9F0F4;background:rgba(26,33,40,.72)'
                if dark else 'color:#157985;background:#FFFFFF')
         )
@@ -1945,6 +2014,8 @@ def _finalize_showcase_layout(
                     card_style = _set_css(card_style, 'flex-direction', 'column')
                 card['style'] = card_style
 
+    _finalize_faq(soup, dark_edition)
+
     # Rebuild markers on every pass, so relayout and translation cannot leave
     # stale, translated or duplicated comments.
     for comment in list(soup.find_all(string=lambda value: (
@@ -1956,6 +2027,61 @@ def _finalize_showcase_layout(
         block.insert_before(Comment(f' ARTLINE BLOCK {index:02d}: {name} START '))
         block.insert_after(Comment(f' ARTLINE BLOCK {index:02d}: {name} END '))
     return str(soup)
+
+
+_FAQ_CSS = (
+    '.arfaq summary::-webkit-details-marker{display:none}'
+    '.arfaq summary::marker{content:""}'
+    '.arfaq .arfaq-i::before{content:"+"}'
+    '.arfaq[open] .arfaq-i::before{content:"−"}'
+)
+
+
+def _finalize_faq(soup, dark_edition: bool = False) -> None:
+    """Блок 08 FAQ: модель пише лише details/summary/p - інтерактив дає браузер.
+
+    Сервер механічно (ідемпотентно) гарантує: клас .arfaq, схований штатний
+    маркер, кружок-перемикач +/− праворуч (CSS content, жодного JS - у
+    редакторі artline живе лише інертний <style>, як у Подіум 3D), відкритим
+    лишається РІВНО перший пункт. Якщо чужий редактор колись зріже <style>,
+    акордеон далі працює - лишиться стандартний трикутник замість кружка.
+    """
+    items = soup.find_all('details')
+    if not items:
+        return
+    icon_style = (
+        'margin-left:auto;flex:0 0 28px;width:28px;height:28px;border-radius:999px;'
+        'display:inline-flex;align-items:center;justify-content:center;'
+        'font-size:17px;font-weight:700;line-height:1;'
+        + ('background:rgba(255,255,255,.14);color:#FFFFFF'
+           if dark_edition else 'background:#101010;color:#FFFFFF')
+    )
+    for index, item in enumerate(items):
+        classes = set(item.get('class') or ())
+        classes.add('arfaq')
+        item['class'] = sorted(classes)
+        if index == 0:
+            item['open'] = ''
+        else:
+            item.attrs.pop('open', None)
+        summary = item.find('summary')
+        if summary is None:
+            continue
+        sstyle = summary.get('style') or ''
+        for prop, value in (('display', 'flex'), ('align-items', 'center'),
+                            ('cursor', 'pointer'), ('list-style', 'none')):
+            sstyle = _set_css(sstyle, prop, value)
+        summary['style'] = sstyle
+        icon = summary.find('span', class_='arfaq-i')
+        if icon is None:
+            icon = soup.new_tag('span')
+            icon['class'] = ['arfaq-i']
+            summary.append(icon)
+        icon['style'] = icon_style
+    if not soup.find('style', string=lambda v: v and '.arfaq' in v):
+        style_tag = soup.new_tag('style')
+        style_tag.string = _FAQ_CSS
+        items[0].insert_before(style_tag)
 
 
 def _fit_mobile_hero(markup: str, hero_url: str) -> str:
@@ -2224,7 +2350,7 @@ def _deterministic_html(product, style, language, variant, hero, feature):
 </section>'''
 
 
-_DEFAULT_IMAGE_RADIUS = 16
+_DEFAULT_IMAGE_RADIUS = 12
 
 
 def _round_image_corners(html: str) -> str:
@@ -2301,7 +2427,7 @@ def _enforce_image_whitelist(html: str, allowed: list[str], spares: list[str] | 
             # dark sections instead of a floating white patch.
             img['style'] = 'display:block;width:100%;height:100%;max-height:280px;object-fit:contain'
             card = soup.new_tag('div')
-            card['style'] = ('background:#FFFFFF;border:1px solid #D0D7DE;border-radius:16px;'
+            card['style'] = (f'background:{_photo_surface_color(img.get("src")) or "#FFFFFF"};border:1px solid #D0D7DE;border-radius:12px;'
                              'padding:16px;height:100%;min-height:240px;display:flex;'
                              'align-items:center;justify-content:center;box-sizing:border-box')
             img.replace_with(card)
@@ -2506,6 +2632,7 @@ HTML:
         output = _never_crop_product_photos(output)
         output = _fit_framed_images(output)
         output = _frame_contained_photos(output)
+        output = _clamp_surface_radii(output)
         output = _harmonize_radii(output)
         prompt_text = style.prompt or ''
         if _PODIUM_SCROLL_MARKER in prompt_text:

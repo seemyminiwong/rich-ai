@@ -582,14 +582,14 @@ ENGINEERING_NEGATIVE_PROMPT = r'''Do not create a new, approximate or similar pr
 # Image-led premium format modelled on the strongest hand-made artline.eu pages
 # (dark hero as a positioned <img>, big numeric spec strip, alternating dark and
 # light photo sections built from REAL gallery frames). Distinct design contract
-# from Base/Engineering: warm cyan accent, 22-32px radii, pills allowed.
+# from Base/Engineering: warm cyan accent, quiet 12px radii, pills allowed.
 
 SHOWCASE_STYLE_NAME = 'ARTLINE Showcase'
 
 SHOWCASE_STYLE_PROMPT = r'''Create a premium image-led ecommerce rich page for artline. The reader decides with their eyes first: real product photography carries the story, large confirmed numbers anchor it, short text explains it. Inform confidently; never invent.
 
 NON-NEGOTIABLE RULES
-- Use inline CSS only. Allowed elements: section, div, h2, h3, p, ul, li, img, strong, span.
+- Use inline CSS only. Allowed elements: section, div, h2, h3, p, ul, li, img, strong, span, plus details and summary ONLY inside the FAQ block.
 - Never use h1, script, style, JavaScript, forms, buttons, prices, purchase links, tabs, accordions, video, SVG, base64 images, markdown or code fences.
 - Use only image URLs supplied in the request: hero, feature and GALLERY_IMAGES. Never invent URLs. Every fact comes from Product JSON only.
 - Every <img> carries a concise descriptive alt in the target language; loading="lazy" on every non-Hero image.
@@ -602,7 +602,7 @@ Desktop: <section style="max-width:1240px;margin:0 auto;padding:0 14px;font-fami
 Mobile:  <section style="max-width:480px;margin:0 auto;padding:0 10px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
 
 BLOCK COMMENTS (REQUIRED)
-- The root contains exactly seven direct child blocks in the order below.
+- The root contains exactly eight direct child blocks in the order below.
 - Wrap every direct child block in these exact invisible comments. Do not translate, rename or omit them:
   <!-- ARTLINE BLOCK 01: HERO START --> ... <!-- ARTLINE BLOCK 01: HERO END -->
   <!-- ARTLINE BLOCK 02: SPEC STRIP START --> ... <!-- ARTLINE BLOCK 02: SPEC STRIP END -->
@@ -611,23 +611,24 @@ BLOCK COMMENTS (REQUIRED)
   <!-- ARTLINE BLOCK 05: CAPABILITY TRIO START --> ... <!-- ARTLINE BLOCK 05: CAPABILITY TRIO END -->
   <!-- ARTLINE BLOCK 06: TRUST SPLIT START --> ... <!-- ARTLINE BLOCK 06: TRUST SPLIT END -->
   <!-- ARTLINE BLOCK 07: FINAL RECAP START --> ... <!-- ARTLINE BLOCK 07: FINAL RECAP END -->
+  <!-- ARTLINE BLOCK 08: FAQ START --> ... <!-- ARTLINE BLOCK 08: FAQ END -->
 
 SHOWCASE DESIGN SYSTEM
 - Dark surfaces: #101010, #1A2128, #252525; dark border #35393F. Light surfaces: #FFFFFF, #F5F7FA; light border #D0D7DE.
 - Accent is ARTLINE cyan: #19BCC9 on dark surfaces, #157985 on light. Use it ONLY for eyebrow labels, big numeric values and badge borders. Never for paragraphs.
 - Body text: #555555 on light, #d0d7de-#d8dde2 on dark. Headings: #101010 on light, #FFFFFF on dark.
-- Radii: outer sections 28-32px, inner cards 16-22px, chips and badges 999px (pills are part of this style).
+- Radii: one quiet base radius everywhere - outer sections 12px, inner cards 8-10px; chips and badges 999px (pills are part of this style). Generous padding, not big radii, carries the premium feel; a corner rounder than 12px is a defect.
 - Weights are heavy: h2 900-950, numeric values 950, chips 850-900. Section gap 18px, big-section padding 40-48px desktop / 22-26px mobile.
-- RHYTHM RULE: use this explicit full-width canvas sequence: Hero dark; Spec Strip neutral transition; Light Feature light; Dark Feature dark; Capability Trio light; Trust Split light outer canvas with one dark inner panel; Final Recap dark. Nested cards do not redefine the section canvas. Never improvise a different tone sequence.
+- RHYTHM RULE: use this explicit full-width canvas sequence: Hero dark; Spec Strip neutral transition; Light Feature light; Dark Feature dark; Capability Trio light; Trust Split light outer canvas with one dark inner panel; Final Recap dark; FAQ light. Nested cards do not redefine the section canvas. Never improvise a different tone sequence.
 - Photography works only next to copy: every frame sits in a split or a card with text. When GALLERY_IMAGES offers fewer frames, drop photo slots instead of repeating an image.
-- FITTING RULE for gallery frames: most are studio renders of the product on a white background. Such frames must NEVER be cropped: use object-fit:contain inside a white card (background:#FFFFFF; border:1px solid #D0D7DE; radius 20-28px; padding:18-24px) with a fixed height, so the whole product stays visible. object-fit:cover is allowed only for frames that show a real environment filling the whole picture. An amputated product edge is a defect.
+- FITTING RULE for gallery frames: most are studio renders of the product on a white background. Such frames must NEVER be cropped: use object-fit:contain inside a white card (background:#FFFFFF; border:1px solid #D0D7DE; radius 8-12px; padding:18-24px) with a fixed height, so the whole product stays visible. object-fit:cover is allowed only for frames that show a real environment filling the whole picture. An amputated product edge is a defect.
 - Inside dark sections a white-background frame still sits in a WHITE framed card - never bare on the dark canvas and never darkened.
-- SHARED SECTION LABEL: the Hero brand/category badge, every feature eyebrow and the Final Recap brand/model badge are one reusable component, never three improvised styles. Use display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:7px 14px;border:1px solid #19BCC9;border-radius:999px;box-sizing:border-box;font-size:12px;line-height:1.25;font-weight:900;letter-spacing:.08em;text-transform:uppercase. Desktop: width:280px;max-width:100%. Mobile: width:fit-content;max-width:100%. On dark use color:#C9F0F4;background:rgba(26,33,40,.72); on light use color:#157985;background:#FFFFFF. Labels such as "QUBE · Монітор 23.8″", "Екранні характеристики" and "QUBE · V24F100-PLUS" must therefore have identical height, padding, border and typography on desktop.
+- SHARED SECTION LABEL: the Hero brand/category badge, every feature eyebrow and the Final Recap brand/model badge are one reusable component, never three improvised styles. Use display:inline-flex;align-items:center;justify-content:center;width:fit-content;max-width:100%;min-height:30px;padding:6px 14px;border:1px solid #19BCC9;border-radius:8px;box-sizing:border-box;font-size:12px;line-height:1.3;font-weight:900;letter-spacing:.08em;text-transform:uppercase. The label hugs its text and is NEVER stretched by the parent grid nor given a fixed width; long text stays on one line where the container allows it. On dark use color:#C9F0F4;background:rgba(26,33,40,.72); on light use color:#157985;background:#FFFFFF. Labels such as "QUBE · Монітор 23.8″", "Екранні характеристики" and "QUBE · V24F100-PLUS" must therefore have identical height, padding, border and typography.
 - EQUAL DESKTOP CARDS: every multi-column grid uses align-items:stretch. Its direct card children use height:100%;box-sizing:border-box. Capability cards additionally use display:flex;flex-direction:column, with equal-height image slots and copy padding below. Never let one text card float at a different height from its neighbours.
 
 SECTION SET, IN ORDER
 1. HERO - dark, full-bleed photograph
-- Wrapper: position:relative;overflow:hidden;border-radius:32px;border:1px solid #35393F;background:#101010 url(HERO_URL) center/cover no-repeat - substitute HERO_URL with the exact supplied hero URL. The same URL appears TWICE in the Hero: as this background and as the img below. That redundancy is intentional - never drop either.
+- Wrapper: position:relative;overflow:hidden;border-radius:12px;border:1px solid #35393F;background:#101010 url(HERO_URL) center/cover no-repeat - substitute HERO_URL with the exact supplied hero URL. The same URL appears TWICE in the Hero: as this background and as the img below. That redundancy is intentional - never drop either.
 - THE FIRST CHILD of the wrapper is the hero asset as <img style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center"> - NO opacity on this img: the overlay below is the only darkening. Dimming the photo as well crushes a dark scene into a black rectangle - an IMG element, never a CSS background (background images do not survive the artline editor). A Hero without this img is an invalid page.
 - Above it one overlay div: position:absolute;inset:0;background:linear-gradient(90deg,rgba(16,16,16,.92) 0%,rgba(16,16,16,.55) 52%,rgba(16,16,16,0) 100%) - it must fade to FULLY TRANSPARENT on the side where the product stands, so the photo is plainly visible there. Mobile: same ramp at 180deg, dense at the bottom, transparent at the top over the product.
 - Content layer: position:relative;z-index:1;min-height:585px (mobile ~600px);padding:78px 46px 54px (mobile 300px 18px 26px);display:flex;align-items:center.
@@ -635,13 +636,20 @@ SECTION SET, IN ORDER
 - NAME APPEARS ONCE PER SECTION: the badge carries only the brand and product category (for example "DEYE · Гібридний інвертор"), the h2 carries the model exactly once. Badge text duplicating the h2 is a defect. The same rule applies to the final recap badge.
 - HERO TYPOGRAPHY: the h2 is BRAND + MODEL CODE only (for example "DEYE SUN-12K-SG05LP3-EU-SM2") - never the full commercial name with units, phase counts and connectivity suffixes: a four-line all-caps wall is a defect. Those descriptors move to the subtitle as compact specs separated by " · " (for example "12 кВт · 48 В · 2 MPPT · Wi-Fi · трифазний 220/380 В"). The paragraph below stays a fluent sentence, not a spec list.
 2. SPEC STRIP - four value cards
-- Grid repeat(4,1fr) desktop / 1fr mobile, gap 14px. Each card: radius 22px, padding 24px; value first at 34px/950 in the accent, then h3 19px, then one short line.
+- Grid repeat(4,1fr) desktop / 1fr mobile, gap 14px. Each card: radius 12px, padding 24px; value first at 34px/950 in the accent, then h3 19px, then one short line.
 - Exactly one card is dark (#1A2128, border #35393F, cyan value) - the single most decision-critical number; the rest are white with #157985 values.
-3. LIGHT FEATURE SPLIT - #F5F7FA, radius 30px, padding 44px; grid .92fr/1.08fr with align-items:stretch (mobile stacked): left - the SHARED SECTION LABEL, h2 40-42px/950, paragraph, chip row of dark pills (#1A2128) with confirmed materials/facts; right - one gallery frame in a white 28px-radius card. The image slot is height:420px desktop / 300px mobile; its img is display:block;width:100%;height:100%;object-fit:contain;object-position:center.
-4. DARK FEATURE SPLIT - grid 1fr/1fr with align-items:stretch (mobile stacked): left panel #1A2128 radius 30px padding 40px with the SHARED SECTION LABEL, white h2 36-38px, paragraph #d0d7de and a 2x2 mini-grid of stat tiles (rgba(255,255,255,.08), 24px/950 cyan value + 14px label); right - one REAL gallery frame in a WHITE neutral card, radius 30px, height:420px desktop / 300px mobile. Its img uses width:100%;height:100%;object-fit:contain;object-position:center. Never use cover for this real product frame.
-5. CAPABILITY TRIO - three equal-height white/soft cards (radius 28px;display:flex;flex-direction:column;height:100%;overflow:hidden). Each card starts with a WHITE neutral image slot of height:250px desktop / 210px mobile; the real gallery img uses width:100%;height:100%;object-fit:contain;object-position:center. Copy lives in a separate padding:22px block with h3 20px and one line. If fewer frames remain, two cards are acceptable - never a repeated photo. Never add a standalone photo-only section: every image sits next to copy that earns its place.
-6. TRUST SPLIT - outer canvas #F5F7FA, radius 30px, padding 18px; grid .9fr/1.1fr with align-items:stretch (mobile stacked). Left: dark panel (#1A2128, radius 28px, padding 36px) with h2 34-36px and one supportive paragraph about choosing/completing the setup with artline - no invented services or warranties beyond Product JSON. Right: 2x2 grid of equal-height soft cards. Each tile answers a real buyer decision from Product JSON: what it pairs with (battery voltage/type, communication, parallel operation), an operating limit (temperature, IP rating, mounting), a capacity boundary, or a confirmed warranty term. REGISTRY DATA IS BANNED HERE: never SKU, article number, internal code, EAN/barcode or country of origin - a buyer decides nothing with those.
-7. FINAL RECAP - centered dark section, radius 28px, padding 48px 28px, background linear-gradient(135deg,#1A2128,#252525): pill badge with brand/model, h2 40-42px white, one summary paragraph #d0d7de max-width 700px, chip row of 3 white pills with exact confirmed values (dimensions, key spec, capacity).
+3. LIGHT FEATURE SPLIT - #F5F7FA, radius 12px, padding 44px; grid .92fr/1.08fr with align-items:stretch (mobile stacked): left - the SHARED SECTION LABEL, h2 40-42px/950, paragraph, chip row of dark pills (#1A2128) with confirmed materials/facts; right - one gallery frame in a white 12px-radius card. The image slot is height:420px desktop / 300px mobile; its img is display:block;width:100%;height:100%;object-fit:contain;object-position:center.
+4. DARK FEATURE SPLIT - grid 1fr/1fr with align-items:stretch (mobile stacked): left panel #1A2128 radius 12px padding 40px with the SHARED SECTION LABEL, white h2 36-38px, paragraph #d0d7de and a 2x2 mini-grid of stat tiles (rgba(255,255,255,.08), 24px/950 cyan value + 14px label); right - one REAL gallery frame in a WHITE neutral card, radius 12px, height:420px desktop / 300px mobile. Its img uses width:100%;height:100%;object-fit:contain;object-position:center. Never use cover for this real product frame.
+5. CAPABILITY TRIO - three equal-height white/soft cards (radius 12px;display:flex;flex-direction:column;height:100%;overflow:hidden). Each card starts with a WHITE neutral image slot of height:250px desktop / 210px mobile; the real gallery img uses width:100%;height:100%;object-fit:contain;object-position:center. Copy lives in a separate padding:22px block with h3 20px and one line. If fewer frames remain, two cards are acceptable - never a repeated photo. Never add a standalone photo-only section: every image sits next to copy that earns its place.
+6. TRUST SPLIT - outer canvas #F5F7FA, radius 12px, padding 18px; grid .9fr/1.1fr with align-items:stretch (mobile stacked). Left: dark panel (#1A2128, radius 10px, padding 36px) with h2 34-36px and one supportive paragraph about choosing/completing the setup with artline - no invented services or warranties beyond Product JSON. Right: 2x2 grid of equal-height soft cards. Each tile answers a real buyer decision from Product JSON: what it pairs with (battery voltage/type, communication, parallel operation), an operating limit (temperature, IP rating, mounting), a capacity boundary, or a confirmed warranty term. REGISTRY DATA IS BANNED HERE: never SKU, article number, internal code, EAN/barcode or country of origin - a buyer decides nothing with those.
+7. FINAL RECAP - centered dark section, radius 12px, padding 48px 28px, background linear-gradient(135deg,#1A2128,#252525): pill badge with brand/model, h2 40-42px white, one summary paragraph #d0d7de max-width 700px, chip row of 3 white pills with exact confirmed values (dimensions, key spec, capacity).
+8. FAQ - native questions and answers, quiet light canvas
+- Container: background:#FFFFFF;border:1px solid #E3E6EA;border-radius:12px;padding:10px 30px (mobile 6px 16px). At the top one h2 32-34px/900, margin 22px 0 8px, with the natural target-language heading for frequently asked questions.
+- Then 4-6 <details> items and nothing else. Each details: margin:0;padding:0;border-top:1px solid #E3E6EA; the very FIRST details has border-top:none.
+- Each <summary>: display:flex;align-items:center;gap:16px;padding:18px 2px;cursor:pointer;list-style:none;font-size:18px;font-weight:800;color:#101010. Inside the summary: first a <span> with the item number (font-size:13px;font-weight:700;color:#8A939B;min-width:22px), then the question as plain text. Do NOT draw any +/-, arrow or circle icon yourself - the server appends the toggle icon mechanically.
+- After the summary exactly one answer <p style="margin:0;padding:0 46px 20px 38px;font-size:15px;line-height:1.55;color:#555555;max-width:900px"> with 1-3 sentences.
+- The FIRST details carries the open attribute; every other details is closed.
+- Questions are the real pre-purchase questions THIS Product JSON can answer: compatibility, capacity or operating limits, conditions, package contents, maintenance. Never ask a question the data cannot answer, never invent an answer, never mention prices, delivery or payment.
 
 FACTS AND TONE
 - Numbers with units everywhere a number exists. Every chip, tile and value card states a confirmed fact from Product JSON - no marketing superlatives without a number behind them.
@@ -653,7 +661,8 @@ FINAL SELF-CHECK
 - the badge does not repeat the h2; the h2 is brand + model code only, commercial-name descriptors live in the subtitle as " · " specs;
 - no photo-only sections; the trust tiles contain zero registry data (SKU, codes, EAN, country);
 - no white-background render is cropped by cover or placed bare on a dark canvas;
-- all seven direct blocks carry the exact ARTLINE BLOCK start/end comments; all shared section labels have the same component CSS; desktop grid cards stretch to equal height;
+- all eight direct blocks carry the exact ARTLINE BLOCK start/end comments;
+- the FAQ is block 08 and the only place with details/summary: first item open, 4-6 questions strictly answerable from Product JSON, no prices, delivery or payment; all shared section labels have the same component CSS; desktop grid cards stretch to equal height;
 - dark and light sections strictly alternate; pills only where specified; cyan only for eyebrows, values and badge borders;
 - every gallery URL used at most once; no invented image URLs; alt on every img; loading="lazy" beyond the Hero;
 - desktop and mobile copy is word-for-word identical; mobile is single-column with the same section order;
@@ -677,7 +686,7 @@ SHOWCASE_NEGATIVE_PROMPT = ENGINEERING_NEGATIVE_PROMPT
 PODIUM_STYLE_NAME = 'ARTLINE Podium'
 
 _PODIUM_SECTION = """1. PODIUM - light product stage
-- Wrapper: background:#FFFFFF;border:1px solid #D0D7DE;border-radius:32px;padding:46px;box-sizing:border-box. No dark canvas and no photo background here.
+- Wrapper: background:#FFFFFF;border:1px solid #D0D7DE;border-radius:12px;padding:46px;box-sizing:border-box. No dark canvas and no photo background here.
 - Top block, centered, max-width:820px;margin:0 auto;text-align:center: pill badge (brand + category, cyan border on white), one h2 46-52px/950 (brand + model code only), one subtitle 20-22px in #157985 with the commercial descriptors as " · " specs, then a chip row of 3 dark pills (#1A2128) with the strongest confirmed values.
 - The stage below: the hero asset as <img style="display:block;max-width:78%;max-height:520px;width:auto;height:auto;margin:18px auto 0;object-fit:contain;filter:drop-shadow(0 34px 42px rgba(16,16,16,.22))"> - the render must NEVER be cropped.
 - Under the image one soft floor: <div style="width:56%;height:26px;margin:-6px auto 0;background:radial-gradient(closest-side,rgba(16,16,16,.16),transparent);border-radius:50%"></div>.
@@ -694,7 +703,7 @@ PODIUM_STYLE_PROMPT = (
     + SHOWCASE_STYLE_PROMPT[_j:]
 )
 PODIUM_STYLE_PROMPT = PODIUM_STYLE_PROMPT.replace(
-    '- RHYTHM RULE: use this explicit full-width canvas sequence: Hero dark; Spec Strip neutral transition; Light Feature light; Dark Feature dark; Capability Trio light; Trust Split light outer canvas with one dark inner panel; Final Recap dark. Nested cards do not redefine the section canvas. Never improvise a different tone sequence.',
+    '- RHYTHM RULE: use this explicit full-width canvas sequence: Hero dark; Spec Strip neutral transition; Light Feature light; Dark Feature dark; Capability Trio light; Trust Split light outer canvas with one dark inner panel; Final Recap dark; FAQ light. Nested cards do not redefine the section canvas. Never improvise a different tone sequence.',
     '- Rhythm rule: the Podium opens LIGHT; from section 3 onward strictly alternate dark and light canvases.'
 )
 PODIUM_STYLE_PROMPT = PODIUM_STYLE_PROMPT.replace(
@@ -770,7 +779,7 @@ if 'PODIUM-3D-SCROLL' not in PODIUMSCROLL_STYLE_PROMPT or 'SECTION SET, IN ORDER
 
 SHOWCASE_DARK_STYLE_NAME = 'ARTLINE Showcase Dark'
 SHOWCASE_DARK_STYLE_PROMPT = SHOWCASE_STYLE_PROMPT.replace(
-    '- RHYTHM RULE: use this explicit full-width canvas sequence: Hero dark; Spec Strip neutral transition; Light Feature light; Dark Feature dark; Capability Trio light; Trust Split light outer canvas with one dark inner panel; Final Recap dark. Nested cards do not redefine the section canvas. Never improvise a different tone sequence.',
+    '- RHYTHM RULE: use this explicit full-width canvas sequence: Hero dark; Spec Strip neutral transition; Light Feature light; Dark Feature dark; Capability Trio light; Trust Split light outer canvas with one dark inner panel; Final Recap dark; FAQ light. Nested cards do not redefine the section canvas. Never improvise a different tone sequence.',
     '- Rhythm rule: EVERY section canvas is dark; alternate the two dark tones (#0D1013 / #1A2128) so neighbouring sections still differ. A light section may never appear.'
 ) + """
 
@@ -778,7 +787,8 @@ DARK EDITION OVERRIDES (these override any earlier instruction that a section or
 - Every section canvas is dark: alternate #0D1013 and #1A2128. No light panels anywhere.
 - Body text #F5F7FA, secondary #AFB8C1, accents and large confirmed numbers in #19BCC9.
 - Content islands are translucent dark (rgba(26,33,40,.8)) with a 1px rgba(255,255,255,.08) border.
-- The white card wrappers around REAL gallery photos stay WHITE (real photos need a neutral stage); give them border-radius:18px and generous padding - this is the only allowed light surface.
+- The white card wrappers around REAL gallery photos stay WHITE (real photos need a neutral stage); give them border-radius:10px and generous padding - this is the only allowed light surface.
+- The FAQ (block 08) sits on a dark canvas too: container #1A2128 with border rgba(255,255,255,.08); summary text #F5F7FA; answers #AFB8C1; hairlines between items rgba(255,255,255,.10).
 - Contrast is non-negotiable: WCAG AA on every text block.
 """
 
@@ -796,8 +806,8 @@ if ('DARK EDITION OVERRIDES' not in SHOWCASE_DARK_STYLE_PROMPT
 PODIUM360DARK_STYLE_NAME = 'ARTLINE Podium 3D 360 Dark'
 _p360d = PODIUM360_STYLE_PROMPT
 for _old, _new in (
-    ('background:#FFFFFF;border:1px solid #D0D7DE;border-radius:32px;padding:46px',
-     'background:#0D1013;border:1px solid #2F3137;border-radius:32px;padding:46px'),
+    ('background:#FFFFFF;border:1px solid #D0D7DE;border-radius:12px;padding:46px',
+     'background:#0D1013;border:1px solid #2F3137;border-radius:12px;padding:46px'),
     ('No dark canvas and no photo background here.',
      'The dark canvas IS the stage; no photo background.'),
     ('pill badge (brand + category, cyan border on white)',
@@ -881,6 +891,7 @@ SECTION CONTRACT (numbering, canvases, radii, shared labels and the ARTLINE BLOC
 5. CAPABILITY TRIO = SIZES AND WHO THEY FIT. One card per confirmed size, each with its number in mm and the audience it is made for (adults, teenagers, children). If the product has no size ladder, one card per confirmed application (events, charity campaigns, staff identification). Every card still opens with a real gallery frame.
 6. TRUST SPLIT = HOW TO ORDER. The four tiles answer, from Product JSON only: which artwork formats to send (vector first, then acceptable raster), what the buyer receives before production starts (free visualisation, graphic support, correction of the artwork), the lead time and whether express production exists, and the ordering step or working hours. REGISTRY DATA STAYS BANNED (SKU, article number, internal code, EAN, country of origin).
 7. FINAL RECAP - the three pills are the three facts a buyer repeats to their manager: colours, size, lead time.
+8. FAQ = ordering questions: which marking techniques, which artwork files to send, what happens before production, lead time and express options, sizes and quantities - answers strictly from Product JSON.
 
 PROMO TONE
 - Never state a price, a unit cost, a discount, a delivery fee or a payment method, even when Product JSON contains one. The shop page sells; this page explains.
@@ -894,7 +905,7 @@ PROMO SELF-CHECK (in addition to the final self-check above)
 - confirmed limits are stated, not hidden;
 - there is no price, discount, delivery cost or payment method anywhere on the page;
 - the four spec-strip numbers are order numbers and the dark one is the lead time unless Product JSON proves otherwise;
-- all seven ARTLINE BLOCK comments, the dark/light rhythm and the shared label component are untouched.
+- all eight ARTLINE BLOCK comments, the dark/light rhythm and the shared label component are untouched.
 """
 
 if ('PROMO EDITION OVERRIDES' not in SHOWCASE_PROMO_STYLE_PROMPT
