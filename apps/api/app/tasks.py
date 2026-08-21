@@ -12,7 +12,7 @@ from app.models import Artifact, Asset, CriticReport, Event, Project, Status, St
 from app.limits import add_spend, add_user_spend
 from app.media import media_url
 from app.prompts import BASE_STYLE_VERSION, LICENSE_COMMENT
-from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, _clamp_surface_radii, _finalize_showcase_layout, _fit_mobile_hero, _fit_photo_cards, _frame_contained_photos, _harmonize_radii, _never_crop_product_photos
+from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, _clamp_surface_radii, _finalize_showcase_layout, prompt_without_faq, strip_faq, style_has_faq, _fit_mobile_hero, _fit_photo_cards, _frame_contained_photos, _harmonize_radii, _never_crop_product_photos
 from app.pipeline import (
     _image_urls_of,
     hero_environment,
@@ -312,7 +312,10 @@ def process_project(self, project_id, reuse_images=False):
                 palette_json=getattr(style_row, 'palette_json', '') or '{}',
                 # Do not inject unrelated global knowledge documents. Product facts
                 # come only from this page until documents have an explicit product link.
-                prompt=style_row.prompt
+                # Вимкнений оператором FAQ прибирається ще з промпту: модель не
+                # витрачає токени на секцію, яку ми потім усе одно зріжемо.
+                prompt=(style_row.prompt if getattr(project, 'faq_enabled', True)
+                        else prompt_without_faq(style_row.prompt))
             )
 
             # Image-led styles build the page from real gallery frames; those frames
@@ -545,6 +548,8 @@ def process_project(self, project_id, reuse_images=False):
                                 relaid = _fit_photo_cards(relaid, 'mobile')
                                 relaid = _never_crop_product_photos(relaid)
                                 relaid = _frame_contained_photos(relaid)
+                                if not style_has_faq(style.prompt):
+                                    relaid = strip_faq(relaid)
                                 relaid = _clamp_surface_radii(relaid)
                                 relaid = _harmonize_radii(relaid)
                                 if (style.name or '').startswith('ARTLINE Showcase'):

@@ -121,6 +121,9 @@ class Project(Base):
     rotation_json: Mapped[str] = mapped_column(Text, default='[]')
     # Знімок кольорової схеми, обраної при запуску ({} = схема стилю).
     palette_json: Mapped[str] = mapped_column(Text, default='{}')
+    # Блок FAQ (ARTLINE BLOCK 08): оператор вимикає його при запуску. Стилі,
+    # у промпті яких FAQ немає, цей прапорець просто ігнорують.
+    faq_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     error: Mapped[str] = mapped_column(Text, default='')
     duration_seconds: Mapped[float] = mapped_column(Float, default=0)
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
