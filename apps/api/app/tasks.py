@@ -555,6 +555,7 @@ def process_project(self, project_id, reuse_images=False):
                                     relaid = inject_video_block(
                                         relaid, video_link, master_language,
                                         dark=(style.name or '') in ('ARTLINE Showcase Dark', 'ARTLINE Podium 3D 360 Dark'),
+                                        product_name=product_name,
                                     )
                                 relaid = _fit_mobile_hero(relaid, mobile_hero or hero)
                                 relaid = _fit_photo_cards(relaid, 'mobile')
@@ -588,7 +589,7 @@ def process_project(self, project_id, reuse_images=False):
                             log(db, project, 'content', f'Створення майстер-макета {master_language.upper()} / {variant} · {project.text_model}', progress)
                             rich_html, generated_in, generated_out, fallback_reason = generate_html(
                                 product, style, master_language, variant, hero, feature, project.text_model, gallery=page_gallery, rotation=rotation_frames,
-                                palette=_project_palette(project), video=getattr(project, 'video_url', '') or '',
+                                palette=_project_palette(project), video=getattr(project, 'video_url', '') or '', video_product=product_name,
                             )
                             added_input += generated_in
                             added_output += generated_out
