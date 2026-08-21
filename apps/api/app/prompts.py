@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.62"
+BASE_STYLE_VERSION = "12.63"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -648,7 +648,7 @@ SECTION SET, IN ORDER
 - Then 4-6 <details> items and nothing else. Each details: margin:0;padding:0;border-top:1px solid #E3E6EA; the very FIRST details has border-top:none.
 - Each <summary>: display:flex;align-items:center;gap:16px;padding:18px 2px;cursor:pointer;list-style:none;font-size:18px;font-weight:800;color:#101010. Inside the summary: first a <span> with the item number (font-size:13px;font-weight:700;color:#8A939B;min-width:22px), then the question as plain text. Do NOT draw any +/-, arrow or circle icon yourself - the server appends the toggle icon mechanically.
 - After the summary exactly one answer <p style="margin:0;padding:0 46px 20px 38px;font-size:15px;line-height:1.55;color:#555555;max-width:900px"> with 1-3 sentences.
-- The FIRST details carries the open attribute; every other details is closed.
+- Every details is CLOSED: never write the open attribute anywhere.
 - Questions are the real pre-purchase questions THIS Product JSON can answer: compatibility, capacity or operating limits, conditions, package contents, maintenance. Never ask a question the data cannot answer, never invent an answer, never mention prices, delivery or payment.
 
 FACTS AND TONE
@@ -662,7 +662,7 @@ FINAL SELF-CHECK
 - no photo-only sections; the trust tiles contain zero registry data (SKU, codes, EAN, country);
 - no white-background render is cropped by cover or placed bare on a dark canvas;
 - all eight direct blocks carry the exact ARTLINE BLOCK start/end comments;
-- the FAQ is block 08 and the only place with details/summary: first item open, 4-6 questions strictly answerable from Product JSON, no prices, delivery or payment; all shared section labels have the same component CSS; desktop grid cards stretch to equal height;
+- the FAQ is block 08 and the only place with details/summary: every item closed, 4-6 questions strictly answerable from Product JSON, no prices, delivery or payment; all shared section labels have the same component CSS; desktop grid cards stretch to equal height;
 - dark and light sections strictly alternate; pills only where specified; cyan only for eyebrows, values and badge borders;
 - every gallery URL used at most once; no invented image URLs; alt on every img; loading="lazy" beyond the Hero;
 - desktop and mobile copy is word-for-word identical; mobile is single-column with the same section order;

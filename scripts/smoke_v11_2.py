@@ -99,7 +99,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.62"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.63"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 3 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -220,6 +220,8 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'paid feature is always mounted, env frames cover, faq starts closed': 'Feature URL missing from generated HTML' in pipeline and '_is_environment_photo' in pipeline and '_probe_media_surface' in pipeline and "item.attrs.pop('open', None)" in pipeline and 'never write the open attribute' in prompts,
+    'faq is switchable per project and visible in the ui': 'faq_enabled' in models and (root / 'apps/api/alembic/versions/0017_project_faq.py').exists() and 'def prompt_without_faq' in pipeline and 'def strip_faq' in pipeline and 'def style_has_faq' in pipeline and "'has_faq': style_has_faq" in main and 'faq: bool = True' in main and 'prompt_without_faq(style_row.prompt)' in tasks and 'renderFaqOption' in web and 'faqBox' in web and "x.has_faq?'FAQ':''" in web and 'FAQ IS DISABLED FOR THIS RUN' in pipeline,
     'faq block: native details accordion, no js': "'details', 'summary'" in pipeline and "'open'" in pipeline and '_finalize_faq' in pipeline and '.arfaq' in pipeline and 'ARTLINE BLOCK 08: FAQ' in prompts and prompts.count('exactly eight direct child blocks') == 1 and 'FAQ' in pipeline.split('_SHOWCASE_BLOCK_NAMES')[1].split(')')[0],
     'labels hug text, photo frames take photo backdrop': 'width:fit-content;max-width:100%;min-height:30px' in pipeline and 'width:280px' not in pipeline and '_photo_surface_color' in pipeline and 'width:280px' not in prompts,
     'base radius is quiet and machine-enforced': '_MAX_SURFACE_RADIUS = 12' in pipeline and '_clamp_surface_radii(output)' in pipeline and '_clamp_surface_radii(relaid)' in (root / 'apps/api/app/tasks.py').read_text(encoding='utf-8') and 'radius 30px' not in prompts and 'border-radius:32px' not in prompts and 'radius 28px' not in prompts,
