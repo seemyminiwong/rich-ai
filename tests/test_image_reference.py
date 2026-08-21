@@ -1350,3 +1350,45 @@ def test_latinize_units_on_latin_script_pages():
     # бренд кирилицею виживає - транслітеруються лише одиниці
     kept = latinize_units('<p>Розумний 48 В</p>', 'pl')
     assert 'Розумний' in kept and '48 V' in kept
+
+
+def test_media_location_outranks_the_static_cache_regex():
+    """PNG-референс губився у nginx: regex-локація кешу перемагає prefix.
+
+    Скриншот власника 2026-08-21: «Фото товару · референс» ламався, бо
+    /media/<id>/product-reference.png підхоплювала `location ~* \.(png|...)$`
+    з try_files по статичному кореню -> 404. WEBP-кадри виживали (webp не в
+    переліку). `^~` знімає з /media/ перевірку regex-локацій узагалі.
+    """
+    import re
+    from pathlib import Path
+
+    conf = (Path(__file__).resolve().parents[1] / 'apps/web/nginx.conf').read_text(encoding='utf-8')
+    assert 'location ^~ /media/' in conf
+    assert conf.index('location ^~ /media/') < conf.index('location ~*')
+
+    prefixes = re.findall(r'location\s+(=|\^~)?\s*(/[^\s{]*)\s*\{', conf)
+    regexes = re.findall(r'location\s+~\*?\s+(\S+)\s*\{', conf)
+
+    def route(uri):
+        for op, path in prefixes:
+            if op == '=' and uri == path:
+                return 'exact:' + path
+        best = None
+        for op, path in prefixes:
+            if op != '=' and uri.startswith(path) and (best is None or len(path) > len(best[1])):
+                best = (op, path)
+        if best and best[0] == '^~':
+            return 'prefix:' + best[1]
+        for rx in regexes:
+            if re.search(rx, uri, re.I):
+                return 'regex:' + rx
+        return 'prefix:' + best[1] if best else 'none'
+
+    # кожен медіафайл іде на API, якого б розширення не був
+    for name in ('product-reference.png', 'hero-desktop.webp', 'feature.webp', 'frame.jpg'):
+        assert route(f'/media/p1/{name}') == 'prefix:/media/', name
+    # статика при цьому лишається імутабельно закешованою
+    assert route('/app.js').startswith('regex:')
+    assert route('/favicon-32.png').startswith('regex:')
+    assert route('/index.html') == 'exact:/index.html'
