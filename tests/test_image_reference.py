@@ -1129,9 +1129,11 @@ def test_video_block_is_injected_only_with_a_youtube_link_and_survives_sanitize(
             '<!-- ARTLINE BLOCK 08: FAQ START --><div><details><summary>П</summary><p>В</p></details></div>'
             '<!-- ARTLINE BLOCK 08: FAQ END --></section>')
     out = inject_video_block(page, 'https://youtu.be/dQw4w9WgXcQ', 'ua', False)
-    # постер + клік грає на місці (srcdoc-навігація з autoplay), блок ПЕРЕД FAQ
-    assert 'youtube-nocookie.com/embed/dQw4w9WgXcQ' in out and 'i.ytimg.com/vi/dQw4w9WgXcQ' in out
-    assert 'srcdoc=' in out and 'autoplay=1' in out and 'Відеоогляд' in out
+    # штатний embed: сам малює превʼю і грає на місці. Вкладений srcdoc-постер
+    # був хибним шляхом - превʼю студії саме йде через srcdoc і ламало екранування.
+    assert 'youtube-nocookie.com/embed/dQw4w9WgXcQ' in out and 'Відеоогляд' in out
+    assert 'srcdoc' not in out, 'вкладений srcdoc не виживає всередині srcdoc-превʼю'
+    assert 'allowfullscreen' in out and 'loading="lazy"' in out
     assert out.index('ARTLINE BLOCK 09: VIDEO START') < out.index('ARTLINE BLOCK 08: FAQ START')
     assert inject_video_block(out, 'https://youtu.be/dQw4w9WgXcQ', 'ua', False) == out, 'ідемпотентно'
     # без посилання або з чужим хостом блока немає
