@@ -221,15 +221,25 @@ _ALLOWED_TAGS = {
     'img', 'strong', 'span', 'em', 'b', 'i', 'br', 'small', 'style',
     # FAQ (Showcase блок 08): нативний акордеон без жодного JS.
     'details', 'summary',
+    # Блок відео: єдиний легальний iframe - youtube-nocookie (гард у sanitize_html).
+    'iframe',
 }
-_ALLOWED_ATTRS = {'style', 'src', 'alt', 'title', 'width', 'height', 'loading', 'class', 'open'}
+_ALLOWED_ATTRS = {'style', 'src', 'alt', 'title', 'width', 'height', 'loading', 'class', 'open', 'allow', 'allowfullscreen', 'frameborder', 'referrerpolicy'}
 _URL_SAFE_SCHEMES = ('http://', 'https://', '/media/', '/')
 
 
 def sanitize_html(markup: str) -> str:
     """Return the HTML with only safe presentational tags and attributes."""
     soup = BeautifulSoup(markup or '', 'html.parser')
-    for dangerous in soup(['script', 'iframe', 'object', 'embed', 'link', 'meta', 'form', 'input', 'button', 'svg', 'noscript', 'base']):
+    # iframe дозволено РІВНО для одного: вбудований YouTube-плеєр (блок відео).
+    # Будь-який інший src - у смітник. srcdoc свідомо НЕ в allowlist атрибутів:
+    # він виконується в origin батьківської сторінки, тож руками вставлений
+    # srcdoc - це XSS; наш постер інжектиться ПІСЛЯ санітизації.
+    for frame in soup.find_all('iframe'):
+        src = (frame.get('src') or '').strip()
+        if not src.startswith('https://www.youtube-nocookie.com/embed/'):
+            frame.decompose()
+    for dangerous in soup(['script', 'object', 'embed', 'link', 'meta', 'form', 'input', 'button', 'svg', 'noscript', 'base']):
         dangerous.decompose()
     # <style> дозволено ЛИШЕ з інертним CSS (анімації Подіум 3D тощо): жодних
     # url()/@import/expression - ані завантажень, ані екзфільтрації через CSS.
@@ -1952,6 +1962,9 @@ _SHOWCASE_BLOCK_NAMES = (
 )
 
 
+SHOWCASE_VIDEO_CLASS = 'arvid'
+
+
 def _showcase_blocks(soup: BeautifulSoup) -> list:
     """Return the seven ordered visual blocks inside the single root section."""
     root = soup.find('section')
@@ -1964,6 +1977,9 @@ def _showcase_blocks(soup: BeautifulSoup) -> list:
         nested = blocks[0].find_all(recursive=False)
         if len(nested) >= len(_SHOWCASE_BLOCK_NAMES):
             blocks = nested
+    # Серверний блок відео (09) - поза позиційною нумерацією: інакше після його
+    # вставки FAQ отримав би чуже імʼя в коментарях.
+    blocks = [b for b in blocks if SHOWCASE_VIDEO_CLASS not in (b.get('class') or ())]
     return blocks[:len(_SHOWCASE_BLOCK_NAMES)]
 
 
@@ -2054,6 +2070,9 @@ def _finalize_showcase_layout(
     for index, (block, name) in enumerate(zip(blocks, _SHOWCASE_BLOCK_NAMES), start=1):
         block.insert_before(Comment(f' ARTLINE BLOCK {index:02d}: {name} START '))
         block.insert_after(Comment(f' ARTLINE BLOCK {index:02d}: {name} END '))
+    for video in soup.find_all(class_=SHOWCASE_VIDEO_CLASS):
+        video.insert_before(Comment(' ARTLINE BLOCK 09: VIDEO START '))
+        video.insert_after(Comment(' ARTLINE BLOCK 09: VIDEO END '))
     return str(soup)
 
 
@@ -2066,6 +2085,85 @@ _FAQ_CSS = (
 
 
 FAQ_BLOCK_MARKER = 'ARTLINE BLOCK 08: FAQ'
+
+_YOUTUBE_ID_RE = re.compile(
+    r'(?:youtube(?:-nocookie)?\.com/(?:watch\?(?:[^#\s]*&)?v=|embed/|shorts/|live/|v/)|youtu\.be/)'
+    r'([A-Za-z0-9_-]{11})')
+
+
+def youtube_video_id(url: str) -> str:
+    """11-символьний id ролика з будь-якої форми youtube-посилання, або ''."""
+    match = _YOUTUBE_ID_RE.search((url or '').strip())
+    return match.group(1) if match else ''
+
+
+_VIDEO_HEADINGS = {
+    'ru': 'Видеообзор', 'ua': 'Відеоогляд', 'uk': 'Відеоогляд', 'pl': 'Wideoprezentacja',
+    'en': 'Video review', 'de': 'Videovorstellung', 'fr': 'Présentation vidéo',
+    'es': 'Vídeo del producto', 'it': 'Video del prodotto', 'cs': 'Videorecenze',
+    'sk': 'Videorecenzia', 'ro': 'Prezentare video', 'hu': 'Videós bemutató', 'nl': 'Productvideo',
+}
+
+
+def inject_video_block(markup: str, video_url: str, language: str = 'ua', dark: bool = False) -> str:
+    """Блок відео (ARTLINE BLOCK 09): постер YouTube, клік грає прямо в річі.
+
+    Модель про відео не знає нічого - блок вставляє СЕРВЕР механічно (як
+    обертання Подіум 3D), тому вмикається він рівно тоді, коли в проєкта є
+    посилання, і не з'їдає жодного токена. Механіка перегляду без жодного JS:
+    <iframe srcdoc> показує постер i.ytimg.com з кнопкою ▶; клік - це навігація
+    самого iframe на embed?autoplay=1, жест користувача, тож автоплей легальний.
+    Якщо чужий редактор зріже srcdoc - лишиться штатний embed-плеєр (теж клік і
+    перегляд на місці); зріже iframe цілком - блок треба тестувати живим.
+    Ставиться перед FAQ (коментар блока 08), без FAQ - останнім блоком.
+    Ідемпотентно: наявний .arvid не чіпаємо (там уже перекладений заголовок).
+    """
+    video_id = youtube_video_id(video_url)
+    if not video_id or not markup or 'class="arvid"' in markup or "class=\'arvid\'" in markup:
+        return markup
+    heading = _VIDEO_HEADINGS.get((language or '').lower(), _VIDEO_HEADINGS['en'])
+    if dark:
+        box = 'background:#1A2128;border:1px solid rgba(255,255,255,.08)'
+        title_color = '#F5F7FA'
+    else:
+        box = 'background:#FFFFFF;border:1px solid #E3E6EA'
+        title_color = '#101010'
+    embed = f'https://www.youtube-nocookie.com/embed/{video_id}'
+    poster = f'https://i.ytimg.com/vi/{video_id}/hqdefault.jpg'
+    srcdoc = (
+        '<style>*{margin:0;padding:0;overflow:hidden}html,body{height:100%}'
+        'a{display:block;position:relative;height:100%}'
+        'img{width:100%;height:100%;object-fit:cover}'
+        'span{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);'
+        'width:76px;height:54px;background:rgba(16,16,16,.82);border-radius:12px;'
+        'display:flex;align-items:center;justify-content:center}'
+        "span::after{content:'';display:block;border-style:solid;"
+        'border-width:11px 0 11px 19px;border-color:transparent transparent transparent #FFFFFF}</style>'
+        f"<a href='{embed}?autoplay=1'><img src='{poster}' alt=''><span></span></a>"
+    )
+    block_soup = BeautifulSoup(
+        f'<div class="arvid" style="{box};border-radius:12px;padding:26px 30px;margin-top:18px;box-sizing:border-box">'
+        f'<h2 style="font-size:32px;font-weight:900;margin:0 0 16px;color:{title_color}">{heading}</h2>'
+        '<div style="position:relative;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:#101010">'
+        f'<iframe src="{embed}" title="{heading}" loading="lazy" '
+        'style="position:absolute;inset:0;width:100%;height:100%;border:0" '
+        'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" '
+        'allowfullscreen="" referrerpolicy="strict-origin-when-cross-origin"></iframe>'
+        '</div></div>', 'html.parser')
+    block_soup.find('iframe')['srcdoc'] = srcdoc
+    block = block_soup.find('div')
+    soup = BeautifulSoup(markup, 'html.parser')
+    faq_start = soup.find(string=lambda v: isinstance(v, Comment) and 'ARTLINE BLOCK 08: FAQ START' in str(v))
+    if faq_start is not None:
+        faq_start.insert_before(block)
+    else:
+        root = soup.find('section')
+        if root is None:
+            return markup
+        root.append(block)
+    block.insert_before(Comment(' ARTLINE BLOCK 09: VIDEO START '))
+    block.insert_after(Comment(' ARTLINE BLOCK 09: VIDEO END '))
+    return str(soup)
 
 
 def style_has_faq(prompt: str) -> bool:
@@ -2711,7 +2809,7 @@ def public_fallback_reason(exc: Exception) -> str:
     return f'внутрішня помилка генерації ({type(exc).__name__})'
 
 
-def generate_html(product, style, language, variant, hero, feature, model: str, gallery=None, rotation=None, palette: dict | None = None):
+def generate_html(product, style, language, variant, hero, feature, model: str, gallery=None, rotation=None, palette: dict | None = None, video: str = ''):
     """Return (html, input_tokens, output_tokens, fallback_reason).
 
     fallback_reason is '' when the AI response was used, otherwise a short reason
@@ -2776,6 +2874,13 @@ HTML:
                 output,
                 variant,
                 dark_edition=getattr(style, 'name', '') == 'ARTLINE Showcase Dark',
+            )
+        if video:
+            # Перед палітрою: канонічні кольори блока відео мапляться схемою
+            # так само, як у решти секцій.
+            output = inject_video_block(
+                output, video, language,
+                dark=(getattr(style, 'name', '') or '') in ('ARTLINE Showcase Dark', 'ARTLINE Podium 3D 360 Dark'),
             )
         # Кольорова схема - НАЙОСТАННІШИЙ прохід: сітка вже зафіксована всіма
         # гардами, підміна кольорів її гарантовано не чіпає. Схема, обрана при

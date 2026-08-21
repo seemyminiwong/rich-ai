@@ -12,7 +12,7 @@ from app.models import Artifact, Asset, CriticReport, Event, Project, Status, St
 from app.limits import add_spend, add_user_spend
 from app.media import media_url
 from app.prompts import BASE_STYLE_VERSION, LICENSE_COMMENT
-from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, _clamp_surface_radii, _finalize_showcase_layout, ensure_feature_mounted, prompt_without_faq, strip_faq, style_has_faq, _fit_mobile_hero, _fit_photo_cards, _frame_contained_photos, _harmonize_radii, _never_crop_product_photos
+from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, _clamp_surface_radii, _finalize_showcase_layout, ensure_feature_mounted, inject_video_block, prompt_without_faq, strip_faq, style_has_faq, _fit_mobile_hero, _fit_photo_cards, _frame_contained_photos, _harmonize_radii, _never_crop_product_photos
 from app.pipeline import (
     _image_urls_of,
     hero_environment,
@@ -548,6 +548,14 @@ def process_project(self, project_id, reuse_images=False):
                                 # reuse його ще й ніхто не перевіряв у цій гілці) -
                                 # монтуємо назад, кадр уже оплачено.
                                 relaid = ensure_feature_mounted(relaid, feature, mobile_hero or hero, 'mobile')
+                                video_link = getattr(project, 'video_url', '') or ''
+                                if video_link:
+                                    # Перекомпонування могло зʼїсти iframe - повертаємо
+                                    # блок відео (вставка ідемпотентна).
+                                    relaid = inject_video_block(
+                                        relaid, video_link, master_language,
+                                        dark=(style.name or '') in ('ARTLINE Showcase Dark', 'ARTLINE Podium 3D 360 Dark'),
+                                    )
                                 relaid = _fit_mobile_hero(relaid, mobile_hero or hero)
                                 relaid = _fit_photo_cards(relaid, 'mobile')
                                 relaid = _never_crop_product_photos(relaid)
@@ -580,7 +588,7 @@ def process_project(self, project_id, reuse_images=False):
                             log(db, project, 'content', f'Створення майстер-макета {master_language.upper()} / {variant} · {project.text_model}', progress)
                             rich_html, generated_in, generated_out, fallback_reason = generate_html(
                                 product, style, master_language, variant, hero, feature, project.text_model, gallery=page_gallery, rotation=rotation_frames,
-                                palette=_project_palette(project),
+                                palette=_project_palette(project), video=getattr(project, 'video_url', '') or '',
                             )
                             added_input += generated_in
                             added_output += generated_out

@@ -124,6 +124,9 @@ class Project(Base):
     # Блок FAQ (ARTLINE BLOCK 08): оператор вимикає його при запуску. Стилі,
     # у промпті яких FAQ немає, цей прапорець просто ігнорують.
     faq_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # YouTube-ролик товару. Порожньо = блока відео (ARTLINE BLOCK 09) немає;
+    # блок вставляє сервер механічно, модель про нього не знає.
+    video_url: Mapped[str] = mapped_column(Text, default='')
     error: Mapped[str] = mapped_column(Text, default='')
     duration_seconds: Mapped[float] = mapped_column(Float, default=0)
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
