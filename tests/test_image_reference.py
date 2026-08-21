@@ -1166,3 +1166,62 @@ def test_video_block_is_injected_only_with_a_youtube_link_and_survives_sanitize(
     refin = _finalize_showcase_layout(out, 'desktop')
     assert refin.count('ARTLINE BLOCK 09: VIDEO START') == 1
     assert refin.count('ARTLINE BLOCK 08: FAQ START') == 1
+
+
+def test_photo_slot_takes_the_frame_backdrop_so_the_trio_reads_as_one_row(tmp_path):
+    from unittest.mock import patch
+    from PIL import Image
+    from app import pipeline as P
+
+    (tmp_path / 'p1').mkdir()
+    # кадр товару на ТЕМНОМУ студійному тлі
+    dark = Image.new('RGB', (64, 64), (26, 26, 26))
+    for x in range(22, 42):
+        for y in range(22, 42):
+            dark.putpixel((x, y), (220, 220, 225))
+    dark.save(tmp_path / 'p1' / 'dark.webp', 'WEBP', lossless=True)
+
+    slot = ('<section><div style="height:250px;background:#FFFFFF;border-radius:12px">'
+            '<img src="/media/p1/dark.webp?t=a" style="aspect-ratio:3/2"></div></section>')
+    with patch.object(P.settings, 'media_dir', str(tmp_path)):
+        P._surface_color_cache.clear()
+        out = P._fit_framed_images(slot)
+    # летербокс зливається з кадром: три картки трійці читаються одним рядом
+    assert 'background:#1A1A1A' in out and 'background:#FFFFFF' not in out
+    assert 'object-fit:contain' in out and 'overflow:hidden' in out
+    assert 'aspect-ratio' not in out, 'пропорція кадру не б\'ється з висотою слота'
+
+
+def test_gallery_frames_on_a_cdn_are_probed_too(tmp_path):
+    from unittest.mock import patch
+    from PIL import Image
+    from io import BytesIO
+    import random
+    from app import pipeline as P
+
+    # строкатий кадр середовища на чужому CDN - його можна кадрувати cover
+    rng = random.Random(11)
+    busy = Image.new('RGB', (64, 64))
+    for x in range(64):
+        for y in range(64):
+            busy.putpixel((x, y), (rng.randrange(255), rng.randrange(255), rng.randrange(255)))
+    buf = BytesIO(); busy.save(buf, 'PNG'); blob = buf.getvalue()
+
+    class _Client:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    with patch.object(P, 'safe_client', lambda **k: _Client()), \
+         patch.object(P, 'fetch_bytes_capped', lambda http, url, cap_mb=8: blob), \
+         patch.object(P, 'is_public_http_url', lambda url: True):
+        P._surface_color_cache.clear()
+        assert P._is_environment_photo('https://cdn.example/gallery/1400_main.webp') is True
+        # друге звернення бере з кешу - мережу більше не смикаємо
+        with patch.object(P, 'fetch_bytes_capped', lambda *a, **k: (_ for _ in ()).throw(AssertionError('cache miss'))):
+            assert P._is_environment_photo('https://cdn.example/gallery/1400_main.webp') is True
+
+    # недоступна мережа - тихий відкат до обережного contain
+    with patch.object(P, 'safe_client', lambda **k: (_ for _ in ()).throw(RuntimeError('offline'))), \
+         patch.object(P, 'is_public_http_url', lambda url: True):
+        P._surface_color_cache.clear()
+        assert P._is_environment_photo('https://cdn.example/other.webp') is False
