@@ -362,6 +362,93 @@ def _language_matches(markup: str, language: str) -> bool:
     return True
 
 
+
+# --- Cyrillic units on Latin-script pages ---------------------------------
+# Product JSON comes from ru/ua sources, so spec values arrive with Cyrillic
+# units («48 В», «10 мс», «60 мес.»). The text model is told to preserve
+# numbers and often keeps the unit glyphs verbatim, leaking Cyrillic into
+# Polish/English pages (owner screenshot, 2026-08-21). Prompts now forbid it,
+# but the guarantee is mechanical: a deterministic unit transliteration pass
+# over visible text nodes and alt attributes. Idempotent; no-op for
+# Cyrillic-script target languages.
+
+_CYRILLIC_PAGE_LANGS = {'ua', 'uk', 'ru', 'be', 'bg', 'sr', 'mk'}
+_CYR_LETTERS = 'А-Яа-яЁёІіЇїЄєҐґ'
+_ANY_LETTER = 'A-Za-z' + _CYR_LETTERS
+
+_UNIT_LATIN = {
+    'кВт·год': 'kWh', 'кВт⋅год': 'kWh', 'кВт-год': 'kWh', 'кВтч': 'kWh',
+    'Вт·год': 'Wh', 'Втч': 'Wh',
+    'мА·год': 'mAh', 'мАч': 'mAh', 'А·год': 'Ah', 'Ач': 'Ah',
+    'Мбіт/с': 'Mbps', 'Мбит/с': 'Mbps', 'Гбіт/с': 'Gbps', 'Гбит/с': 'Gbps',
+    'кадр/с': 'fps', 'кадрів/с': 'fps', 'кадров/с': 'fps',
+    'об/хв': 'rpm', 'об/мин': 'rpm', 'м/с': 'm/s',
+    'кВт': 'kW', 'МВт': 'MW', 'Вт': 'W', 'В·А': 'VA', 'ВА': 'VA',
+    'мА': 'mA', 'ГГц': 'GHz', 'МГц': 'MHz', 'кГц': 'kHz', 'Гц': 'Hz',
+    'мс': 'ms', 'нм': 'nm', 'мм': 'mm', 'см': 'cm', 'км': 'km',
+    'кг': 'kg', 'мг': 'mg', 'мл': 'ml', 'лм': 'lm', 'лк': 'lx',
+    'ГБ': 'GB', 'МБ': 'MB', 'ТБ': 'TB', 'КБ': 'KB', 'кБ': 'KB', 'Мп': 'MP',
+    '°С': '°C', 'В': 'V', 'А': 'A', 'м': 'm', 'г': 'g', 'л': 'l',
+}
+
+# Period/count words are language-specific; unknown Latin-script languages get
+# the English forms - still better than Cyrillic on the page.
+_PERIOD_LATIN = {
+    'pl': {'мес': 'mies.', 'міс': 'mies.', 'лет': 'lat', 'років': 'lat', 'дней': 'dni', 'днів': 'dni', 'шт': 'szt.'},
+    'en': {'мес': 'mo.', 'міс': 'mo.', 'лет': 'yrs', 'років': 'yrs', 'дней': 'days', 'днів': 'days', 'шт': 'pcs'},
+    'de': {'мес': 'Mon.', 'міс': 'Mon.', 'лет': 'Jahre', 'років': 'Jahre', 'дней': 'Tage', 'днів': 'Tage', 'шт': 'Stk.'},
+}
+
+_UNIT_PATTERN = re.compile(
+    r'(?<![' + _ANY_LETTER + r'])('
+    + '|'.join(re.escape(t) for t in sorted(_UNIT_LATIN, key=len, reverse=True))
+    + r')(?![' + _ANY_LETTER + r'])'
+)
+# Bare Cyrillic "с" is seconds only right after a number ("10 с"); anywhere
+# else it may be a leaked preposition, which transliteration would hide.
+_SECONDS_PATTERN = re.compile(r'(\d\s?)с(?![' + _ANY_LETTER + r'])')
+
+
+def _latinize_fragment(text: str, period_words: dict) -> str:
+    if not re.search('[' + _CYR_LETTERS + ']', text):
+        return text
+    if period_words:
+        pattern = re.compile(
+            r'(?<![' + _ANY_LETTER + r'])('
+            + '|'.join(re.escape(t) for t in sorted(period_words, key=len, reverse=True))
+            + r')\.?(?![' + _ANY_LETTER + r'])'
+        )
+        text = pattern.sub(lambda m: period_words[m.group(1)], text)
+    text = _UNIT_PATTERN.sub(lambda m: _UNIT_LATIN[m.group(1)], text)
+    return _SECONDS_PATTERN.sub(r'\1s', text)
+
+
+def latinize_units(markup: str, language: str) -> str:
+    """Transliterate leaked Cyrillic units/period words on Latin-script pages."""
+    lang = (language or '').split('-', 1)[0].lower()
+    if not markup or lang in _CYRILLIC_PAGE_LANGS:
+        return markup
+    if not re.search('[' + _CYR_LETTERS + ']', markup):
+        return markup
+    soup = BeautifulSoup(markup, 'html.parser')
+    period_words = _PERIOD_LATIN.get(lang, _PERIOD_LATIN['en'])
+    for node in soup.find_all(string=True):
+        if isinstance(node, Comment) or (node.parent and node.parent.name in ('style', 'script')):
+            continue
+        fixed = _latinize_fragment(str(node), period_words)
+        if fixed != str(node):
+            node.replace_with(fixed)
+    for img in soup.find_all('img'):
+        if img.get('alt'):
+            img['alt'] = _latinize_fragment(img['alt'], period_words)
+    out = str(soup)
+    residue = re.findall('[' + _CYR_LETTERS + ']{2,}', _visible_text(out))
+    if residue:
+        # Brand names may legitimately stay Cyrillic; log so the operator sees
+        # what survived instead of the customer seeing it first.
+        logger.warning('Cyrillic residue on %s page after latinize: %s', lang, sorted(set(residue))[:8])
+    return out
+
 def _require_public_hop(request):
     """httpx request hook: every hop of every outbound fetch must stay public.
 
@@ -2331,7 +2418,7 @@ def prompt_without_faq(prompt: str) -> str:
     if not style_has_faq(text):
         return text
     text = re.sub(r'\n[ \t]*<!-- ARTLINE BLOCK 08: FAQ START -->[^\n]*', '', text)
-    text = re.sub(r'\n8\. FAQ.*?(?=\n[A-Z][A-Z /]{4,}\n|\Z)', '\n', text, flags=re.S)
+    text = re.sub(r'\n\d+\. FAQ.*?(?=\n[A-Z][A-Z /]{4,}\n|\Z)', '\n', text, flags=re.S)
     text = re.sub(r'\n- the FAQ is block 08[^\n]*', '', text)
     text = text.replace('exactly eight direct child blocks', 'exactly seven direct child blocks')
     text = text.replace('all eight direct blocks carry', 'all seven direct blocks carry')
@@ -2365,6 +2452,23 @@ def strip_faq(markup: str) -> str:
     for style_tag in soup.find_all('style'):
         if '.arfaq' in (style_tag.string or style_tag.get_text() or ''):
             style_tag.decompose()
+    return str(soup)
+
+
+DARK_STYLE_NAMES = {'ARTLINE Showcase Dark', 'ARTLINE Podium 3D 360 Dark', 'ARTLINE Bento'}
+
+
+def finalize_faq_html(markup: str, dark: bool = False) -> str:
+    """FAQ-фінішер для стилів поза родиною Showcase (Bento).
+
+    У Showcase він живе всередині _finalize_showcase_layout; Bento має власну
+    структуру і туди не заходить, а кружки-перемикачі й зняте open потрібні
+    всюди, де є details. Ідемпотентно, без details - no-op.
+    """
+    if '<details' not in (markup or ''):
+        return markup
+    soup = BeautifulSoup(markup, 'html.parser')
+    _finalize_faq(soup, dark)
     return str(soup)
 
 
@@ -2619,7 +2723,7 @@ def _prompt(product, style, language, variant, hero, feature, gallery=None):
     target_language_rule = language_rule(language)
     return f"""Create standardized premium ecommerce rich content. Return HTML only: exactly one complete <section>...</section>.
 TARGET LANGUAGE CODE: {language}. {target_language_rule}
-Never copy source-page sentences in another language. Translate and rewrite every visible sentence into the target language while preserving model names, trademarks, numbers and units.
+Never copy source-page sentences in another language. Translate and rewrite every visible sentence into the target language while preserving model names, trademarks and numbers. Units, unit abbreviations and period words are ALWAYS written in the target language and script (examples: В→V, Вт→W, мс→ms, кВт·год→kWh, мес→the target-language month abbreviation). A page in a Latin-script language must contain no Cyrillic characters except verbatim brand or model names.
 Variant: {variant}. Layout: {layout}. Use inline CSS only.
 SEO heading rule: never use <h1>. The product page already contains its primary H1. Use <h2> for the Hero product title and major section headings, and <h3> for card titles.
 Embedding rule: the rich content is displayed on a light ARTLINE product page. Keep the root canvas transparent or white and make the majority of content surfaces light. Dark styling may be used inside selected high-contrast sections such as Hero or the final section, but never as a full-page background.
@@ -3041,14 +3145,17 @@ HTML:
                 variant,
                 dark_edition=getattr(style, 'name', '') == 'ARTLINE Showcase Dark',
             )
+        else:
+            output = finalize_faq_html(output, dark=(getattr(style, 'name', '') or '') in DARK_STYLE_NAMES)
         if video:
             # Перед палітрою: канонічні кольори блока відео мапляться схемою
             # так само, як у решти секцій.
             output = inject_video_block(
                 output, video, language,
-                dark=(getattr(style, 'name', '') or '') in ('ARTLINE Showcase Dark', 'ARTLINE Podium 3D 360 Dark'),
+                dark=(getattr(style, 'name', '') or '') in DARK_STYLE_NAMES,
                 product_name=video_product or (product or {}).get('name', ''),
             )
+        output = latinize_units(output, language)
         # Кольорова схема - НАЙОСТАННІШИЙ прохід: сітка вже зафіксована всіма
         # гардами, підміна кольорів її гарантовано не чіпає. Схема, обрана при
         # запуску проєкту (palette), має пріоритет над схемою стилю.
@@ -3056,7 +3163,7 @@ HTML:
         return output, input_tokens, output_tokens, ''
     except Exception as exc:
         logger.exception('generate_html fell back to deterministic template for %s/%s', language, variant)
-        return apply_palette(fallback, palette or style_palette(style)), 0, 0, public_fallback_reason(exc)
+        return apply_palette(latinize_units(fallback, language), palette or style_palette(style)), 0, 0, public_fallback_reason(exc)
 
 
 def _translation_template(markup: str):
@@ -3087,7 +3194,7 @@ def translate_html(source_html: str, language: str, model: str):
     prompt = f"""Translate the supplied ecommerce copy segments into the target language.
 TARGET LANGUAGE CODE: {language}. {language_rule(language)}
 Return one JSON object only. Preserve every input key and return exactly one translated string for it.
-Keep product names, brands, model IDs, technology names, numbers and units unchanged.
+Keep product names, brands, model IDs, technology names and numbers unchanged. Convert units, unit abbreviations and period words into the target language and script (examples: В→V, Вт→W, мс→ms, кВт·год→kWh, мес→the target-language month abbreviation); a Latin-script language must keep no Cyrillic characters except verbatim brand or model names.
 Do not add facts, HTML, markdown, explanations or extra keys.
 SEGMENTS:
 {json.dumps(segments, ensure_ascii=False)}"""
@@ -3100,6 +3207,7 @@ SEGMENTS:
             value = original
         result = result.replace(f'__ARTLINE_TEXT_{key}__', html_lib.escape(value, quote=False))
     result = _html_only(result)
+    result = latinize_units(result, language)
     if not _language_matches(result, language):
         raise RuntimeError(f'Translated content did not pass language validation for {language}')
     input_tokens, output_tokens = _usage_counts(response, prompt, response.output_text)

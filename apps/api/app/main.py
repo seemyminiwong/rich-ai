@@ -36,6 +36,10 @@ from app.bulk_import import BulkCSVError, MAX_BULK_CSV_BYTES, parse_bulk_csv, sp
 logger = logging.getLogger(__name__)
 from app.prompts import (
     BASE_STYLE_NAME,
+    BENTO_STYLE_NAME,
+    BENTO_STYLE_PROMPT,
+    BENTO_LIGHT_STYLE_NAME,
+    BENTO_LIGHT_STYLE_PROMPT,
     PODIUM_NEGATIVE_PROMPT,
     PODIUM_STYLE_NAME,
     PODIUM_STYLE_PROMPT,
@@ -178,6 +182,33 @@ MANAGED_STYLES = [
             'hero_prompt': SHOWCASE_PROMO_HERO_PROMPT,
             'feature_prompt': SHOWCASE_PROMO_FEATURE_PROMPT,
             'negative_prompt': SHOWCASE_PROMO_NEGATIVE_PROMPT,
+        },
+    },
+    {
+        # Бенто-мозаїка за референсом власника (ARZOPA Z1RC): один темний ґрід
+        # плиток - великі числа, реальні кадри, центральна плитка з моделлю.
+        # Нуль AI-зображень - найдешевший стиль поруч із Подіумом.
+        'name': BENTO_STYLE_NAME,
+        'default': False,
+        'values': {
+            'description': 'Бенто-мозаїка: щільний темний ґрід плиток із великими числами, реальними кадрами галереї і плиткою моделі. Читається поглядом за секунди; нуль AI-зображень.',
+            'prompt': BENTO_STYLE_PROMPT,
+            'hero_prompt': '',
+            'feature_prompt': '',
+            'negative_prompt': PODIUM_NEGATIVE_PROMPT,
+        },
+    },
+    {
+        # Світла редакція бенто-мозаїки: той самий ґрід-контракт на світлому
+        # полотні з білими плитками. Теж нуль AI-зображень.
+        'name': BENTO_LIGHT_STYLE_NAME,
+        'default': False,
+        'values': {
+            'description': 'Бенто-мозаїка у світлій редакції: щільний ґрід білих плиток із великими числами і реальними кадрами галереї на світлому полотні. Нуль AI-зображень.',
+            'prompt': BENTO_LIGHT_STYLE_PROMPT,
+            'hero_prompt': '',
+            'feature_prompt': '',
+            'negative_prompt': PODIUM_NEGATIVE_PROMPT,
         },
     },
     {

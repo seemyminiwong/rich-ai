@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.63"
+BASE_STYLE_VERSION = "12.66"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -631,7 +631,7 @@ SECTION SET, IN ORDER
 - Wrapper: position:relative;overflow:hidden;border-radius:12px;border:1px solid #35393F;background:#101010 url(HERO_URL) center/cover no-repeat - substitute HERO_URL with the exact supplied hero URL. The same URL appears TWICE in the Hero: as this background and as the img below. That redundancy is intentional - never drop either.
 - THE FIRST CHILD of the wrapper is the hero asset as <img style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center"> - NO opacity on this img: the overlay below is the only darkening. Dimming the photo as well crushes a dark scene into a black rectangle - an IMG element, never a CSS background (background images do not survive the artline editor). A Hero without this img is an invalid page.
 - Above it one overlay div: position:absolute;inset:0;background:linear-gradient(90deg,rgba(16,16,16,.92) 0%,rgba(16,16,16,.55) 52%,rgba(16,16,16,0) 100%) - it must fade to FULLY TRANSPARENT on the side where the product stands, so the photo is plainly visible there. Mobile: same ramp at 180deg, dense at the bottom, transparent at the top over the product.
-- Content layer: position:relative;z-index:1;min-height:585px (mobile ~600px);padding:78px 46px 54px (mobile 300px 18px 26px);display:flex;align-items:center.
+- Content layer: position:relative;z-index:1;min-height:585px (mobile ~600px);padding:78px 46px 54px (mobile 420px 18px 26px);display:flex;align-items:center.
 - Inside, max-width:720px: a pill badge, one h2 60-64px/950 line-height .94 (mobile 34-38px), one bold subtitle 24-27px in #C9F0F4, one paragraph 16-17px #d8dde2, then a chip row of 3 white pills with the three strongest confirmed values.
 - NAME APPEARS ONCE PER SECTION: the badge carries only the brand and product category (for example "DEYE · Гібридний інвертор"), the h2 carries the model exactly once. Badge text duplicating the h2 is a defect. The same rule applies to the final recap badge.
 - HERO TYPOGRAPHY: the h2 is BRAND + MODEL CODE only (for example "DEYE SUN-12K-SG05LP3-EU-SM2") - never the full commercial name with units, phase counts and connectivity suffixes: a four-line all-caps wall is a defect. Those descriptors move to the subtitle as compact specs separated by " · " (for example "12 кВт · 48 В · 2 MPPT · Wi-Fi · трифазний 220/380 В"). The paragraph below stays a fluent sentence, not a spec list.
@@ -1024,3 +1024,111 @@ BRELOKI_PALETTE = {
     'dark_soft': '#2A3038',    # мʼякий графіт панелей
     'light_soft': '#F6F4F0',   # тепле світле тло секцій
 }
+
+
+# --- ARTLINE Bento -----------------------------------------------------------
+# Бенто-мозаїка (референс власника: сторінка ARZOPA Z1RC): один суцільний
+# темний ґрід із щільних плиток - великі числа, реальні кадри, центральна
+# плитка з імʼям моделі. Жодних AI-зображень: нуль витрат на картинки.
+# Іконок і графіки НЕ малюємо принципово - бренд заборонив вигадану графіку,
+# розповідають числа і реальні фото.
+
+BENTO_STYLE_NAME = 'ARTLINE Bento'
+
+BENTO_STYLE_PROMPT = r"""Create a premium dark bento-grid ecommerce rich page for artline. One dense mosaic of tiles tells the whole story: big confirmed numbers, real product photography and short labels. The reader scans, not reads. Inform confidently; never invent.
+
+NON-NEGOTIABLE RULES
+- Use inline CSS only. Allowed elements: section, div, h2, h3, p, ul, li, img, strong, span, plus details and summary ONLY inside the FAQ block.
+- Never use h1, script, style, JavaScript, forms, buttons, prices, purchase links, tabs, accordions, video, SVG, base64 images, markdown, code fences, emoji or any invented icons or pictograms. Numbers and real photos do the talking.
+- Use only image URLs supplied in the request: hero, feature and GALLERY_IMAGES. Never invent URLs. Every fact comes from Product JSON only.
+- Every <img> carries a concise descriptive alt in the target language; loading="lazy" on every image.
+- Do not use media queries. Desktop and mobile are separate outputs.
+- Desktop and mobile carry IDENTICAL copy; only layout differs.
+- NEVER DESCRIBE THE PAGE OR THE IMAGES. The copy must read correctly with every image removed.
+
+ROOT
+Desktop: <section style="max-width:1240px;margin:0 auto;padding:0 14px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#F5F7FA;box-sizing:border-box">
+Mobile:  <section style="max-width:480px;margin:0 auto;padding:0 10px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#F5F7FA;box-sizing:border-box">
+
+BLOCK COMMENTS (REQUIRED)
+- The root contains exactly two direct child blocks, each wrapped in these exact invisible comments:
+  <!-- ARTLINE BLOCK 01: BENTO START --> ... <!-- ARTLINE BLOCK 01: BENTO END -->
+  <!-- ARTLINE BLOCK 08: FAQ START --> ... <!-- ARTLINE BLOCK 08: FAQ END -->
+
+BENTO DESIGN SYSTEM
+- Canvas: the bento block is one dark panel background:#101010;border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:14px;box-sizing:border-box.
+- Inside it ONE grid: display:grid;grid-template-columns:repeat(4,1fr);grid-auto-flow:dense;gap:14px (mobile: repeat(2,1fr);gap:10px).
+- Every tile: background:#1A2128;border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:22px;box-sizing:border-box;overflow:hidden. No other surface colors.
+- Accent #19BCC9 ONLY for the big numeric values. Headings #F5F7FA, labels and secondary text #AFB8C1.
+- Radii 12px outer / 8px inner. Chips 999px. Weights heavy: values 850-950, h3 800.
+- Column spans only (grid-column:span 2). NEVER grid-row spans and never fixed tile heights except photo tiles - dense flow must be able to fill every hole.
+
+TILE SET (12-14 tiles total; each tile carries EXACTLY ONE confirmed fact)
+1. MODEL TILE - grid-column:span 2. The product identity: brand + model code as h2 40-46px/950 letter-spacing:-.02em, one 14px line in #AFB8C1 with the category. If GALLERY_IMAGES offers a clean product render, place it under the text as <img style="display:block;width:100%;height:220px;object-fit:contain"> inside an inner white card (background:#FFFFFF;border-radius:8px;padding:12px) - a white-background render never lies bare on a dark tile.
+2. VALUE TILES (4-6, span 1) - the strongest confirmed numbers: value first 34-40px/950 in #19BCC9, then h3 15px #F5F7FA, then one short 13px line in #AFB8C1. Number with unit always.
+3. PHOTO TILES (2-3) - real GALLERY_IMAGES frames, each in its own tile with padding:0. The <img> fills the tile: display:block;width:100%;height:240px;object-fit:cover (an environment shot) or object-fit:contain inside white padding for a studio render. One photo tile may span 2 columns. Every gallery URL used at most once.
+4. FEATURE TILES (2-3, span 1 or 2) - h3 18px/800 + one 13px line: a confirmed capability that is not a bare number (connectivity set, mounting, protection class, package contents).
+5. CHIPS TILE (exactly one, span 2) - compatibility or interface set as white-text chips: span style="display:inline-block;padding:7px 14px;border-radius:999px;background:rgba(255,255,255,.08);color:#F5F7FA;font-size:13px;font-weight:800;margin:0 8px 8px 0". Only confirmed items, 3-6 chips.
+- Order tiles so desktop rows always sum to 4 columns; the MODEL TILE sits in the first or second row. Mobile keeps the same tile order; span-2 tiles span the full 2-column width.
+
+8. FAQ - native questions and answers, dark canvas
+- Container: background:#1A2128;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px 30px (mobile 6px 16px);margin-top:14px. At the top one h2 32-34px/900 color:#F5F7FA, margin 22px 0 8px, with the natural target-language heading for frequently asked questions.
+- Then 4-6 <details> items and nothing else. Each details: margin:0;padding:0;border-top:1px solid rgba(255,255,255,.10); the very FIRST details has border-top:none.
+- Each <summary>: display:flex;align-items:center;gap:16px;padding:18px 2px;cursor:pointer;list-style:none;font-size:18px;font-weight:800;color:#F5F7FA. Inside: first a <span> with the item number (font-size:13px;font-weight:700;color:#8A939B;min-width:22px), then the question as plain text. Do NOT draw any +/- icon yourself - the server appends it.
+- After the summary exactly one answer <p style="margin:0;padding:0 46px 20px 38px;font-size:15px;line-height:1.55;color:#AFB8C1;max-width:900px"> with 1-3 sentences.
+- Every details is CLOSED: never write the open attribute anywhere.
+- Questions are real pre-purchase questions THIS Product JSON can answer. Never invent an answer; no prices, delivery or payment.
+
+FACTS AND TONE
+- Every tile value traces to Product JSON verbatim, units always. No marketing superlatives without a number behind them.
+- The exact brand and model appear only in the MODEL TILE and the FAQ answers where natural.
+- SEO: natural category wording in the model tile line and feature tiles; no keyword stuffing.
+
+FINAL SELF-CHECK
+- exactly two direct blocks with the exact ARTLINE BLOCK comments; the bento grid uses grid-auto-flow:dense, column spans only, no row spans, no fixed heights outside photo tiles;
+- 12-14 tiles, each with exactly one confirmed fact; no invented icons, pictograms, emoji or graphics anywhere;
+- accent color only on numeric values; every gallery URL used at most once; white-background renders sit on white inner cards;
+- the FAQ uses details/summary only there, every item closed, no prices;
+- desktop and mobile copy identical; exactly one <section> root; all tags closed; inline CSS only."""
+
+if ('BENTO' not in BENTO_STYLE_PROMPT or 'ARTLINE BLOCK 08: FAQ' not in BENTO_STYLE_PROMPT
+        or 'grid-auto-flow:dense' not in BENTO_STYLE_PROMPT):
+    raise RuntimeError('BENTO style derivation failed')
+
+BENTO_LIGHT_STYLE_NAME = 'ARTLINE Bento Light'
+
+# Light edition of the bento mosaic: same grid contract, canonical light surfaces.
+_BENTO_LIGHT_SWAPS = (
+    ('premium dark bento-grid', 'premium light bento-grid'),
+    ('one dark panel background:#101010;border:1px solid rgba(255,255,255,.06)',
+     'one light panel background:#F2F5F7;border:1px solid rgba(15,23,32,.08)'),
+    ('Every tile: background:#1A2128;border:1px solid rgba(255,255,255,.07)',
+     'Every tile: background:#FFFFFF;border:1px solid rgba(15,23,32,.08)'),
+    ('inside an inner white card (background:#FFFFFF;border-radius:8px;padding:12px) - a white-background render never lies bare on a dark tile.',
+     'inside an inner card (background:#F7F9FA;border:1px solid rgba(15,23,32,.08);border-radius:8px;padding:12px) so the render sits on a cleanly framed field.'),
+    ('as white-text chips: span style="display:inline-block;padding:7px 14px;border-radius:999px;background:rgba(255,255,255,.08);color:#F5F7FA;',
+     'as dark-text chips: span style="display:inline-block;padding:7px 14px;border-radius:999px;background:rgba(15,23,32,.06);color:#0F171E;'),
+    ('8. FAQ - native questions and answers, dark canvas',
+     '8. FAQ - native questions and answers, light canvas'),
+    ('Container: background:#1A2128;border:1px solid rgba(255,255,255,.08)',
+     'Container: background:#FFFFFF;border:1px solid rgba(15,23,32,.08)'),
+    ('border-top:1px solid rgba(255,255,255,.10)',
+     'border-top:1px solid rgba(15,23,32,.10)'),
+    ('#19BCC9', '#157985'),
+    ('#F5F7FA', '#0F171E'),
+    ('#AFB8C1', '#5B6670'),
+    ('#8A939B', '#6B747C'),
+)
+
+BENTO_LIGHT_STYLE_PROMPT = BENTO_STYLE_PROMPT
+for _old, _new in _BENTO_LIGHT_SWAPS:
+    if _old not in BENTO_LIGHT_STYLE_PROMPT:
+        raise RuntimeError('BENTO light derivation failed: ' + _old[:60])
+    BENTO_LIGHT_STYLE_PROMPT = BENTO_LIGHT_STYLE_PROMPT.replace(_old, _new)
+
+if ('#19BCC9' in BENTO_LIGHT_STYLE_PROMPT or '#101010' in BENTO_LIGHT_STYLE_PROMPT
+        or '#1A2128' in BENTO_LIGHT_STYLE_PROMPT
+        or 'grid-auto-flow:dense' not in BENTO_LIGHT_STYLE_PROMPT
+        or 'ARTLINE BLOCK 08: FAQ' not in BENTO_LIGHT_STYLE_PROMPT):
+    raise RuntimeError('BENTO light derivation failed')
+

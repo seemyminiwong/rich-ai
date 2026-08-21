@@ -12,7 +12,7 @@ from app.models import Artifact, Asset, CriticReport, Event, Project, Status, St
 from app.limits import add_spend, add_user_spend
 from app.media import media_url
 from app.prompts import BASE_STYLE_VERSION, LICENSE_COMMENT
-from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, _clamp_surface_radii, _finalize_showcase_layout, ensure_feature_mounted, inject_video_block, prompt_without_faq, strip_faq, style_has_faq, _fit_mobile_hero, _fit_photo_cards, _frame_contained_photos, _harmonize_radii, _never_crop_product_photos
+from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, DARK_STYLE_NAMES, _clamp_surface_radii, _finalize_showcase_layout, ensure_feature_mounted, finalize_faq_html, inject_video_block, prompt_without_faq, strip_faq, style_has_faq, latinize_units, _fit_mobile_hero, _fit_photo_cards, _frame_contained_photos, _harmonize_radii, _never_crop_product_photos
 from app.pipeline import (
     _image_urls_of,
     hero_environment,
@@ -364,6 +364,12 @@ def process_project(self, project_id, reuse_images=False):
                     original_reference_url, project.id
                 ) if original_reference_url else ('', None, {})
                 fallback = source_url or original_reference_url
+                if original_reference_url and not source_url:
+                    # Копію зробити не вдалось - ассет лишиться з чужим CDN-URL,
+                    # і кадр може не вантажитись ані в студії, ані в річі.
+                    log(db, project, 'images',
+                        'Не вдалося зберегти локальну копію головного фото — залишаємо посилання на CDN магазину',
+                        20, 'warning')
                 product_name = product.get('name') or 'product'
                 if fallback:
                     reference_metadata.update({
@@ -554,7 +560,7 @@ def process_project(self, project_id, reuse_images=False):
                                     # блок відео (вставка ідемпотентна).
                                     relaid = inject_video_block(
                                         relaid, video_link, master_language,
-                                        dark=(style.name or '') in ('ARTLINE Showcase Dark', 'ARTLINE Podium 3D 360 Dark'),
+                                        dark=(style.name or '') in DARK_STYLE_NAMES,
                                         product_name=product_name,
                                     )
                                 relaid = _fit_mobile_hero(relaid, mobile_hero or hero)
@@ -571,6 +577,9 @@ def process_project(self, project_id, reuse_images=False):
                                         'mobile',
                                         dark_edition=style.name == 'ARTLINE Showcase Dark',
                                     )
+                                else:
+                                    relaid = finalize_faq_html(relaid, dark=(style.name or '') in DARK_STYLE_NAMES)
+                                relaid = latinize_units(relaid, master_language)
                                 # Модель могла загубити <style> обертання при перекомпонуванні -
                                 # повторне застосування ідемпотентне.
                                 prompt_text = style.prompt or ''
