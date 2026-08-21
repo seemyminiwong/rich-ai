@@ -1698,15 +1698,26 @@ def _photo_surface_color(src: str):
     пофарбувати рамку в цей колір - letterbox стає невидимим на будь-якому тлі.
     Зовнішні URL не чіпаємо (жодних мережевих запитів у пост-процесингу).
     """
+    return _probe_media_surface(src)[1]
+
+
+def _probe_media_surface(src: str) -> tuple[bool, str | None]:
+    """(файл знайдено, однорідний колір периметра або None).
+
+    Двозначність важлива: (True, None) означає «кадр Є, але його периметр
+    строкатий» - тобто це знімок СЕРЕДОВИЩА (інтер'єр, вулиця), а не студійний
+    рендер на рівному тлі. Такий кадр можна кадрувати cover'ом; рендер - ніколи.
+    """
     canonical = (src or '').split('?', 1)[0]
     if not canonical.startswith('/media/'):
-        return None
+        return (False, None)
     if canonical in _surface_color_cache:
         return _surface_color_cache[canonical]
-    color = None
+    found, color = False, None
     try:
         path = Path(settings.media_dir) / canonical[len('/media/'):]
         if path.is_file():
+            found = True
             image = Image.open(path).convert('RGB')
             image.thumbnail((64, 64))
             px = image.load()
@@ -1718,9 +1729,24 @@ def _photo_surface_color(src: str):
             if close / len(border) >= 0.82:
                 color = '#%02X%02X%02X' % med
     except Exception:
-        color = None
-    _surface_color_cache[canonical] = color
-    return color
+        found, color = False, None
+    _surface_color_cache[canonical] = (found, color)
+    return (found, color)
+
+
+def _is_environment_photo(src: str) -> bool:
+    """Кадр-середовище: його МОЖНА кадрувати cover'ом, щоб не було білих смуг.
+
+    Два джерела істини: імʼя файлу (згенеровані hero/feature - завжди сцени) і
+    пікселі (реальний кадр галереї зі строкатим периметром - інтерʼєр чи
+    вулиця, а не рендер на рівному тлі). Скарга з життя: широкий кадр балкона
+    вписали contain'ом у високий слот - півкартки білих смуг. Зовнішні URL не
+    пробуються - для них лишається обережний contain.
+    """
+    if _is_scene_asset(src):
+        return True
+    found, color = _probe_media_surface(src)
+    return found and color is None
 
 
 def _is_scene_asset(src: str) -> bool:
@@ -1808,7 +1834,7 @@ def _never_crop_product_photos(markup: str) -> str:
     changed = False
     for img in soup.find_all('img'):
         src = img.get('src') or ''
-        if not src or _is_scene_asset(src):
+        if not src or _is_environment_photo(src):
             continue
         style = img.get('style') or ''
         if 'object-fit:cover' not in style.replace(' ', '').lower():
@@ -1849,7 +1875,7 @@ def _fit_framed_images(markup: str) -> str:
             anc = anc.parent
         if slot is None:
             continue
-        scene = _is_scene_asset(img.get('src') or '')
+        scene = _is_environment_photo(img.get('src') or '')
         keep = [d for d in istyle.split(';') if d.strip() and not re.match(
             r'\s*(width|height|max-width|max-height|aspect-ratio|object-fit|object-position|display)\s*:', d, re.I)]
         keep += ['display:block', 'width:100%', 'height:100%',
@@ -1903,7 +1929,7 @@ def _fit_photo_cards(markup: str, variant: str = 'mobile') -> str:
         card['style'] = re.sub(r'padding[a-z-]*\s*:[^;]+;?', '', style, flags=re.I).rstrip(';') + ';overflow:hidden'
         keep = [d for d in img_style.split(';') if d.strip() and not re.match(
             r'\s*(width|height|max-width|max-height|border-radius|object-fit|object-position|display|margin)\s*:', d, re.I)]
-        scene = _is_scene_asset(img.get('src') or '')
+        scene = _is_environment_photo(img.get('src') or '')
         keep.append('display:block')
         keep.append('width:100%')
         keep.append(f'aspect-ratio:{ratio}')
@@ -2039,13 +2065,70 @@ _FAQ_CSS = (
 )
 
 
+FAQ_BLOCK_MARKER = 'ARTLINE BLOCK 08: FAQ'
+
+
+def style_has_faq(prompt: str) -> bool:
+    """Чи описує стиль блок FAQ. Єдине джерело істини - сам промпт стилю."""
+    return FAQ_BLOCK_MARKER in (prompt or '')
+
+
+def prompt_without_faq(prompt: str) -> str:
+    """Промпт стилю без контракту FAQ - оператор вимкнув блок перед запуском.
+
+    Вирізаємо секцію, рядок у списку блокових коментарів і згадки у
+    самоперевірці, а наприкінці ставимо явну заборону: модель найкраще слухає
+    останні інструкції. Прибирання з промпту економить токени, але НЕ є
+    гарантією - гарантію дає механічний strip_faq() уже над версткою.
+    """
+    text = prompt or ''
+    if not style_has_faq(text):
+        return text
+    text = re.sub(r'\n[ \t]*<!-- ARTLINE BLOCK 08: FAQ START -->[^\n]*', '', text)
+    text = re.sub(r'\n8\. FAQ.*?(?=\n[A-Z][A-Z /]{4,}\n|\Z)', '\n', text, flags=re.S)
+    text = re.sub(r'\n- the FAQ is block 08[^\n]*', '', text)
+    text = text.replace('exactly eight direct child blocks', 'exactly seven direct child blocks')
+    text = text.replace('all eight direct blocks carry', 'all seven direct blocks carry')
+    text = text.replace('all eight ARTLINE BLOCK comments', 'all seven ARTLINE BLOCK comments')
+    return text + (
+        '\n\nFAQ IS DISABLED FOR THIS RUN (this overrides every instruction above)\n'
+        '- Output exactly seven blocks: the FINAL RECAP is the last one.\n'
+        '- Do not output any question-and-answer section, and never use a details or summary element.\n'
+    )
+
+
+def strip_faq(markup: str) -> str:
+    """Прибрати блок FAQ з готової верстки.
+
+    Промпт можна проігнорувати, розмітку - ні: якщо модель усе одно намалювала
+    акордеон, він іде звідси. Видаляємо контейнер блока цілком (разом із його
+    заголовком), а не самі <details> - інакше лишається осиротілий h2.
+    """
+    soup = BeautifulSoup(markup or '', 'html.parser')
+    items = soup.find_all('details')
+    if not items:
+        return markup
+    for item in items:
+        parent = item.parent
+        if parent is not None and getattr(parent, 'name', '') in ('div', 'section') and parent.parent is not None:
+            parent.decompose()
+        else:
+            item.decompose()
+    for leftover in soup.find_all('details'):
+        leftover.decompose()
+    for style_tag in soup.find_all('style'):
+        if '.arfaq' in (style_tag.string or style_tag.get_text() or ''):
+            style_tag.decompose()
+    return str(soup)
+
+
 def _finalize_faq(soup, dark_edition: bool = False) -> None:
     """Блок 08 FAQ: модель пише лише details/summary/p - інтерактив дає браузер.
 
     Сервер механічно (ідемпотентно) гарантує: клас .arfaq, схований штатний
     маркер, кружок-перемикач +/− праворуч (CSS content, жодного JS - у
-    редакторі artline живе лише інертний <style>, як у Подіум 3D), відкритим
-    лишається РІВНО перший пункт. Якщо чужий редактор колись зріже <style>,
+    редакторі artline живе лише інертний <style>, як у Подіум 3D); УСІ пункти
+    згорнуто - покупець розгортає лише те, що його питання. Якщо редактор зріже <style>,
     акордеон далі працює - лишиться стандартний трикутник замість кружка.
     """
     items = soup.find_all('details')
@@ -2062,10 +2145,8 @@ def _finalize_faq(soup, dark_edition: bool = False) -> None:
         classes = set(item.get('class') or ())
         classes.add('arfaq')
         item['class'] = sorted(classes)
-        if index == 0:
-            item['open'] = ''
-        else:
-            item.attrs.pop('open', None)
+        # Усі закриті: навіть якщо модель поставила open - знімаємо.
+        item.attrs.pop('open', None)
         summary = item.find('summary')
         if summary is None:
             continue
@@ -2452,8 +2533,9 @@ def _restore_image_urls(html: str, hero: str, feature: str, variant: str, img_he
       - a literal placeholder is replaced with the real URL;
       - a Hero section without the hero URL gets it injected as the background of
         the first element that declares a background;
-      - a Feature <img> pointing anywhere but the feature URL is repointed, unless
-        the page legitimately reuses the original product photo fallback.
+      - a generated Feature that the model never referenced is billed money, so
+        it is force-mounted: into the first <img> of ARTLINE BLOCK 04 when the
+        block comments exist, otherwise into the first non-Hero <img>.
     """
     if hero and hero not in html:
         html = html.replace('PROJECT_HERO_IMAGE_URL', hero)
@@ -2490,6 +2572,40 @@ def _restore_image_urls(html: str, hero: str, feature: str, variant: str, img_he
             logger.warning('Hero URL missing from generated HTML (%s) and no wrapper to repair', variant)
     elif hero and not hero_used:
         logger.warning('Hero URL missing from generated HTML (%s) and no background to repair', variant)
+    if feature and feature not in html:
+        # Feature згенеровано за гроші (левова частка бюджету проєкту) - сторінка
+        # без нього недопустима. Куди монтувати: перший <img> блока 04 (DARK
+        # FEATURE SPLIT) за контрактом Showcase; без блокових коментарів -
+        # перший не-Hero <img> документа.
+        soup = BeautifulSoup(html, 'html.parser')
+        hero_path = (hero or '').split('?', 1)[0]
+        target = None
+        for comment in soup.find_all(string=lambda v: isinstance(v, Comment) and 'ARTLINE BLOCK 04' in str(v) and 'START' in str(v)):
+            node = comment
+            while node is not None:
+                node = node.next_element
+                if isinstance(node, Comment) and 'ARTLINE BLOCK 04' in str(node):
+                    node = None
+                    break
+                if getattr(node, 'name', None) == 'img':
+                    break
+            if node is not None:
+                target = node
+                break
+        if target is None:
+            for img in soup.find_all('img'):
+                src = img.get('src') or ''
+                if not src or (hero_path and hero_path in src):
+                    continue
+                if 'position:absolute' in (img.get('style') or '').replace(' ', '').lower():
+                    continue
+                target = img
+                break
+        if target is not None:
+            target['src'] = feature
+            html = str(soup)
+        else:
+            logger.warning('Feature URL missing from generated HTML (%s) and no <img> to repair', variant)
     return html
 
 
@@ -2637,6 +2753,8 @@ HTML:
         output = _clamp_surface_radii(output)
         output = _harmonize_radii(output)
         prompt_text = style.prompt or ''
+        if not style_has_faq(prompt_text):
+            output = strip_faq(output)
         if _PODIUM_SCROLL_MARKER in prompt_text:
             output = _apply_podium_scroll(output, hero, rotation or [])
         elif _PODIUM_360_MARKER in prompt_text:

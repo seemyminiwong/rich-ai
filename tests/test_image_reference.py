@@ -946,16 +946,14 @@ def test_showcase_faq_is_native_interactive_and_idempotent():
               f'<div style="background:#FFFFFF;border-radius:12px">{faq}</div></section>')
     out = _finalize_showcase_layout(markup, 'desktop')
 
-    # блок отримав ім'я, деталі - клас і кружок-перемикач, відкритий РІВНО перший
+    # блок отримав ім'я, деталі - клас і кружок-перемикач, УСІ пункти згорнуто
     assert '<!-- ARTLINE BLOCK 08: FAQ START -->' in out
     assert out.count('arfaq-i') >= 2 and '.arfaq' in out
-    first, second = out.split('</details>')[0], out.split('</details>')[1]
-    assert 'open' in first and 'open=' not in second.split('<details')[1].split('>')[0].replace('open','open=') or True
     from bs4 import BeautifulSoup
     soup = BeautifulSoup(out, 'html.parser')
     details = soup.find_all('details')
     assert len(details) == 2
-    assert details[0].has_attr('open') and not details[1].has_attr('open')
+    assert not details[0].has_attr('open') and not details[1].has_attr('open'), 'модельне open знімається: покупець розгортає сам'
     assert details[0].find('span', class_='arfaq-i') is not None
     # повторний прогін - no-op: жодних другого кружка чи другого <style>
     again = _finalize_showcase_layout(out, 'desktop')
@@ -995,3 +993,101 @@ def test_contained_photo_frame_takes_the_photo_own_backdrop(tmp_path):
         P._surface_color_cache.clear()
         out2 = P._frame_contained_photos(other)
     assert 'background:#FFFFFF' in out2
+
+
+def test_faq_can_be_switched_off_without_touching_the_rest_of_the_style():
+    from app.pipeline import style_has_faq, prompt_without_faq, strip_faq
+    from app.prompts import (SHOWCASE_STYLE_PROMPT, SHOWCASE_PROMO_STYLE_PROMPT,
+                             PODIUM_STYLE_PROMPT, DEFAULT_STYLE_PROMPT, ENGINEERING_STYLE_PROMPT)
+
+    # Джерело істини - промпт стилю, а не його назва.
+    assert style_has_faq(SHOWCASE_STYLE_PROMPT)
+    assert style_has_faq(SHOWCASE_PROMO_STYLE_PROMPT) and style_has_faq(PODIUM_STYLE_PROMPT)
+    assert not style_has_faq(DEFAULT_STYLE_PROMPT) and not style_has_faq(ENGINEERING_STYLE_PROMPT)
+
+    off = prompt_without_faq(SHOWCASE_STYLE_PROMPT)
+    assert not style_has_faq(off), 'вимкнений FAQ не має лишати маркер блока'
+    assert '8. FAQ' not in off and 'eight direct child blocks' not in off
+    assert 'seven direct child blocks' in off
+    assert 'FAQ IS DISABLED FOR THIS RUN' in off, 'модель слухає останні інструкції'
+    # Решта контракту ціла: сім блоків, усі секції, самоперевірка.
+    assert off.count('ARTLINE BLOCK 0') == 14
+    assert all(f'\n{i}. ' in off for i in range(2, 8))
+    assert 'FINAL SELF-CHECK' in off and 'SHOWCASE DESIGN SYSTEM' in off
+    # Стиль без FAQ проходить наскрізь без змін.
+    assert prompt_without_faq(DEFAULT_STYLE_PROMPT) == DEFAULT_STYLE_PROMPT
+
+    # Промпт можна проігнорувати, розмітку - ні.
+    html = ('<section><div>recap</div>'
+            '<div style="background:#FFFFFF;border-radius:12px;padding:10px 30px">'
+            '<h2>Питання і відповіді</h2>'
+            '<style>.arfaq summary::marker{content:""}</style>'
+            '<details open><summary>Питання 1</summary><p>Відповідь</p></details>'
+            '<details><summary>Питання 2</summary><p>Відповідь</p></details></div></section>')
+    out = strip_faq(html)
+    assert '<details' not in out and '.arfaq' not in out
+    assert 'Питання і відповіді' not in out, 'заголовок блока йде разом із ним'
+    assert 'recap' in out, 'решта сторінки недоторкана'
+    assert strip_faq(out) == out, 'повторне застосування - no-op'
+    # Сторінки без FAQ не змінюються взагалі.
+    plain = '<section><div>recap</div></section>'
+    assert strip_faq(plain) == plain
+
+
+def test_generated_feature_is_always_mounted_into_the_page():
+    from app.pipeline import _restore_image_urls
+
+    hero = '/media/p1/hero-desktop.webp?t=h'
+    feature = '/media/p1/feature.webp?t=f'
+    # Модель побудувала сторінку лише з кадрів галереї - оплачений Feature випав.
+    html = ('<section>'
+            '<!-- ARTLINE BLOCK 01: HERO START --><div style="position:relative;background:url(' + hero + ') center/cover">'
+            '<img src="' + hero + '" style="position:absolute;inset:0;object-fit:cover"></div><!-- ARTLINE BLOCK 01: HERO END -->'
+            '<!-- ARTLINE BLOCK 03: LIGHT FEATURE SPLIT START --><div><img src="/media/p1/gallery-1.webp?t=g1"></div><!-- ARTLINE BLOCK 03: LIGHT FEATURE SPLIT END -->'
+            '<!-- ARTLINE BLOCK 04: DARK FEATURE SPLIT START --><div><img src="/media/p1/gallery-2.webp?t=g2" alt="Кадр"></div><!-- ARTLINE BLOCK 04: DARK FEATURE SPLIT END -->'
+            '</section>')
+    out = _restore_image_urls(html, hero, feature, 'desktop', img_hero=True)
+    assert feature in out, 'згенерований Feature коштує грошей - сторінка без нього недопустима'
+    assert 'gallery-2' not in out, 'монтується саме у блок 04'
+    assert 'gallery-1' in out, 'сусідні кадри галереї не чіпаються'
+    # Без блокових коментарів - перший не-Hero <img>.
+    plain = '<section><div style="position:relative"><img src="' + hero + '" style="position:absolute;inset:0"></div><img src="/media/p1/gallery-9.webp?t=g9"></section>'
+    out2 = _restore_image_urls(plain, hero, feature, 'desktop')
+    assert feature in out2 and 'gallery-9' not in out2
+    # Якщо Feature вже на сторінці - нічого не рухаємо.
+    ok = '<section><img src="' + feature + '"><img src="/media/p1/gallery-1.webp?t=g1"></section>'
+    assert _restore_image_urls(ok, hero, feature, 'desktop') == ok
+
+
+def test_environment_frames_cover_and_renders_stay_contained(tmp_path):
+    from unittest.mock import patch
+    from PIL import Image
+    import random
+    from app import pipeline as P
+
+    (tmp_path / 'p1').mkdir()
+    # Рендер на рівному тлі: периметр однорідний.
+    Image.new('RGB', (64, 64), (238, 236, 233)).save(tmp_path / 'p1' / 'render.webp', 'WEBP', lossless=True)
+    # Знімок середовища: строкатий периметр (штори, небо, підлога).
+    rng = random.Random(7)
+    busy = Image.new('RGB', (64, 64))
+    for x in range(64):
+        for y in range(64):
+            busy.putpixel((x, y), (rng.randrange(256), rng.randrange(256), rng.randrange(256)))
+    busy.save(tmp_path / 'p1' / 'room.webp', 'WEBP', lossless=True)
+
+    card = lambda src: ('<section><div style="background:#fff;border-radius:12px;padding:16px">'
+                        f'<img src="{src}" alt=""></div></section>')
+    with patch.object(P.settings, 'media_dir', str(tmp_path)):
+        P._surface_color_cache.clear()
+        assert not P._is_environment_photo('/media/p1/render.webp?t=a')
+        assert P._is_environment_photo('/media/p1/room.webp?t=b')
+        out_render = P._fit_photo_cards(card('/media/p1/render.webp?t=a'), 'desktop')
+        out_room = P._fit_photo_cards(card('/media/p1/room.webp?t=b'), 'desktop')
+    assert 'object-fit:contain' in out_render, 'рендер не ріжемо ніколи'
+    assert 'object-fit:cover' in out_room, 'кадр середовища заповнює слот - без білих смуг'
+    # Зовнішній URL не пробується - обережний contain.
+    with patch.object(P.settings, 'media_dir', str(tmp_path)):
+        P._surface_color_cache.clear()
+        out_ext = P._fit_photo_cards(card('https://cdn.example/gallery/1400_main.webp'), 'desktop')
+    assert 'object-fit:contain' in out_ext
