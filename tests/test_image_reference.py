@@ -954,7 +954,8 @@ def test_showcase_faq_is_native_interactive_and_idempotent():
     details = soup.find_all('details')
     assert len(details) == 2
     assert not details[0].has_attr('open') and not details[1].has_attr('open'), 'модельне open знімається: покупець розгортає сам'
-    assert details[0].find('span', class_='arfaq-i') is not None
+    icon = details[0].find('span', class_='arfaq-i')
+    assert icon is not None and icon.get_text(strip=True) == '+', 'плюс - текст, живе без <style>'
     # повторний прогін - no-op: жодних другого кружка чи другого <style>
     again = _finalize_showcase_layout(out, 'desktop')
     assert again.count('arfaq-i') == out.count('arfaq-i')
@@ -1128,10 +1129,15 @@ def test_video_block_is_injected_only_with_a_youtube_link_and_survives_sanitize(
     page = ('<section><div>recap</div>'
             '<!-- ARTLINE BLOCK 08: FAQ START --><div><details><summary>П</summary><p>В</p></details></div>'
             '<!-- ARTLINE BLOCK 08: FAQ END --></section>')
-    out = inject_video_block(page, 'https://youtu.be/dQw4w9WgXcQ', 'ua', False)
-    # штатний embed: сам малює превʼю і грає на місці. Вкладений srcdoc-постер
-    # був хибним шляхом - превʼю студії саме йде через srcdoc і ламало екранування.
-    assert 'youtube-nocookie.com/embed/dQw4w9WgXcQ' in out and 'Відеоогляд' in out
+    out = inject_video_block(page, 'https://youtu.be/dQw4w9WgXcQ', 'ua', False, 'Інвертор DEYE')
+    # Шаруватий блок: постер ПІД плеєром + видиме посилання. Живий тест на
+    # чужому магазині: там зрізають і <style>, і <iframe> - без шарів лишався
+    # чорний контейнер.
+    assert 'youtube-nocookie.com/embed/dQw4w9WgXcQ' in out
+    assert 'i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg' in out, 'постер під плеєром'
+    assert 'padding-top:56.25%' in out, 'висота без aspect-ratio: старі webview'
+    assert 'Відеоогляд — Інвертор DEYE' in out, 'SEO: назва товару в h2'
+    assert 'Дивитися на YouTube' in out and 'watch?v=dQw4w9WgXcQ' in out, 'видиме посилання'
     assert 'srcdoc' not in out, 'вкладений srcdoc не виживає всередині srcdoc-превʼю'
     assert 'allowfullscreen' in out and 'loading="lazy"' in out
     assert out.index('ARTLINE BLOCK 09: VIDEO START') < out.index('ARTLINE BLOCK 08: FAQ START')
@@ -1141,8 +1147,11 @@ def test_video_block_is_injected_only_with_a_youtube_link_and_survives_sanitize(
     assert inject_video_block(plain, '', 'ua', False) == plain
     assert inject_video_block(plain, 'https://vimeo.com/1', 'ua', False) == plain
 
-    # санітайзер: наш iframe живе, чужі iframe і рукописний srcdoc - ні
+    # санітайзер: наш iframe і youtube-посилання живуть, чужі <a> розгортаються
     assert 'youtube-nocookie.com/embed/' in sanitize_html(out)
+    assert 'watch?v=dQw4w9WgXcQ' in sanitize_html(out)
+    stripped_a = sanitize_html('<section><a href="https://evil.example/buy">Купити</a></section>')
+    assert '<a' not in stripped_a and 'Купити' in stripped_a
     assert '<iframe' not in sanitize_html('<section><iframe src="https://evil.example/x"></iframe></section>')
     assert 'srcdoc' not in sanitize_html(
         '<section><iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ" srcdoc="&lt;script&gt;x&lt;/script&gt;"></iframe></section>')
