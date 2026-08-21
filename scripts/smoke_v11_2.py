@@ -192,6 +192,7 @@ checks = {
     'assets are immutable': 'max-age=31536000, immutable' in nginx,
     'security headers repeated where add_header breaks inheritance': nginx.count('X-Content-Type-Options') == 4,
     'media is embeddable from any context': 'Cross-Origin-Resource-Policy "cross-origin"' in nginx,
+    'media outranks the static cache regex': 'location ^~ /media/' in nginx and nginx.index('location ^~ /media/') < nginx.index('location ~*'),
     'frontend crashes reach the alert channel': "addEventListener('error'" in web and "@app.post('/api/client-error')" in main,
     'close buttons are labelled': web.count('aria-label="Закрити"') + web.count('aria-label="Прибрати"') == web.count('>×</button>'),
     'refuses to boot on shipped secrets': 'def check_secrets' in main and 'check_secrets()' in main and 'SHIPPED_DEFAULTS' in config,

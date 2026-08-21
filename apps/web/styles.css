@@ -438,3 +438,6 @@ tr.urow-active td{background:#E9F8FA}
 .bulk-actions{display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:10px;padding-top:14px;border-top:1px solid var(--border)}
 .empty-actions{justify-content:center;margin-top:14px}
 @media(max-width:760px){#bulkProjectDialog form{padding:18px;max-height:94vh}.bulk-file-summary{width:100%;margin-left:0}.bulk-file-summary b{max-width:70vw}.bulk-summary{grid-template-columns:1fr}.bulk-actions .btn{flex:1}.bulk-table .bulk-url{max-width:210px}}
+
+.media-image-broken{display:flex;align-items:center;justify-content:center;min-height:120px}
+.media-image-broken span{font-size:12px;color:#6B747C;text-align:center;padding:14px}
