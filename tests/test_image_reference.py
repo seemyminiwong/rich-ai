@@ -1130,22 +1130,26 @@ def test_video_block_is_injected_only_with_a_youtube_link_and_survives_sanitize(
             '<!-- ARTLINE BLOCK 08: FAQ START --><div><details><summary>П</summary><p>В</p></details></div>'
             '<!-- ARTLINE BLOCK 08: FAQ END --></section>')
     out = inject_video_block(page, 'https://youtu.be/dQw4w9WgXcQ', 'ua', False, 'Інвертор DEYE')
-    # Шаруватий блок: постер ПІД плеєром + видиме посилання. Живий тест на
-    # чужому магазині: там зрізають і <style>, і <iframe> - без шарів лишався
-    # чорний контейнер.
-    assert 'youtube-nocookie.com/embed/dQw4w9WgXcQ' in out
-    assert 'i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg' in out, 'постер під плеєром'
-    assert 'padding-top:56.25%' in out, 'висота без aspect-ratio: старі webview'
+    # Постер-посилання, БЕЗ iframe: чужі редактори вирізали embed і лишали
+    # чорний прямокутник, а постер ховався через absolute у padding-top контейнері.
+    assert '<iframe' not in out, 'embed не виживає в чужих редакторах'
+    from bs4 import BeautifulSoup as _BS
+    node = _BS(out, 'html.parser')
+    link, poster = node.find('a'), node.find('img')
+    assert link['href'] == 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' and link.get('target') == '_blank'
+    assert poster is not None and poster.find_parent('a') is link, 'постер клікабельний'
+    assert 'width:100%' in poster['style'] and 'height:auto' in poster['style']
+    assert 'position:absolute' not in poster['style'], '<img> сам задає висоту'
+    assert 'img.youtube.com/vi/dQw4w9WgXcQ/' in poster['src']
     assert 'Відеоогляд — Інвертор DEYE' in out, 'SEO: назва товару в h2'
+    assert 'Дивитися на YouTube' in out, 'видимий підпис-посилання'
     assert '>VIDEO<' not in out, 'зайвий eyebrow-бейдж прибрано'
     # довга магазинна назва скорочується, дубль коду в дужках відпадає
     from app.pipeline import _short_product_name
     long_name = 'Гибридный инвертор DEYE SUN-6K 6KW 48V 2 MPPT Wi-Fi 220/380V Трехфазный (SUN-6K-SG05LP3-EU-SM2)'
     short = _short_product_name(long_name)
     assert '(' not in short and len(short) <= 60 and short.startswith('Гибридный инвертор DEYE')
-    assert 'Дивитися на YouTube' in out and 'watch?v=dQw4w9WgXcQ' in out, 'видиме посилання'
-    assert 'srcdoc' not in out, 'вкладений srcdoc не виживає всередині srcdoc-превʼю'
-    assert 'allowfullscreen' in out and 'loading="lazy"' in out
+    assert 'loading="lazy"' in out
     assert out.index('ARTLINE BLOCK 09: VIDEO START') < out.index('ARTLINE BLOCK 08: FAQ START')
     assert inject_video_block(out, 'https://youtu.be/dQw4w9WgXcQ', 'ua', False) == out, 'ідемпотентно'
     # без посилання або з чужим хостом блока немає
@@ -1153,14 +1157,13 @@ def test_video_block_is_injected_only_with_a_youtube_link_and_survives_sanitize(
     assert inject_video_block(plain, '', 'ua', False) == plain
     assert inject_video_block(plain, 'https://vimeo.com/1', 'ua', False) == plain
 
-    # санітайзер: наш iframe і youtube-посилання живуть, чужі <a> розгортаються
-    assert 'youtube-nocookie.com/embed/' in sanitize_html(out)
+    # санітайзер: youtube-посилання живе, iframe заборонено вже зовсім
     assert 'watch?v=dQw4w9WgXcQ' in sanitize_html(out)
+    assert '<iframe' not in sanitize_html(
+        '<section><iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"></iframe></section>')
     stripped_a = sanitize_html('<section><a href="https://evil.example/buy">Купити</a></section>')
     assert '<a' not in stripped_a and 'Купити' in stripped_a
     assert '<iframe' not in sanitize_html('<section><iframe src="https://evil.example/x"></iframe></section>')
-    assert 'srcdoc' not in sanitize_html(
-        '<section><iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ" srcdoc="&lt;script&gt;x&lt;/script&gt;"></iframe></section>')
 
     # повторний фіналайзер не краде імʼя FAQ і не плодить коментарі відео
     refin = _finalize_showcase_layout(out, 'desktop')
