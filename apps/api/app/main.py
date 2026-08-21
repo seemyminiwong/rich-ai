@@ -27,7 +27,7 @@ from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, h
 from app.tasks import bill_extra, image_rate, process_landing, process_project, text_rate, translate_project
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
-from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, is_public_http_url, parse_page, safe_client, sanitize_html, style_image_prompt, text_client
+from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, is_public_http_url, parse_page, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client
 from app.landing import LANDING_PROMPT, LANDING_STYLE_NAME
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.version import __version__
@@ -409,6 +409,8 @@ class ProjectIn(BaseModel):
     upload_feature: str = ''
     # 360-серія: усі uploads стають кадрами обертання (за порядком), а не галереєю.
     uploads_360: bool = False
+    # Блок FAQ: стилі, що його описують, за замовчуванням генерують; можна вимкнути.
+    faq: bool = True
 class BulkProjectImportIn(BaseModel):
     csv_text: str = Field(min_length=1, max_length=MAX_BULK_CSV_BYTES)
     style_id: str | None = Field(default=None, max_length=200)
@@ -468,6 +470,8 @@ class RerunIn(BaseModel):
     languages: list[str] | None = None
     variants: list[str] | None = None
     reuse_images: bool = False
+    # None = лишити як було; перезапуск дозволяє передумати щодо FAQ.
+    faq: bool | None = None
 class CriticIn(BaseModel):
     auto_fix: bool = False
     # Платний AI-рецензент: вартість токенів додається до вартості проєкту.
@@ -540,7 +544,7 @@ def user_dict(x):
             'permissions': sorted(effective_perms(x)),
             'granted': sorted(overrides.get('grant') or []), 'revoked': sorted(overrides.get('revoke') or []),
             'created_at': x.created_at, 'last_login_at': x.last_login_at, 'shots_enabled': bool(settings.shots_url)}
-def style_dict(x, usage=None): return {'id': x.id, 'name': x.name, 'description': x.description, 'prompt': x.prompt, 'hero_prompt': x.hero_prompt, 'feature_prompt': x.feature_prompt, 'negative_prompt': x.negative_prompt, 'score': json.loads(x.score_json or '{}'), 'palette': json.loads(getattr(x, 'palette_json', None) or '{}'), 'preview_html': x.preview_html, 'golden_html': getattr(x, 'golden_html', '') or '', 'has_golden': bool((getattr(x, 'golden_html', '') or '').strip()), 'is_default': x.is_default, 'usage_count': usage if usage is not None else None}
+def style_dict(x, usage=None): return {'id': x.id, 'name': x.name, 'description': x.description, 'has_faq': style_has_faq(x.prompt), 'prompt': x.prompt, 'hero_prompt': x.hero_prompt, 'feature_prompt': x.feature_prompt, 'negative_prompt': x.negative_prompt, 'score': json.loads(x.score_json or '{}'), 'palette': json.loads(getattr(x, 'palette_json', None) or '{}'), 'preview_html': x.preview_html, 'golden_html': getattr(x, 'golden_html', '') or '', 'has_golden': bool((getattr(x, 'golden_html', '') or '').strip()), 'is_default': x.is_default, 'usage_count': usage if usage is not None else None}
 def artifact_dict(x): return {'id': x.id, 'language': x.language, 'variant': x.variant, 'html': x.html, 'version': x.version, 'created_at': x.created_at, 'fallback_reason': getattr(x, 'fallback_reason', '') or '', 'run_index': getattr(x, 'run_index', 1) or 1}
 def project_dict(p, full=False, style_name=''):
     try:
@@ -557,7 +561,7 @@ def project_dict(p, full=False, style_name=''):
         runs = []
     r = {'id': p.id, 'name': p.name, 'source_url': p.source_url, 'style_id': p.style_id, 'style_name': style_name, 'owner_id': p.owner_id, 'status': p.status.value, 'stage': p.stage, 'progress': p.progress,
          'lifetime_cost': float(getattr(p, 'lifetime_cost', 0) or 0), 'run_index': getattr(p, 'run_index', 1) or 1, 'runs': runs,
-         'languages': [x for x in p.languages.split(',') if x], 'variants': [x for x in p.variants.split(',') if x], 'text_model': p.text_model, 'image_model': p.image_model, 'image_quality': p.image_quality,
+         'languages': [x for x in p.languages.split(',') if x], 'variants': [x for x in p.variants.split(',') if x], 'text_model': p.text_model, 'image_model': p.image_model, 'image_quality': p.image_quality, 'faq': bool(getattr(p, 'faq_enabled', True)),
          'custom_hero_url': p.custom_hero_url, 'custom_feature_url': p.custom_feature_url, 'product_category': p.product_category, 'sku': str(product.get('sku') or ''), 'cost_breakdown': breakdown, 'error': p.error, 'duration_seconds': p.duration_seconds, 'input_tokens': p.input_tokens, 'output_tokens': p.output_tokens,
          'image_count': p.image_count, 'text_request_count': p.text_request_count, 'image_request_count': p.image_request_count, 'text_cost': p.text_cost, 'image_cost': p.image_cost, 'estimated_cost': p.estimated_cost,
          'created_at': p.created_at, 'started_at': p.started_at, 'finished_at': p.finished_at}
@@ -1301,6 +1305,7 @@ def _project_values(payload: ProjectIn, db: Session) -> tuple[dict, Style]:
         'custom_hero_url': payload.custom_hero_url.strip(),
         'custom_feature_url': payload.custom_feature_url.strip(),
         'gallery_json': json.dumps([u.strip() for u in payload.gallery if is_public_http_url(u.strip())][:10]),
+        'faq_enabled': bool(payload.faq),
     }, style
 
 
@@ -2001,6 +2006,8 @@ def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends
     if not style: raise HTTPException(400, 'Обраний стиль не знайдено')
     if payload and payload.palette_id is not None:
         p.palette_json = resolve_palette_snapshot(db, payload.palette_id or None)
+    if payload and payload.faq is not None:
+        p.faq_enabled = bool(payload.faq)
     p.run_index = (getattr(p, 'run_index', 1) or 1) + 1
     p.status = Status.queued; p.stage = 'dispatch_pending'; p.progress = 0; p.error = ''; p.input_tokens = 0; p.output_tokens = 0; p.image_count = 0; p.text_request_count = 0; p.image_request_count = 0; p.text_cost = 0; p.image_cost = 0; p.estimated_cost = 0; p.reserved_cost = 0
     _reserve_project_run(db, user, p, style)
