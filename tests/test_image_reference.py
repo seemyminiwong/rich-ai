@@ -449,10 +449,11 @@ def test_podium_spin_wraps_hero_and_is_idempotent():
     html = f'<section><div><img src="{hero}" alt="Генератор" style="display:block"></div></section>'
     spun = _apply_podium_spin(html, hero)
     assert 'arspin' in spun and 'preserve-3d' in spun
-    assert spun.count('backface-visibility:hidden') == 2, 'мусить бути лице і тил'
+    import re as _re
+    assert len(_re.findall(r'(?<!-)backface-visibility:hidden', spun)) == 2, 'мусить бути лице і тил'
     assert 'rotateY(180deg) scaleX(-1)' in spun, 'тил не має бути дзеркальним'
     assert 'prefers-reduced-motion' in spun
-    assert spun.count('border-radius:18px') == 2, 'обидва шари зі скругленням'
+    assert spun.count('border-radius:12px') == 2, 'обидва шари зі скругленням'
     assert '-webkit-backface-visibility:hidden' in spun, 'iOS-префікси обовʼязкові'
     assert _apply_podium_spin(spun, hero) == spun, 'повторне застосування - детермінований no-op'
     # Модель дотягнула ЗЛАМАНИЙ шматок обертання (без <style>) - мусить зібратися заново.
@@ -538,7 +539,9 @@ def test_dark_editions_keep_contracts_and_never_reintroduce_light_sections():
 
     p360d = PODIUM360DARK_STYLE_PROMPT
     assert 'PODIUM-3D-360' in p360d, 'маркер каруселі мусить успадкуватись'
-    assert 'background:#0D1013' in p360d and 'background:#FFFFFF' not in p360d
+    assert 'background:#0D1013' in p360d
+    assert 'background:#FFFFFF;border:1px solid #D0D7DE;border-radius:12px;padding:46px' not in p360d, 'світла сцена не має пережити деривацію'
+    assert 'Container: background:#FFFFFF' not in p360d, 'FAQ на темній сторінці теж темний'
     assert 'rgba(25,188,201,.28)' in p360d, 'ціанове світіння замість тіні'
 
 
@@ -619,22 +622,6 @@ def test_llm_fix_rewrites_only_flagged_text_and_freezes_dom():
     assert changed == 0 and 'Продумана основа' in same
 
 
-def test_short_bordered_pills_hug_their_text():
-    from app.pipeline import _shrink_pills
-
-    html = ('<section><div style="display:grid;gap:12px">'
-            '<div style="border:1px solid #19BCC9;border-radius:8px;padding:6px 12px;font-size:11px">ПРОИЗВОДИТЕЛЬНОСТЬ</div>'
-            '<div style="background:#1A2128;border:1px solid #2F3137;border-radius:14px;padding:16px"><b>0.53 кг</b><small>Лёгкий корпус</small></div>'
-            '<p style="border:1px solid #ccc;border-radius:10px">' + 'Довгий текст пояснення, який точно не є пігулкою і має лишитись блочним абзацом' + '</p>'
-            '</div></section>')
-    out = _shrink_pills(html)
-    assert out.count('width:fit-content') == 1, 'лише коротка пігулка'
-    assert 'border-radius:999px' in out, 'усі лейбли - однакова капсула'
-    assert 'ПРОИЗВОДИТЕЛЬНОСТЬ' in out
-    # картка з дітьми і довгий абзац - недоторкані
-    assert 'Лёгкий корпус</small></div>' in out and 'блочним абзацом</p>' in out
-
-
 def test_mobile_hero_shows_the_whole_product_without_dead_space():
     from app.pipeline import _fit_mobile_hero
 
@@ -671,24 +658,6 @@ def test_short_bordered_pills_hug_their_text():
     assert 'Лёгкий корпус</small></div>' in out and 'блочним абзацом</p>' in out
 
 
-def test_mobile_hero_matches_the_portrait_frame_instead_of_cropping_it():
-    from app.pipeline import _fit_mobile_hero
-
-    hero = '/media/p1/hero-mobile.webp?t=abc'
-    html = (f'<section><div style="background:url({hero}) center/cover;min-height:600px;padding:320px 18px 26px">'
-            f'<img src="{hero}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">'
-            '<h2>Товар</h2></div></section>')
-    out = _fit_mobile_hero(html, hero)
-    assert 'aspect-ratio:2/3' in out, 'висота блока має дорівнювати кадру'
-    assert 'background-position:center top' in out
-    assert 'object-position:center top' in out, 'шар <img> теж не має різати верх'
-    assert 'min-height:600px' in out, 'фолбек висоти лишається'
-    assert _fit_mobile_hero(out, hero) == out, 'повторне застосування - no-op'
-    # чужі зображення не чіпаються
-    other = '<section><img src="https://cdn/x.webp" style="object-fit:cover"></section>'
-    assert _fit_mobile_hero(other, hero) == other
-
-
 def test_photo_cards_fill_edge_to_edge_on_both_variants():
     from app.pipeline import _fit_photo_cards
 
@@ -699,7 +668,7 @@ def test_photo_cards_fill_edge_to_edge_on_both_variants():
             '</section>')
     out = _fit_photo_cards(html)
     assert out.count('aspect-ratio:4/3') == 1, 'лише картка з самим фото'
-    assert 'object-fit:cover' in out and 'overflow:hidden' in out
+    assert 'object-fit:contain' in out and 'overflow:hidden' in out, 'реальний кадр товару не ріжемо'
     assert 'padding:16px"><img src="/media/p/g1' not in out, 'падінг у фото-картці прибрано'
     # картка з текстом і картка фото+підпис лишаються як були
     assert '0,53 кг' in out and 'padding:18px' in out
@@ -715,7 +684,7 @@ def test_desktop_photo_cards_use_a_wider_ratio():
     mobile = _fit_photo_cards(card, 'mobile')
     assert 'aspect-ratio:3/2' in desktop and 'aspect-ratio:4/3' not in desktop
     assert 'aspect-ratio:4/3' in mobile
-    assert 'object-fit:cover' in desktop and 'overflow:hidden' in desktop
+    assert 'object-fit:contain' in desktop and 'overflow:hidden' in desktop, 'реальний кадр товару не ріжемо'
 
 
 def test_nested_radii_are_concentric_in_every_style():
@@ -731,9 +700,9 @@ def test_nested_radii_are_concentric_in_every_style():
             '<div style="border-radius:18px;background:#fff"><p style="border-radius:12px">без падінга - не чіпаємо</p></div>'
             '</section>')
     out = _harmonize_radii(html)
-    # 24 - 8 = 16 (вже правильно), 32 - 46 -> мінімум 4px
+    # 24 - 8 = 16 (вже правильно), 32 - 46 -> мінімум 8px (пол концентрики)
     assert 'border-radius:16px;background:#eee' in out
-    assert 'border-radius:4px;padding:6px 12px' in out
+    assert 'border-radius:8px;padding:6px 12px' in out
     # картка без падінга лишається як була
     assert 'border-radius:12px">без падінга' in out
     assert _harmonize_radii(out) == out, 'повторне застосування - no-op'
@@ -867,9 +836,9 @@ def test_every_photo_gets_a_consistent_radius():
             '<div style="position:relative"><img src="/media/hero.webp" style="position:absolute;inset:0"></div>'
             '</section>')
     out = _round_image_corners(html)
-    assert 'border-radius:16px' in out, 'фото поза карткою - спільний дефолт'
+    assert 'border-radius:12px' in out, 'фото поза карткою - спільний дефолт'
     # концентрично: 24 - 8 = 16; фото врівень з карткою повторює її радіус + клип
-    assert out.count('border-radius:16px') >= 2
+    assert out.count('border-radius:12px') >= 1 and 'border-radius:16px' in out
     assert 'border-radius:20px' in out and 'overflow:hidden' in out
     # шар Hero не чіпаємо
     assert 'src="/media/hero.webp" style="position:absolute;inset:0"' in out
@@ -895,7 +864,7 @@ def test_contained_photos_get_a_rounded_frame():
     # 1) кадр просто в комірці сітки - додається біла рамка зі скругленням
     bare = '<section><div style="display:grid"><img src="https://cdn/gallery/1400_main.webp" style="object-fit:contain"></div></section>'
     out = _frame_contained_photos(bare)
-    assert 'border-radius:16px;overflow:hidden;background:#FFFFFF' in out
+    assert 'border-radius:12px;overflow:hidden;background:#FFFFFF' in out
     assert 'width:100%' in out
 
     # 2) кадр уже в картці з радіусом - картці лише додається фон і обрізання

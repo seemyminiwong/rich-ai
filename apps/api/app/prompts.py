@@ -822,6 +822,15 @@ for _old, _new in (
      'background:radial-gradient(closest-side,rgba(25,188,201,.28),transparent)'),
     ('- Rhythm rule: the Podium opens LIGHT; from section 3 onward strictly alternate dark and light canvases.',
      '- Rhythm rule: the page is fully dark; alternate #0D1013 and #1A2128 canvases so neighbouring sections differ.'),
+    # Блок 08 успадковується світлим - на суцільно темній сторінці це біла пляма.
+    ('- Container: background:#FFFFFF;border:1px solid #E3E6EA;border-radius:12px;padding:10px 30px (mobile 6px 16px).',
+     '- Container: background:#1A2128;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px 30px (mobile 6px 16px).'),
+    ('border-top:1px solid #E3E6EA; the very FIRST details has border-top:none.',
+     'border-top:1px solid rgba(255,255,255,.10); the very FIRST details has border-top:none.'),
+    ('cursor:pointer;list-style:none;font-size:18px;font-weight:800;color:#101010.',
+     'cursor:pointer;list-style:none;font-size:18px;font-weight:800;color:#F5F7FA.'),
+    ('font-size:15px;line-height:1.55;color:#555555;max-width:900px">',
+     'font-size:15px;line-height:1.55;color:#AFB8C1;max-width:900px">'),
 ):
     if _p360d.count(_old) != 1:
         raise RuntimeError(f'PODIUM 360 DARK derivation failed on: {_old[:60]}')

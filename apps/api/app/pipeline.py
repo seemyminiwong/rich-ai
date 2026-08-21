@@ -1455,7 +1455,9 @@ def _apply_podium_spin360(markup: str, hero_url: str, frames: list[str]) -> str:
            '@media (prefers-reduced-motion:reduce){.ar360 img{animation:none!important}}')
     imgs = []
     for index, url in enumerate(frames):
-        delay = -duration * index / count
+        # Перший кадр дає -0.000s: формально валідно, але «мінус нуль» у стилі
+        # виглядає як помилка генерації і ловиться тестом. Нормалізуємо в 0.
+        delay = -duration * index / count or 0.0
         position = 'position:relative' if index == 0 else 'position:absolute;inset:0'
         base_opacity = 'opacity:1' if index == 0 else 'opacity:0'
         imgs.append(
