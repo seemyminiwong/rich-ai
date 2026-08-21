@@ -27,7 +27,7 @@ from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, h
 from app.tasks import bill_extra, image_rate, process_landing, process_project, text_rate, translate_project
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
-from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, is_public_http_url, parse_page, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client
+from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, is_public_http_url, parse_page, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
 from app.landing import LANDING_PROMPT, LANDING_STYLE_NAME
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.version import __version__
@@ -411,6 +411,8 @@ class ProjectIn(BaseModel):
     uploads_360: bool = False
     # Блок FAQ: стилі, що його описують, за замовчуванням генерують; можна вимкнути.
     faq: bool = True
+    # YouTube-ролик: порожньо = без блока відео.
+    video_url: str = Field(default='', max_length=500)
 class BulkProjectImportIn(BaseModel):
     csv_text: str = Field(min_length=1, max_length=MAX_BULK_CSV_BYTES)
     style_id: str | None = Field(default=None, max_length=200)
@@ -472,6 +474,8 @@ class RerunIn(BaseModel):
     reuse_images: bool = False
     # None = лишити як було; перезапуск дозволяє передумати щодо FAQ.
     faq: bool | None = None
+    # None = лишити як було; '' = прибрати відео.
+    video_url: str | None = Field(default=None, max_length=500)
 class CriticIn(BaseModel):
     auto_fix: bool = False
     # Платний AI-рецензент: вартість токенів додається до вартості проєкту.
@@ -561,7 +565,7 @@ def project_dict(p, full=False, style_name=''):
         runs = []
     r = {'id': p.id, 'name': p.name, 'source_url': p.source_url, 'style_id': p.style_id, 'style_name': style_name, 'owner_id': p.owner_id, 'status': p.status.value, 'stage': p.stage, 'progress': p.progress,
          'lifetime_cost': float(getattr(p, 'lifetime_cost', 0) or 0), 'run_index': getattr(p, 'run_index', 1) or 1, 'runs': runs,
-         'languages': [x for x in p.languages.split(',') if x], 'variants': [x for x in p.variants.split(',') if x], 'text_model': p.text_model, 'image_model': p.image_model, 'image_quality': p.image_quality, 'faq': bool(getattr(p, 'faq_enabled', True)),
+         'languages': [x for x in p.languages.split(',') if x], 'variants': [x for x in p.variants.split(',') if x], 'text_model': p.text_model, 'image_model': p.image_model, 'image_quality': p.image_quality, 'faq': bool(getattr(p, 'faq_enabled', True)), 'video_url': getattr(p, 'video_url', '') or '',
          'custom_hero_url': p.custom_hero_url, 'custom_feature_url': p.custom_feature_url, 'product_category': p.product_category, 'sku': str(product.get('sku') or ''), 'cost_breakdown': breakdown, 'error': p.error, 'duration_seconds': p.duration_seconds, 'input_tokens': p.input_tokens, 'output_tokens': p.output_tokens,
          'image_count': p.image_count, 'text_request_count': p.text_request_count, 'image_request_count': p.image_request_count, 'text_cost': p.text_cost, 'image_cost': p.image_cost, 'estimated_cost': p.estimated_cost,
          'created_at': p.created_at, 'started_at': p.started_at, 'finished_at': p.finished_at}
@@ -1293,6 +1297,9 @@ def _project_values(payload: ProjectIn, db: Session) -> tuple[dict, Style]:
     for label, value in (('Hero', payload.custom_hero_url.strip()), ('Feature', payload.custom_feature_url.strip())):
         if value and not is_public_http_url(value):
             raise HTTPException(400, f'Власне {label} URL має бути публічним http(s)-посиланням')
+    video_url = payload.video_url.strip()
+    if video_url and not youtube_video_id(video_url):
+        raise HTTPException(400, 'Посилання на відео має вести на ролик YouTube (watch, youtu.be, shorts або embed)')
     return {
         'name': payload.name.strip() or 'Визначення товару…',
         'source_url': source_url,
@@ -1306,6 +1313,7 @@ def _project_values(payload: ProjectIn, db: Session) -> tuple[dict, Style]:
         'custom_feature_url': payload.custom_feature_url.strip(),
         'gallery_json': json.dumps([u.strip() for u in payload.gallery if is_public_http_url(u.strip())][:10]),
         'faq_enabled': bool(payload.faq),
+        'video_url': video_url,
     }, style
 
 
@@ -2008,6 +2016,11 @@ def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends
         p.palette_json = resolve_palette_snapshot(db, payload.palette_id or None)
     if payload and payload.faq is not None:
         p.faq_enabled = bool(payload.faq)
+    if payload and payload.video_url is not None:
+        candidate = payload.video_url.strip()
+        if candidate and not youtube_video_id(candidate):
+            raise HTTPException(400, 'Посилання на відео має вести на ролик YouTube')
+        p.video_url = candidate
     p.run_index = (getattr(p, 'run_index', 1) or 1) + 1
     p.status = Status.queued; p.stage = 'dispatch_pending'; p.progress = 0; p.error = ''; p.input_tokens = 0; p.output_tokens = 0; p.image_count = 0; p.text_request_count = 0; p.image_request_count = 0; p.text_cost = 0; p.image_cost = 0; p.estimated_cost = 0; p.reserved_cost = 0
     _reserve_project_run(db, user, p, style)

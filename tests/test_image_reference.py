@@ -1115,3 +1115,37 @@ def test_reused_feature_survives_the_mobile_relayout():
     assert ensure_feature_mounted(plain, '', hero, 'mobile') == plain
     ok = f'<section><img src="{feature}"></section>'
     assert ensure_feature_mounted(ok, feature, hero, 'mobile') == ok
+
+
+def test_video_block_is_injected_only_with_a_youtube_link_and_survives_sanitize():
+    from app.pipeline import youtube_video_id, inject_video_block, sanitize_html, _finalize_showcase_layout
+
+    assert youtube_video_id('https://www.youtube.com/watch?v=dQw4w9WgXcQ') == 'dQw4w9WgXcQ'
+    assert youtube_video_id('https://youtu.be/dQw4w9WgXcQ?t=10') == 'dQw4w9WgXcQ'
+    assert youtube_video_id('https://www.youtube.com/shorts/abcDEF12345') == 'abcDEF12345'
+    assert youtube_video_id('https://vimeo.com/12345') == '' and youtube_video_id('') == ''
+
+    page = ('<section><div>recap</div>'
+            '<!-- ARTLINE BLOCK 08: FAQ START --><div><details><summary>П</summary><p>В</p></details></div>'
+            '<!-- ARTLINE BLOCK 08: FAQ END --></section>')
+    out = inject_video_block(page, 'https://youtu.be/dQw4w9WgXcQ', 'ua', False)
+    # постер + клік грає на місці (srcdoc-навігація з autoplay), блок ПЕРЕД FAQ
+    assert 'youtube-nocookie.com/embed/dQw4w9WgXcQ' in out and 'i.ytimg.com/vi/dQw4w9WgXcQ' in out
+    assert 'srcdoc=' in out and 'autoplay=1' in out and 'Відеоогляд' in out
+    assert out.index('ARTLINE BLOCK 09: VIDEO START') < out.index('ARTLINE BLOCK 08: FAQ START')
+    assert inject_video_block(out, 'https://youtu.be/dQw4w9WgXcQ', 'ua', False) == out, 'ідемпотентно'
+    # без посилання або з чужим хостом блока немає
+    plain = '<section><div>recap</div></section>'
+    assert inject_video_block(plain, '', 'ua', False) == plain
+    assert inject_video_block(plain, 'https://vimeo.com/1', 'ua', False) == plain
+
+    # санітайзер: наш iframe живе, чужі iframe і рукописний srcdoc - ні
+    assert 'youtube-nocookie.com/embed/' in sanitize_html(out)
+    assert '<iframe' not in sanitize_html('<section><iframe src="https://evil.example/x"></iframe></section>')
+    assert 'srcdoc' not in sanitize_html(
+        '<section><iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ" srcdoc="&lt;script&gt;x&lt;/script&gt;"></iframe></section>')
+
+    # повторний фіналайзер не краде імʼя FAQ і не плодить коментарі відео
+    refin = _finalize_showcase_layout(out, 'desktop')
+    assert refin.count('ARTLINE BLOCK 09: VIDEO START') == 1
+    assert refin.count('ARTLINE BLOCK 08: FAQ START') == 1
