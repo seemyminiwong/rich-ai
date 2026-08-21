@@ -1091,3 +1091,27 @@ def test_environment_frames_cover_and_renders_stay_contained(tmp_path):
         P._surface_color_cache.clear()
         out_ext = P._fit_photo_cards(card('https://cdn.example/gallery/1400_main.webp'), 'desktop')
     assert 'object-fit:contain' in out_ext
+
+
+def test_reused_feature_survives_the_mobile_relayout():
+    from app.pipeline import ensure_feature_mounted
+
+    feature = '/media/p1/feature.webp?t=f'
+    hero = '/media/p1/hero-mobile.webp?t=h'
+    # Перекомпонування десктопа в мобільну верстку викинуло Feature - лишились
+    # лише кадри галереї. Саме цей шлях обходив _restore_image_urls.
+    relaid = ('<section>'
+              '<!-- ARTLINE BLOCK 01: HERO START --><div style="position:relative">'
+              f'<img src="{hero}" style="position:absolute;inset:0"></div><!-- ARTLINE BLOCK 01: HERO END -->'
+              '<!-- ARTLINE BLOCK 04: DARK FEATURE SPLIT START --><div>'
+              '<img src="/media/p1/gallery-2.webp?t=g2"></div><!-- ARTLINE BLOCK 04: DARK FEATURE SPLIT END -->'
+              '</section>')
+    out = ensure_feature_mounted(relaid, feature, hero, 'mobile')
+    assert feature in out, 'переиспользуемый Feature оплачен - он обязан быть и в мобільній версії'
+    assert 'gallery-2' not in out and hero in out
+    assert ensure_feature_mounted(out, feature, hero, 'mobile') == out, 'no-op при повторі'
+    # Нічого не вигадуємо там, де Feature немає або він уже на місці.
+    plain = '<section><div>x</div></section>'
+    assert ensure_feature_mounted(plain, '', hero, 'mobile') == plain
+    ok = f'<section><img src="{feature}"></section>'
+    assert ensure_feature_mounted(ok, feature, hero, 'mobile') == ok

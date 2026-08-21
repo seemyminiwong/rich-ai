@@ -12,7 +12,7 @@ from app.models import Artifact, Asset, CriticReport, Event, Project, Status, St
 from app.limits import add_spend, add_user_spend
 from app.media import media_url
 from app.prompts import BASE_STYLE_VERSION, LICENSE_COMMENT
-from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, _clamp_surface_radii, _finalize_showcase_layout, prompt_without_faq, strip_faq, style_has_faq, _fit_mobile_hero, _fit_photo_cards, _frame_contained_photos, _harmonize_radii, _never_crop_product_photos
+from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, _clamp_surface_radii, _finalize_showcase_layout, ensure_feature_mounted, prompt_without_faq, strip_faq, style_has_faq, _fit_mobile_hero, _fit_photo_cards, _frame_contained_photos, _harmonize_radii, _never_crop_product_photos
 from app.pipeline import (
     _image_urls_of,
     hero_environment,
@@ -544,6 +544,10 @@ def process_project(self, project_id, reuse_images=False):
                                     relaid = relaid.replace(desktop_hero, mobile_hero)
                                 # Перекомпонування успадковує десктопні пропорції блока -
                                 # підганяємо під портретний кадр, щоб не різало товар.
+                                # Перекомпонування могло викинути Feature (а при
+                                # reuse його ще й ніхто не перевіряв у цій гілці) -
+                                # монтуємо назад, кадр уже оплачено.
+                                relaid = ensure_feature_mounted(relaid, feature, mobile_hero or hero, 'mobile')
                                 relaid = _fit_mobile_hero(relaid, mobile_hero or hero)
                                 relaid = _fit_photo_cards(relaid, 'mobile')
                                 relaid = _never_crop_product_photos(relaid)

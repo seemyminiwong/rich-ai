@@ -2572,41 +2572,51 @@ def _restore_image_urls(html: str, hero: str, feature: str, variant: str, img_he
             logger.warning('Hero URL missing from generated HTML (%s) and no wrapper to repair', variant)
     elif hero and not hero_used:
         logger.warning('Hero URL missing from generated HTML (%s) and no background to repair', variant)
-    if feature and feature not in html:
-        # Feature згенеровано за гроші (левова частка бюджету проєкту) - сторінка
-        # без нього недопустима. Куди монтувати: перший <img> блока 04 (DARK
-        # FEATURE SPLIT) за контрактом Showcase; без блокових коментарів -
-        # перший не-Hero <img> документа.
-        soup = BeautifulSoup(html, 'html.parser')
-        hero_path = (hero or '').split('?', 1)[0]
-        target = None
-        for comment in soup.find_all(string=lambda v: isinstance(v, Comment) and 'ARTLINE BLOCK 04' in str(v) and 'START' in str(v)):
-            node = comment
-            while node is not None:
-                node = node.next_element
-                if isinstance(node, Comment) and 'ARTLINE BLOCK 04' in str(node):
-                    node = None
-                    break
-                if getattr(node, 'name', None) == 'img':
-                    break
-            if node is not None:
-                target = node
+    return ensure_feature_mounted(html, feature, hero, variant)
+
+
+def ensure_feature_mounted(html: str, feature: str, hero: str = '', variant: str = '') -> str:
+    """Оплачений Feature мусить бути на сторінці - інакше гроші викинуто.
+
+    Генерація зображень - найдорожча частина проєкту, а модель регулярно
+    будує сторінку лише з кадрів галереї і жодного разу не згадує feature-URL.
+    Куди монтуємо: перший <img> блока 04 (DARK FEATURE SPLIT - його законне
+    місце за контрактом Showcase); без блокових коментарів - перший не-Hero
+    <img> документа. Викликається і з generate_html, і з мобільного
+    перекомпонування: relayout успадковує десктопну верстку, тож якщо кадр
+    загубився там - він загубиться і тут.
+    """
+    if not feature or feature in (html or ''):
+        return html
+    soup = BeautifulSoup(html or '', 'html.parser')
+    hero_path = (hero or '').split('?', 1)[0]
+    target = None
+    for comment in soup.find_all(string=lambda v: isinstance(v, Comment) and 'ARTLINE BLOCK 04' in str(v) and 'START' in str(v)):
+        node = comment
+        while node is not None:
+            node = node.next_element
+            if isinstance(node, Comment) and 'ARTLINE BLOCK 04' in str(node):
+                node = None
                 break
-        if target is None:
-            for img in soup.find_all('img'):
-                src = img.get('src') or ''
-                if not src or (hero_path and hero_path in src):
-                    continue
-                if 'position:absolute' in (img.get('style') or '').replace(' ', '').lower():
-                    continue
-                target = img
+            if getattr(node, 'name', None) == 'img':
                 break
-        if target is not None:
-            target['src'] = feature
-            html = str(soup)
-        else:
-            logger.warning('Feature URL missing from generated HTML (%s) and no <img> to repair', variant)
-    return html
+        if node is not None:
+            target = node
+            break
+    if target is None:
+        for img in soup.find_all('img'):
+            src = img.get('src') or ''
+            if not src or (hero_path and hero_path in src):
+                continue
+            if 'position:absolute' in (img.get('style') or '').replace(' ', '').lower():
+                continue
+            target = img
+            break
+    if target is None:
+        logger.warning('Feature URL missing from generated HTML (%s) and no <img> to repair', variant)
+        return html
+    target['src'] = feature
+    return str(soup)
 
 
 def _visible_text_signature(html: str) -> str:
