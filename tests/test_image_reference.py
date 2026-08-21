@@ -1269,3 +1269,84 @@ def test_split_photo_cards_get_the_contract_height(tmp_path):
         assert P._finalize_showcase_layout(out, 'desktop') == out, 'повторний прохід - no-op'
         assert ';;' not in out, '_set_css не копить порожні декларації'
         assert 'height:300px' in P._finalize_showcase_layout(page, 'mobile')
+
+
+def test_bento_style_contract_and_faq_toggle():
+    from app.prompts import BENTO_STYLE_PROMPT, BENTO_STYLE_NAME
+    from app.pipeline import style_has_faq, prompt_without_faq, finalize_faq_html
+
+    p = BENTO_STYLE_PROMPT
+    assert BENTO_STYLE_NAME == 'ARTLINE Bento'
+    # мозаїка: щільний ґрід без дір, лише колонкові спани, жодної вигаданої графіки
+    assert 'grid-auto-flow:dense' in p and 'grid-template-columns:repeat(4,1fr)' in p
+    assert 'NEVER grid-row spans' in p
+    assert 'emoji or any invented icons' in p
+    assert '12-14 tiles' in p and 'EXACTLY ONE confirmed fact' in p
+    # канонічні кольори - палітри мапляться як у решти стилів
+    assert '#101010' in p and '#1A2128' in p and '#19BCC9' in p
+    # FAQ вбудовано і вимикається так само, як у Showcase
+    assert style_has_faq(p)
+    off = prompt_without_faq(p)
+    assert not style_has_faq(off) and 'TILE SET' in off, 'мозаїка лишається, FAQ іде'
+
+    # FAQ-фінішер працює поза родиною Showcase (Bento не проходить finalize)
+    page = ('<section><div>tiles</div>'
+            '<!-- ARTLINE BLOCK 08: FAQ START --><div><details open><summary>П</summary><p>В</p></details></div>'
+            '<!-- ARTLINE BLOCK 08: FAQ END --></section>')
+    out = finalize_faq_html(page, dark=True)
+    from bs4 import BeautifulSoup as _BS
+    node = _BS(out, 'html.parser')
+    icon = node.find('span', class_='arfaq-i')
+    assert icon is not None and icon.get_text(strip=True) == '+'
+    assert not node.find('details').has_attr('open')
+    assert finalize_faq_html(out, dark=True) == out
+    assert finalize_faq_html('<section><div>no faq</div></section>', dark=True) == '<section><div>no faq</div></section>'
+
+
+def test_bento_light_edition_contract():
+    from app.prompts import BENTO_LIGHT_STYLE_PROMPT, BENTO_LIGHT_STYLE_NAME, BENTO_STYLE_PROMPT
+    from app.pipeline import style_has_faq, prompt_without_faq, DARK_STYLE_NAMES
+
+    p = BENTO_LIGHT_STYLE_PROMPT
+    assert BENTO_LIGHT_STYLE_NAME == 'ARTLINE Bento Light'
+    # світла редакція: жодного темного полотна, канонічний світлий акцент
+    assert '#101010' not in p and '#1A2128' not in p and '#19BCC9' not in p
+    assert '#F2F5F7' in p and 'background:#FFFFFF' in p and '#157985' in p
+    assert 'light bento-grid' in p and 'light canvas' in p
+    # структура мозаїки ідентична темній редакції
+    for token in ('grid-auto-flow:dense', 'NEVER grid-row spans', '12-14 tiles',
+                  'EXACTLY ONE confirmed fact', 'grid-column:span 2'):
+        assert token in p and token in BENTO_STYLE_PROMPT
+    # FAQ так само вбудовано і вимикається; фінішер піде світлим
+    assert style_has_faq(p)
+    assert not style_has_faq(prompt_without_faq(p))
+    assert BENTO_LIGHT_STYLE_NAME not in DARK_STYLE_NAMES
+
+
+def test_latinize_units_on_latin_script_pages():
+    from app.pipeline import latinize_units
+
+    # кириличні одиниці з Product JSON просочувалися на польську сторінку
+    # (скриншот власника 2026-08-21: «48 В», «10 мс», «60 мес.», «220/380 В»)
+    page = ('<section><h3 style="color:#0F171E">48 В</h3>'
+            '<p>Czas przełączania 10 мс, gwarancja 60 мес., sieć 220/380 В, pole 9.6 кВт.</p>'
+            '<p>Zakres -40…+60 °С, waga 5,2 кг, 48В bez spacji, 2 шт.</p>'
+            '<img src="/media/x.webp" alt="Falownik DEYE 6 кВт 48 В"></section>')
+    out = latinize_units(page, 'pl')
+    for token in ('48 V', '10 ms', '60 mies.', '220/380 V', '9.6 kW', '+60 °C', '5,2 kg', '48V', '2 szt.'):
+        assert token in out, token
+    assert 'alt="Falownik DEYE 6 kW 48 V"' in out
+    for leaked in ('мс', 'мес', 'кВт', '°С', 'кг', 'шт'):
+        assert leaked not in out, leaked
+    assert '#0F171E' in out  # інлайн-стилі недоторкані
+    # ідемпотентність і мовні межі
+    assert latinize_units(out, 'pl') == out
+    assert latinize_units(page, 'ua') == page
+    assert latinize_units(page, 'ru') == page
+    assert '60 mo.' in latinize_units('<p>60 мес.</p>', 'en')
+    assert '60 Mon.' in latinize_units('<p>60 мес.</p>', 'de')
+    # невідома латинська мова отримує англійські скорочення, а не кирилицю
+    assert '60 mo.' in latinize_units('<p>60 мес.</p>', 'cs')
+    # бренд кирилицею виживає - транслітеруються лише одиниці
+    kept = latinize_units('<p>Розумний 48 В</p>', 'pl')
+    assert 'Розумний' in kept and '48 V' in kept
