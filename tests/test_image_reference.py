@@ -632,6 +632,9 @@ def test_mobile_hero_shows_the_whole_product_without_dead_space():
     out = _fit_mobile_hero(html, hero)
     # фон по ширині від верхнього краю: товар угорі видно повністю
     assert 'background-size:100% auto' in out and 'background-position:center top' in out
+    # текст стартує ПІД зоною товару: 480px-полотно, кадр 2:3 -> 720px, товар у
+    # верхніх 55% (~396px); падінг 300px накривав низ монітора (живий скріншот)
+    assert 'padding:420px 18px 26px' in out
     # блок лишається заввишки зі свій контент - без порожнього низу
     assert 'aspect-ratio' not in out, 'фіксовані пропорції створювали пусте місце'
     assert 'min-height:600px' in out
@@ -1229,3 +1232,40 @@ def test_gallery_frames_on_a_cdn_are_probed_too(tmp_path):
          patch.object(P, 'is_public_http_url', lambda url: True):
         P._surface_color_cache.clear()
         assert P._is_environment_photo('https://cdn.example/other.webp') is False
+
+
+def test_split_photo_cards_get_the_contract_height(tmp_path):
+    from unittest.mock import patch
+    from PIL import Image
+    import random
+    from app import pipeline as P
+
+    (tmp_path / 'p1').mkdir()
+    rng = random.Random(5)
+    scene = Image.new('RGB', (64, 64))
+    for x in range(64):
+        for y in range(64):
+            scene.putpixel((x, y), (rng.randrange(80), rng.randrange(40), rng.randrange(40)))
+    scene.save(tmp_path / 'p1' / 'scene.webp', 'WEBP', lossless=True)
+    Image.new('RGB', (64, 64), (255, 255, 255)).save(tmp_path / 'p1' / 'render.webp', 'WEBP', lossless=True)
+
+    # модель «забула» height у фото-карток сплітів - квадратний кадр розтягував
+    # картку на ~1000px і поруч із коротким текстом зяяла порожнеча (скарга QUBE)
+    page = ('<section><div><h2>hero</h2></div><div><h2>strip</h2></div>'
+            '<div style="background:#F5F7FA;border-radius:12px;padding:44px;display:grid;grid-template-columns:.92fr 1.08fr;gap:30px">'
+            '<div><span>ПАРАМЕТРИ ЕКРАНА</span><h2>Контраст</h2><p>т</p></div>'
+            '<div style="background:#FFFFFF;border:1px solid #D0D7DE;border-radius:8px;padding:18px">'
+            '<img src="/media/p1/scene.webp?t=a" alt="" style="display:block;width:100%;height:auto"></div></div>'
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">'
+            '<div style="background:#1A2128;border-radius:12px;padding:40px"><span>Л</span><h2>Т</h2></div>'
+            '<div style="background:#FFFFFF;border-radius:12px;padding:22px"><img src="/media/p1/render.webp?t=b" style="width:100%"></div></div>'
+            '<div><h2>trio</h2></div><div><h2>trust</h2></div><div><h2>recap</h2></div></section>')
+    with patch.object(P.settings, 'media_dir', str(tmp_path)):
+        P._surface_color_cache.clear()
+        out = P._finalize_showcase_layout(page, 'desktop')
+        # контрактна висота слота на обох картках; середовище заповнює, рендер вписується
+        assert out.count('height:420px') == 2
+        assert 'object-fit:cover' in out and 'object-fit:contain' in out
+        assert P._finalize_showcase_layout(out, 'desktop') == out, 'повторний прохід - no-op'
+        assert ';;' not in out, '_set_css не копить порожні декларації'
+        assert 'height:300px' in P._finalize_showcase_layout(page, 'mobile')
