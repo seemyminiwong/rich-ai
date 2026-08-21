@@ -99,7 +99,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.61"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.62"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 3 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -220,13 +220,16 @@ checks = {
 # several dict-edit attempts silently missed their anchors. Every check that
 # guards a UI feature added after v12.0 lives here.
 checks.update({
+    'faq block: native details accordion, no js': "'details', 'summary'" in pipeline and "'open'" in pipeline and '_finalize_faq' in pipeline and '.arfaq' in pipeline and 'ARTLINE BLOCK 08: FAQ' in prompts and prompts.count('exactly eight direct child blocks') == 1 and 'FAQ' in pipeline.split('_SHOWCASE_BLOCK_NAMES')[1].split(')')[0],
+    'labels hug text, photo frames take photo backdrop': 'width:fit-content;max-width:100%;min-height:30px' in pipeline and 'width:280px' not in pipeline and '_photo_surface_color' in pipeline and 'width:280px' not in prompts,
+    'base radius is quiet and machine-enforced': '_MAX_SURFACE_RADIUS = 12' in pipeline and '_clamp_surface_radii(output)' in pipeline and '_clamp_surface_radii(relaid)' in (root / 'apps/api/app/tasks.py').read_text(encoding='utf-8') and 'radius 30px' not in prompts and 'border-radius:32px' not in prompts and 'radius 28px' not in prompts,
     'promo showcase style seeded and locked': "'ARTLINE Showcase Promo'" in web.split('MANAGED_STYLE_NAMES=')[1].split(']')[0] and 'SHOWCASE_PROMO_STYLE_NAME' in main and 'PROMO EDITION OVERRIDES' in prompts and 'BRAND + MODEL CODE' not in prompts.split('PROMO EDITION OVERRIDES')[1] and prompts.count('LOGOS, PLACEHOLDERS AND TEXT ON THE PRODUCT') == 2,
     'style ab/golden/usage counter': "@app.post('/api/styles/{style_id}/ab')" in main and "@app.post('/api/styles/{style_id}/golden')" in main and 'def _golden_example' in pipeline and 'usage_count' in main and 'function runStyleAB' in web and 'function pinGolden' in web and '0008_style_golden' in ' '.join(str(x) for x in (root / 'apps/api/alembic/versions').iterdir()),
     'style tooling: real stats, free dry-run, diff, real-product preview': "@app.get('/api/styles/{style_id}/stats')" in main and "@app.post('/api/styles/dry-run')" in main and 'def build_prompt' in pipeline and 'POST_GENERATION_GUARANTEES' in pipeline and 'function lineDiff' in web and 'function runStyleDryRun' in web and 'style.improve' not in web.split('applyImprove')[0][-1:] and "generated['current']" in main and 'sample_project_id' in main,
     'per-block png export via optional chromium service': (root / 'apps/shots/server.py').exists() and "@app.get('/api/artifacts/{artifact_id}/blocks.zip')" in main and 'shots_enabled' in main and 'downloadBlocks' in web and 'profiles: ["shots"]' in (root / 'docker-compose.yml').read_text(encoding='utf-8') and "query_selector_all(':scope" not in (root / 'apps/shots/server.py').read_text(encoding='utf-8') and 'Сервіс знімків відповів' in main,
     'contact and security policy published': '## Контакти' in (root / 'README.md').read_text(encoding='utf-8') and (root / 'SECURITY.md').exists() and 'yehorshuliak@gmail.com' in (root / 'SECURITY.md').read_text(encoding='utf-8'),
     'contained photos are framed so the radius is visible': 'def _frame_contained_photos' in pipeline and '_frame_contained_photos(output)' in pipeline and '_frame_contained_photos(relaid)' in tasks,
-    'uniform radii: photos and pills': '_DEFAULT_IMAGE_RADIUS = 16' in pipeline and 'border-radius:999px' in pipeline and 'overflow:hidden' in pipeline,
+    'uniform radii: photos and pills': '_DEFAULT_IMAGE_RADIUS = 12' in pipeline and 'border-radius:999px' in pipeline and 'overflow:hidden' in pipeline,
     'product photos never cropped in any layout': 'def _never_crop_product_photos' in pipeline and 'def _is_scene_asset' in pipeline and '_never_crop_product_photos(output)' in pipeline and '_never_crop_product_photos(relaid)' in tasks,
     'run history keeps costs across reruns': 'def close_run' in tasks and 'def bill_extra' in tasks and 'lifetime_cost' in main and "p.run_index = (getattr(p, 'run_index', 1) or 1) + 1" in main and 'function runsPanel' in web and 'прогін ${a.run_index}' in web,
     'concentric radii in every style': 'def _harmonize_radii' in pipeline and 'inner = outer - padding' in pipeline and '_harmonize_radii(output)' in pipeline and '_harmonize_radii(relaid)' in tasks,

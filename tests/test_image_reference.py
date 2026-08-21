@@ -760,7 +760,8 @@ def test_showcase_prompt_has_named_blocks_consistent_labels_and_no_crop_conflict
     prompt = SHOWCASE_STYLE_PROMPT
     assert 'ARTLINE BLOCK 01: HERO START' in prompt
     assert 'ARTLINE BLOCK 07: FINAL RECAP END' in prompt
-    assert 'SHARED SECTION LABEL' in prompt and 'Desktop: width:280px' in prompt
+    assert 'SHARED SECTION LABEL' in prompt and 'width:fit-content' in prompt and 'border-radius:8px' in prompt
+    assert 'ARTLINE BLOCK 08: FAQ START' in prompt and 'exactly eight direct child blocks' in prompt
     assert 'EQUAL DESKTOP CARDS' in prompt
     dark_split = prompt.split('4. DARK FEATURE SPLIT', 1)[1].split('5. CAPABILITY TRIO', 1)[0]
     capability = prompt.split('5. CAPABILITY TRIO', 1)[1].split('6. TRUST SPLIT', 1)[0]
@@ -792,7 +793,8 @@ def test_showcase_finalizer_names_blocks_and_equalizes_desktop_components():
     assert out.count('ARTLINE BLOCK ') == 14
     assert '<!-- ARTLINE BLOCK 01: HERO START -->' in out
     assert '<!-- ARTLINE BLOCK 07: FINAL RECAP END -->' in out
-    assert out.count('width:280px') == 4
+    assert out.count('width:fit-content') == 4
+    assert out.count('border-radius:8px') == 4
     assert 'align-items:stretch' in out
     assert out.count('height:100%') >= 2
     assert _finalize_showcase_layout(out, 'desktop') == out
@@ -958,3 +960,69 @@ def test_golden_example_is_structure_only_and_scrubs_urls():
     # build_prompt справді підмішує еталон
     full = build_prompt({'name': 'X'}, style, 'ua', 'desktop', '', '')
     assert 'FORMAT EXAMPLE' in full and 'Еталон 42 Вт' in full
+
+
+def test_showcase_faq_is_native_interactive_and_idempotent():
+    from app.pipeline import _finalize_showcase_layout, sanitize_html
+
+    faq = (
+        '<details style="border-top:none"><summary style="font-size:18px">'
+        '<span style="min-width:22px">1</span>Чи сумісний модуль?</summary>'
+        '<p>Так, LiFePO4 51.2 В.</p></details>'
+        '<details open style="border-top:1px solid #E3E6EA"><summary>'
+        '<span>2</span>Що в комплекті?</summary><p>Кронштейн і кабель.</p></details>'
+    )
+    markup = ('<section><div>hero</div><div>strip</div><div>light</div><div>dark</div>'
+              '<div>trio</div><div>trust</div><div>recap</div>'
+              f'<div style="background:#FFFFFF;border-radius:12px">{faq}</div></section>')
+    out = _finalize_showcase_layout(markup, 'desktop')
+
+    # блок отримав ім'я, деталі - клас і кружок-перемикач, відкритий РІВНО перший
+    assert '<!-- ARTLINE BLOCK 08: FAQ START -->' in out
+    assert out.count('arfaq-i') >= 2 and '.arfaq' in out
+    first, second = out.split('</details>')[0], out.split('</details>')[1]
+    assert 'open' in first and 'open=' not in second.split('<details')[1].split('>')[0].replace('open','open=') or True
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(out, 'html.parser')
+    details = soup.find_all('details')
+    assert len(details) == 2
+    assert details[0].has_attr('open') and not details[1].has_attr('open')
+    assert details[0].find('span', class_='arfaq-i') is not None
+    # повторний прогін - no-op: жодних другого кружка чи другого <style>
+    again = _finalize_showcase_layout(out, 'desktop')
+    assert again.count('arfaq-i') == out.count('arfaq-i')
+    assert again.count('<style>') == out.count('<style>') == 1
+    # санітайзер лишає details/summary/open, а інертний <style> живе
+    clean = sanitize_html(out)
+    assert '<details' in clean and '<summary' in clean and 'open' in clean
+    assert '.arfaq' in clean
+
+
+def test_contained_photo_frame_takes_the_photo_own_backdrop(tmp_path):
+    from unittest.mock import patch
+    from PIL import Image
+    from app import pipeline as P
+
+    # квадратний кадр на СІРОМУ студійному тлі
+    grey = tmp_path / 'p1'
+    grey.mkdir()
+    img = Image.new('RGB', (64, 64), (238, 236, 233))
+    for x in range(20, 44):
+        for y in range(20, 44):
+            img.putpixel((x, y), (40, 40, 40))
+    img.save(grey / 'g1.webp', 'WEBP', lossless=True)  # точний колір: лосі-стиснення зсуває канал на ±1
+
+    html = ('<section><div style="border-radius:12px;padding:18px;height:420px">'
+            '<img src="/media/p1/g1.webp?t=abc" alt="" style="display:block;width:100%;height:100%;object-fit:contain"></div></section>')
+    with patch.object(P.settings, 'media_dir', str(tmp_path)):
+        P._surface_color_cache.clear()
+        out = P._frame_contained_photos(html)
+    assert 'background:#EEECE9' in out, 'рамка фарбується у тло кадру - латки нема'
+
+    # зовнішній URL - жодних проб і мереж: біла рамка як і була
+    other = ('<section><div style="border-radius:12px;padding:18px">'
+             '<img src="https://cdn/x.webp" style="object-fit:contain;height:100%"></div></section>')
+    with patch.object(P.settings, 'media_dir', str(tmp_path)):
+        P._surface_color_cache.clear()
+        out2 = P._frame_contained_photos(other)
+    assert 'background:#FFFFFF' in out2
