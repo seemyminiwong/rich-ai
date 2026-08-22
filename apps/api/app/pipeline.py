@@ -2478,10 +2478,20 @@ def _finalize_showcase_layout(
 # чужому магазині показав, що <style> там зрізають, і кружки зникали разом із
 # псевдоелементами. Без CSS плюс просто лишається плюсом; з CSS відкритий
 # пункт повертає його в ×.
+# Три шари на випадок ворожого редактора (жива скарга artline.ua: «+» не
+# анімується). 1) Штатний трикутник ховаємо ТІЛЬКИ звідси, а не інлайном:
+# якщо магазин зріже <style>, маркер повернеться і сам перемикатиметься -
+# покупець бачить стан пункту. 2) Поворот дублюється селектором БЕЗ наших
+# класів - на випадок, коли санітайзер вирізає class, але лишає стилі.
+# 3) !important - проти власного CSS магазину, який скидає transform.
 _FAQ_CSS = (
     '.arfaq summary::-webkit-details-marker{display:none}'
     '.arfaq summary::marker{content:""}'
-    '.arfaq[open] .arfaq-i{transform:rotate(45deg)}'
+    '.arfaq summary{display:flex!important;align-items:center;list-style:none}'
+    '.arfaq .arfaq-i{float:none!important;margin-left:auto!important}'
+    '.arfaq[open] .arfaq-i{transform:rotate(45deg)!important}'
+    'section details[open]>summary>span:last-child{transform:rotate(45deg)!important}'
+    'section details:open>summary>span:last-child{transform:rotate(45deg)!important}'
 )
 
 
@@ -2703,14 +2713,18 @@ def _finalize_faq(soup, dark_edition: bool = False) -> None:
     Сервер механічно (ідемпотентно) гарантує: клас .arfaq, схований штатний
     маркер, кружок-перемикач +/− праворуч (CSS content, жодного JS - у
     редакторі artline живе лише інертний <style>, як у Подіум 3D); УСІ пункти
-    згорнуто - покупець розгортає лише те, що його питання. Якщо редактор зріже <style>,
-    акордеон далі працює - лишиться стандартний трикутник замість кружка.
+    згорнуто - покупець розгортає лише те, що його питання.
+
+    Деградація перевірена в Chromium: зі <style> - схований маркер і «+», що
+    повертається в «×»; БЕЗ <style> (редактор зрізав) - повертається штатний
+    трикутник, який перемикає сам браузер, тож стан пункту видно завжди;
+    зрізані class - поворот тримає запасний селектор без класів.
     """
     items = soup.find_all('details')
     if not items:
         return
     icon_style = (
-        'margin-left:auto;flex:0 0 28px;width:28px;height:28px;border-radius:999px;'
+        'float:right;margin-left:12px;flex:0 0 28px;width:28px;height:28px;border-radius:999px;'
         'display:inline-flex;align-items:center;justify-content:center;'
         'font-size:18px;font-weight:600;line-height:1;transition:transform .2s;'
         + ('background:rgba(255,255,255,.14);color:#FFFFFF'
@@ -2726,10 +2740,14 @@ def _finalize_faq(soup, dark_edition: bool = False) -> None:
         if summary is None:
             continue
         sstyle = summary.get('style') or ''
-        for prop, value in (('display', 'flex'), ('align-items', 'center'),
-                            ('cursor', 'pointer'), ('list-style', 'none')):
+        # Ані list-style:none, ані display:flex інлайном: обидва вбивають
+        # штатний трикутник, а він - ЄДИНИЙ індикатор стану, якщо магазин
+        # зріже <style>. Інлайном лишається display:list-item; красиву
+        # flex-розкладку і схований маркер дає таблиця стилів, коли виживає.
+        sstyle = re.sub(r'list-style[a-z-]*\s*:[^;]+;?', '', sstyle, flags=re.I)
+        for prop, value in (('display', 'list-item'), ('cursor', 'pointer')):
             sstyle = _set_css(sstyle, prop, value)
-        summary['style'] = sstyle
+        summary['style'] = sstyle.strip().strip(';')
         icon = summary.find('span', class_='arfaq-i')
         if icon is None:
             icon = soup.new_tag('span')
@@ -2738,6 +2756,11 @@ def _finalize_faq(soup, dark_edition: bool = False) -> None:
         icon['style'] = icon_style
         if not icon.get_text(strip=True):
             icon.string = '+'
+        # Номер пункту: gap працює лише у flex, а в деградованому режимі
+        # summary - list-item, тож «01Питання» злипалось. Відступ інлайном.
+        number = summary.find('span')
+        if number is not None and number is not icon:
+            number['style'] = _set_css(number.get('style') or '', 'margin-right', '10px')
     if not soup.find('style', string=lambda v: v and '.arfaq' in v):
         style_tag = soup.new_tag('style')
         style_tag.string = _FAQ_CSS
