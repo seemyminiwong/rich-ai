@@ -968,6 +968,23 @@ def test_showcase_faq_is_native_interactive_and_idempotent():
     assert '<details' in clean and '<summary' in clean and 'open' in clean
     assert '.arfaq' in clean
 
+    # ДЕГРАДАЦІЯ (скарга artline.ua: «+» не анімується). Індикатор стану мусить
+    # лишатись у трьох сценаріях, перевірених у Chromium:
+    summary_style = details[0].find('summary').get('style') or ''
+    # 1) якщо магазин зріже <style>, summary лишається list-item -> браузер сам
+    #    показує і перемикає штатний трикутник; інлайнових вбивць маркера немає
+    assert 'display:list-item' in summary_style
+    assert 'list-style' not in summary_style and 'display:flex' not in summary_style
+    assert 'float:right' in (icon.get('style') or ''), 'кружок праворуч і без flex'
+    # 2) якщо санітайзер зріже class - поворот тримає селектор без класів
+    css = soup.find('style').string
+    assert 'section details[open]>summary>span:last-child' in css
+    assert 'section details:open>summary>span:last-child' in css
+    # 3) власний CSS магазину не має перебивати поворот
+    assert css.count('rotate(45deg)!important') >= 2
+    # красива flex-розкладка живе в таблиці стилів, а не інлайном
+    assert 'display:flex!important' in css and 'margin-left:auto!important' in css
+
 
 def test_contained_photo_frame_takes_the_photo_own_backdrop(tmp_path):
     from unittest.mock import patch
