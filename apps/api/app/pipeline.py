@@ -761,6 +761,46 @@ def is_publishable_image_url(url: str) -> bool:
     """Куди дозволено перенаправити кадр: http(s) на публічний хост або шлях від кореня."""
     return image_url_rejection(url) == ''
 
+
+# --- HTML-сутності у текстових полях -------------------------------------
+# JSON-LD чужої CMS часто містить уже закодований текст: назва приїжджає як
+# «Монітор 27&quot; Qube Overlord». BeautifulSoup розкодовує сутності лише в
+# HTML-тексті, а всередині JSON-рядка вони лишаються як є - і потім видно
+# «&quot;» у картці проєкту, у промті моделі й у текстовій версії сторінки.
+
+_ENTITY_RE = re.compile(r'&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#\d{1,7}|#[xX][0-9a-fA-F]{1,6});')
+
+
+def decode_entities(value: str) -> str:
+    """Текстове поле товару без HTML-сутностей і без кутових дужок.
+
+    Розкодовуємо кілька разів: трапляється подвійне кодування («&amp;quot;»).
+    Кутові дужки в назві/категорії - завжди сміття, тож прибираємо їх: заразом
+    зникає будь-який шанс, що розкодований «&lt;script&gt;» поїде далі тегом.
+    """
+    text = str(value or '')
+    for _ in range(3):
+        if not _ENTITY_RE.search(text):
+            break
+        decoded = html_lib.unescape(text)
+        if decoded == text:
+            break
+        text = decoded
+    text = text.replace('<', ' ').replace('>', ' ').replace('\xa0', ' ')
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def clean_product_entities(product):
+    """Рекурсивно чистить усі текстові поля картки товару."""
+    if isinstance(product, dict):
+        return {key: clean_product_entities(value) for key, value in product.items()}
+    if isinstance(product, list):
+        return [clean_product_entities(value) for value in product]
+    if isinstance(product, str):
+        return decode_entities(product)
+    return product
+
+
 def _require_public_hop(request):
     """httpx request hook: every hop of every outbound fetch must stay public.
 
@@ -1583,6 +1623,17 @@ def style_image_prompt(style_prompt: str, section: str) -> str:
 
 
 def extract_product(jsonld, title: str, clean_text: str, url: str, model: str, page_html: str = ''):
+    """Картка товару з очищеними текстовими полями (див. _extract_product_raw).
+
+    Обгортка зумисне одна на всі шляхи виходу: JSON-LD, HTML-таблиця, AI і
+    аварійний розбір - кожен приносив «&quot;» у назві по-своєму.
+    """
+    product, input_tokens, output_tokens = _extract_product_raw(
+        jsonld, title, clean_text, url, model, page_html)
+    return clean_product_entities(product), input_tokens, output_tokens
+
+
+def _extract_product_raw(jsonld, title: str, clean_text: str, url: str, model: str, page_html: str = ''):
     """Build the product fact sheet from JSON-LD, the page markup and (if needed) AI.
 
     JSON-LD alone is rarely enough: most templates omit additionalProperty, so the

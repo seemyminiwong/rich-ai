@@ -1,4 +1,3 @@
-import html
 import json
 import logging
 import time
@@ -12,7 +11,7 @@ from app.models import Artifact, Asset, CriticReport, Event, Project, Status, St
 from app.limits import add_spend, add_user_spend
 from app.media import media_url
 from app.prompts import BASE_STYLE_VERSION, LICENSE_COMMENT
-from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, DARK_STYLE_NAMES, _clamp_surface_radii, _finalize_showcase_layout, ensure_feature_mounted, finalize_faq_html, inject_video_block, prompt_without_faq, strip_faq, style_has_faq, latinize_units, _fit_mobile_hero, _fit_photo_cards, _frame_contained_photos, _harmonize_radii, _never_crop_product_photos
+from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, DARK_STYLE_NAMES, _clamp_surface_radii, _finalize_showcase_layout, ensure_feature_mounted, finalize_faq_html, inject_video_block, prompt_without_faq, strip_faq, style_has_faq, latinize_units, decode_entities, _fit_mobile_hero, _fit_photo_cards, _frame_contained_photos, _harmonize_radii, _never_crop_product_photos
 from app.pipeline import (
     _image_urls_of,
     hero_environment,
@@ -288,8 +287,8 @@ def process_project(self, project_id, reuse_images=False):
             project.product_json = json.dumps(product, ensure_ascii=False)
             detected_name = str(product.get('name') or title or '').strip()
             if detected_name:
-                project.name = html.unescape(detected_name)[:200]
-            category = str(product.get('category') or product.get('product_type') or '').strip()
+                project.name = decode_entities(detected_name)[:200]
+            category = decode_entities(product.get('category') or product.get('product_type') or '')
             project.product_category = category[:120]
             project.input_tokens += input_tokens
             project.output_tokens += output_tokens
