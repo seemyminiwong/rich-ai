@@ -1507,7 +1507,8 @@ def test_image_link_swap_finds_and_repoints_every_frame():
     src, і в background:url(), і в srcset - тож пошук очима гарантовано щось
     пропускає. Збір і заміна мають бути детермінованими.
     """
-    from app.pipeline import image_urls_in_html, replace_image_urls, is_publishable_image_url
+    from unittest.mock import patch
+    from app.pipeline import image_urls_in_html, replace_image_urls, is_publishable_image_url, sanitize_html
 
     page = ('<section><div style="background:url(/media/p1/hero-desktop.webp?t=abc) center/cover">h</div>'
             '<img src="/media/p1/feature.webp?t=zz" srcset="/media/p1/feature.webp?t=zz 1x, /media/p1/feature@2x.webp 2x" alt="a">'
@@ -1537,8 +1538,23 @@ def test_image_link_swap_finds_and_repoints_every_frame():
     assert '/media/p1/feature@2x.webp' in out, 'кадру немає в мапі - лишається як був'
     # повторний прогін без мапи нічого не змінює
     assert replace_image_urls(out, {})[1] == 0
-    # куди дозволено вести: сайт магазину або шлях від кореня
-    assert is_publishable_image_url('https://artline.ua/upload/a.webp')
-    assert is_publishable_image_url('/upload/iblock/a.webp')
-    for bad in ('javascript:alert(1)', '//evil.example/a.jpg', '', 'data:image/png;base64,AA', 'not a url'):
+    # куди дозволено вести: сайт магазину, його CDN або шлях від кореня
+    from app.pipeline import image_url_rejection
+    for good in ('https://artline.ua/upload/a.webp',
+                 'https://img-artline.ams3.cdn.digitaloceanspaces.com/images/editor/editor_178_0.webp',
+                 '/upload/iblock/a.webp'):
+        assert is_publishable_image_url(good), f'{good}: {image_url_rejection(good)}'
+    for bad in ('javascript:alert(1)', '//evil.example/a.jpg', '', 'data:image/png;base64,AA',
+                'not a url', 'https://cdn.example.com/a b.webp', 'http://192.168.1.10/x.webp'):
         assert not is_publishable_image_url(bad), bad
+        assert image_url_rejection(bad), 'відмова мусить пояснювати причину'
+    # CDN магазину не має залежати від резолвера студії: якщо DNS не відповів,
+    # адресу приймаємо (ми її нікуди не викачуємо, лише друкуємо в HTML)
+    with patch('app.pipeline.socket.getaddrinfo', side_effect=OSError('dns down')):
+        assert is_publishable_image_url('https://img-artline.ams3.cdn.digitaloceanspaces.com/a.webp')
+        assert not is_publishable_image_url('javascript:alert(1)'), 'схема перевіряється без DNS'
+
+    # підмінена адреса мусить пережити санітайзер
+    swapped, _ = replace_image_urls(
+        page, {'/media/p1/feature.webp?t=zz': 'https://img-artline.ams3.cdn.digitaloceanspaces.com/a.webp'})
+    assert 'img-artline.ams3.cdn.digitaloceanspaces.com/a.webp' in sanitize_html(swapped)

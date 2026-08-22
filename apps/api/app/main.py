@@ -27,7 +27,7 @@ from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, h
 from app.tasks import bill_extra, image_rate, process_landing, process_project, text_rate, translate_project
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
-from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, image_urls_in_html, is_public_http_url, is_publishable_image_url, parse_page, plain_text_from_html, replace_image_urls, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
+from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, image_url_rejection, image_urls_in_html, is_public_http_url, is_publishable_image_url, parse_page, plain_text_from_html, replace_image_urls, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
 from app.landing import LANDING_PROMPT, LANDING_STYLE_NAME
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.version import __version__
@@ -2301,8 +2301,9 @@ def swap_artifact_images(artifact_id: str, payload: ImageSwapIn, db: Session = D
         value = (new or '').strip()
         if not value:
             continue
-        if not is_publishable_image_url(value):
-            raise HTTPException(400, f'Недопустиме посилання: {value[:120]}')
+        rejection = image_url_rejection(value)
+        if rejection:
+            raise HTTPException(400, f'Посилання «{value[:120]}» не підходить: {rejection}')
         mapping[strip_media_query(old)] = value
     if not mapping:
         raise HTTPException(400, 'Немає жодного нового посилання')

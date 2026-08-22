@@ -722,14 +722,44 @@ def replace_image_urls(markup: str, mapping: dict) -> tuple:
     return str(soup), swapped
 
 
-def is_publishable_image_url(url: str) -> bool:
-    """Куди дозволено перенаправити кадр: публічний http(s) або шлях від кореня."""
+def image_url_rejection(url: str) -> str:
+    """Порожньо, якщо адресу можна вставити в сторінку; інакше причина відмови.
+
+    Ця адреса нікуди не викачується - вона просто друкується в HTML, тож
+    єдина справжня загроза тут javascript:/data: замість картинки. Перевірка
+    на приватні діапазони лишається як захист від друкарської помилки
+    (localhost, 192.168.x), але якщо DNS у контейнері не відповів, адресу
+    приймаємо: CDN магазину не має залежати від резолвера студії.
+    """
     value = (url or '').strip()
-    if not value or len(value) > 1000:
-        return False
+    if not value:
+        return 'порожнє посилання'
+    if len(value) > 1000:
+        return 'посилання довше за 1000 символів'
+    if ' ' in value or '\n' in value:
+        return 'у посиланні є пробіл'
+    if value.startswith('//'):
+        return 'протокол-відносні посилання (//host) не приймаємо - вкажіть https://'
     if value.startswith('/'):
-        return not value.startswith('//') and ' ' not in value
-    return is_public_http_url(value)
+        return ''
+    parsed = urlparse(value)
+    if parsed.scheme not in ('http', 'https'):
+        return f'дозволені лише https:// , http:// або шлях від кореня (/upload/...), а не «{parsed.scheme or value[:20]}»'
+    if not parsed.hostname or '.' not in parsed.hostname:
+        return 'у посиланні немає домену'
+    try:
+        for info in socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == 'https' else 80)):
+            if not _address_is_public(ipaddress.ip_address(info[4][0])):
+                return f'домен {parsed.hostname} веде у внутрішню мережу'
+    except Exception:
+        # DNS не відповів - не привід блокувати чужий CDN.
+        logger.warning('Image URL host not resolvable, accepted anyway: %s', parsed.hostname)
+    return ''
+
+
+def is_publishable_image_url(url: str) -> bool:
+    """Куди дозволено перенаправити кадр: http(s) на публічний хост або шлях від кореня."""
+    return image_url_rejection(url) == ''
 
 def _require_public_hop(request):
     """httpx request hook: every hop of every outbound fetch must stay public.
