@@ -1139,6 +1139,49 @@ def test_reused_feature_survives_the_mobile_relayout():
     assert ensure_feature_mounted(ok, feature, hero, 'mobile') == ok
 
 
+def test_paid_feature_frame_lands_in_its_own_block_not_anywhere():
+    """Feature мусить стояти в блоці 04, а не «десь на сторінці».
+
+    Скарга власника зі скріншотом QUBE 27": модель узяла оплачений кадр, але
+    поклала його маленькою карткою в «трійку можливостей», а в блоці 04 -
+    тексті, який саме цю можливість і пояснює - лишила випадковий кадр
+    галереї. Стара перевірка «feature in html» вважала це нормою.
+    """
+    from bs4 import BeautifulSoup
+    from app.pipeline import ensure_feature_mounted
+
+    feature = '/media/p1/feature.webp?t=aaa'
+    hero = '/media/p1/hero-desktop.webp?t=bbb'
+
+    def page(block04_src, trio_src):
+        return ('<section>'
+                f'<!-- ARTLINE BLOCK 01: HERO START --><div style="background:url({hero})">'
+                f'<img src="{hero}" style="position:absolute" alt="hero"></div><!-- ARTLINE BLOCK 01: HERO END -->'
+                '<!-- ARTLINE BLOCK 04: DARK FEATURE SPLIT START --><div><h2>Ключова можливість</h2>'
+                f'<img src="{block04_src}" alt="кадр у блоці 04"></div><!-- ARTLINE BLOCK 04: DARK FEATURE SPLIT END -->'
+                '<!-- ARTLINE BLOCK 05: CAPABILITY TRIO START --><div><img src="https://cdn/g2.webp" alt="кадр 2">'
+                f'<img src="{trio_src}" alt="ергономіка"><img src="https://cdn/g3.webp" alt="кадр 3">'
+                '</div><!-- ARTLINE BLOCK 05: CAPABILITY TRIO END --></section>')
+
+    out = ensure_feature_mounted(page('https://cdn/g4.webp', feature), feature, hero, 'desktop')
+    images = BeautifulSoup(out, 'html.parser').find_all('img')
+    slot = images[1]
+    assert slot.get('src') == feature, 'оплачений кадр стоїть у своєму блоці'
+    assert slot.get('alt') == 'ергономіка', 'alt їде разом із кадром - він описує саме фото'
+    assert out.count(feature) == 1, 'кадр не задублювався'
+    assert 'https://cdn/g4.webp' in out, 'витиснутий кадр галереї не зник, а переїхав у трійку'
+    assert ensure_feature_mounted(out, feature, hero, 'desktop') == out, 'повторний прохід - no-op'
+
+    # Feature взагалі відсутній - монтуємо в блок 04, а не в перший-ліпший <img>
+    fresh = ensure_feature_mounted(page('https://cdn/g4.webp', 'https://cdn/g5.webp'), feature, hero, 'desktop')
+    assert BeautifulSoup(fresh, 'html.parser').find_all('img')[1].get('src') == feature
+    assert fresh.count(feature) == 1
+
+    # Уже на місці - жодних змін
+    settled = page(feature, 'https://cdn/g5.webp')
+    assert ensure_feature_mounted(settled, feature, hero, 'desktop') == settled
+
+
 def test_video_block_is_injected_only_with_a_youtube_link_and_survives_sanitize():
     from app.pipeline import youtube_video_id, inject_video_block, sanitize_html, _finalize_showcase_layout
 
