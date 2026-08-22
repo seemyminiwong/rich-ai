@@ -27,7 +27,7 @@ from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, h
 from app.tasks import bill_extra, image_rate, process_landing, process_project, text_rate, translate_project
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
-from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, image_url_rejection, image_urls_in_html, is_public_http_url, is_publishable_image_url, parse_page, plain_text_from_html, replace_image_urls, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
+from app.pipeline import _is_reasoning_model, decode_entities, fetch_bytes_capped, fetch_html, gallery_urls, image_url_rejection, image_urls_in_html, is_public_http_url, is_publishable_image_url, parse_page, plain_text_from_html, replace_image_urls, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
 from app.landing import LANDING_PROMPT, LANDING_STYLE_NAME
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.version import __version__
@@ -603,10 +603,10 @@ def project_dict(p, full=False, style_name=''):
         runs = json.loads(getattr(p, 'runs_json', None) or '[]')
     except Exception:
         runs = []
-    r = {'id': p.id, 'name': p.name, 'source_url': p.source_url, 'style_id': p.style_id, 'style_name': style_name, 'owner_id': p.owner_id, 'status': p.status.value, 'stage': p.stage, 'progress': p.progress,
+    r = {'id': p.id, 'name': decode_entities(p.name), 'source_url': p.source_url, 'style_id': p.style_id, 'style_name': style_name, 'owner_id': p.owner_id, 'status': p.status.value, 'stage': p.stage, 'progress': p.progress,
          'lifetime_cost': float(getattr(p, 'lifetime_cost', 0) or 0), 'run_index': getattr(p, 'run_index', 1) or 1, 'runs': runs,
          'languages': [x for x in p.languages.split(',') if x], 'variants': [x for x in p.variants.split(',') if x], 'text_model': p.text_model, 'image_model': p.image_model, 'image_quality': p.image_quality, 'faq': bool(getattr(p, 'faq_enabled', True)), 'image_map': _safe_map(getattr(p, 'image_map_json', '')), 'video_url': getattr(p, 'video_url', '') or '',
-         'custom_hero_url': p.custom_hero_url, 'custom_feature_url': p.custom_feature_url, 'product_category': p.product_category, 'sku': str(product.get('sku') or ''), 'cost_breakdown': breakdown, 'error': p.error, 'duration_seconds': p.duration_seconds, 'input_tokens': p.input_tokens, 'output_tokens': p.output_tokens,
+         'custom_hero_url': p.custom_hero_url, 'custom_feature_url': p.custom_feature_url, 'product_category': decode_entities(p.product_category), 'sku': str(product.get('sku') or ''), 'cost_breakdown': breakdown, 'error': p.error, 'duration_seconds': p.duration_seconds, 'input_tokens': p.input_tokens, 'output_tokens': p.output_tokens,
          'image_count': p.image_count, 'text_request_count': p.text_request_count, 'image_request_count': p.image_request_count, 'text_cost': p.text_cost, 'image_cost': p.image_cost, 'estimated_cost': p.estimated_cost,
          'created_at': p.created_at, 'started_at': p.started_at, 'finished_at': p.finished_at}
     if full:

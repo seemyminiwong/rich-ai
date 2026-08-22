@@ -1558,3 +1558,36 @@ def test_image_link_swap_finds_and_repoints_every_frame():
     swapped, _ = replace_image_urls(
         page, {'/media/p1/feature.webp?t=zz': 'https://img-artline.ams3.cdn.digitaloceanspaces.com/a.webp'})
     assert 'img-artline.ams3.cdn.digitaloceanspaces.com/a.webp' in sanitize_html(swapped)
+
+
+def test_html_entities_never_reach_product_text():
+    """«Монітор 27&quot; Qube» — сміття чужої CMS, а не назва товару.
+
+    JSON-LD магазину віддає вже закодований рядок; BeautifulSoup розкодовує
+    сутності тільки в HTML-тексті, тож усередині JSON вони жили далі й лізли
+    в картку проєкту, у промпт моделі й у текстову версію сторінки (скриншот
+    власника 2026-08-22).
+    """
+    from app.pipeline import decode_entities, clean_product_entities
+
+    assert decode_entities('Монітор 27&quot; Qube Overlord G27Q300H') == 'Монітор 27" Qube Overlord G27Q300H'
+    assert decode_entities('Ноутбук 15,6&#34; ASUS') == 'Ноутбук 15,6" ASUS'
+    assert decode_entities('Кабель USB&nbsp;3.0') == 'Кабель USB 3.0'
+    assert decode_entities('Rock &amp; Roll') == 'Rock & Roll'
+    # подвійне кодування трапляється у тих самих CMS
+    assert decode_entities('Двічі &amp;quot;закодовано&amp;quot;') == 'Двічі "закодовано"'
+    # звичайний текст лишається як є, апостроф і дюйми не чіпаємо
+    assert decode_entities("Комп'ютер ARTLINE 27''") == "Комп'ютер ARTLINE 27''"
+    assert decode_entities('Монітор 27" Qube') == 'Монітор 27" Qube'
+    assert decode_entities('') == ''
+    # кутовим дужкам у назві не місце - заразом закрито питання ін'єкції
+    assert '<' not in decode_entities('<script>alert(1)</script>')
+
+    product = clean_product_entities({
+        'name': 'Монітор 27&quot; Qube', 'category': 'Монітори &amp; ТВ',
+        'specs': [{'name': 'Діагональ', 'value': '27&quot;'}],
+        'features': ['Частота 180&nbsp;Гц'], 'image_count': 9,
+    })
+    assert product['name'] == 'Монітор 27" Qube' and product['category'] == 'Монітори & ТВ'
+    assert product['specs'][0]['value'] == '27"' and product['features'] == ['Частота 180 Гц']
+    assert product['image_count'] == 9, 'нетекстові поля лишаються недоторканими'
