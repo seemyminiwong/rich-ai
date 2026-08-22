@@ -127,6 +127,10 @@ class Project(Base):
     # YouTube-ролик товару. Порожньо = блока відео (ARTLINE BLOCK 09) немає;
     # блок вставляє сервер механічно, модель про нього не знає.
     video_url: Mapped[str] = mapped_column(Text, default='')
+    # Мапа «студійне посилання -> посилання на сервері магазину». Оператор
+    # заповнює її раз, а далі перевикористовує на кожному прогоні: після
+    # перегенерації адреси кадрів ті самі, тож заміна робиться одним кліком.
+    image_map_json: Mapped[str] = mapped_column(Text, default='{}')
     error: Mapped[str] = mapped_column(Text, default='')
     duration_seconds: Mapped[float] = mapped_column(Float, default=0)
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
