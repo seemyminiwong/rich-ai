@@ -27,7 +27,7 @@ from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, h
 from app.tasks import bill_extra, image_rate, process_landing, process_project, text_rate, translate_project
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
-from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, is_public_http_url, parse_page, plain_text_from_html, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
+from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, image_urls_in_html, is_public_http_url, is_publishable_image_url, parse_page, plain_text_from_html, replace_image_urls, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
 from app.landing import LANDING_PROMPT, LANDING_STYLE_NAME
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.version import __version__
@@ -581,6 +581,15 @@ def user_dict(x):
             'created_at': x.created_at, 'last_login_at': x.last_login_at, 'shots_enabled': bool(settings.shots_url)}
 def style_dict(x, usage=None): return {'id': x.id, 'name': x.name, 'description': x.description, 'has_faq': style_has_faq(x.prompt), 'prompt': x.prompt, 'hero_prompt': x.hero_prompt, 'feature_prompt': x.feature_prompt, 'negative_prompt': x.negative_prompt, 'score': json.loads(x.score_json or '{}'), 'palette': json.loads(getattr(x, 'palette_json', None) or '{}'), 'preview_html': x.preview_html, 'golden_html': getattr(x, 'golden_html', '') or '', 'has_golden': bool((getattr(x, 'golden_html', '') or '').strip()), 'is_default': x.is_default, 'usage_count': usage if usage is not None else None}
 def artifact_dict(x): return {'id': x.id, 'language': x.language, 'variant': x.variant, 'html': x.html, 'version': x.version, 'created_at': x.created_at, 'fallback_reason': getattr(x, 'fallback_reason', '') or '', 'run_index': getattr(x, 'run_index', 1) or 1}
+def _safe_map(raw: str) -> dict:
+    """Мапа підміни посилань: биті дані не мають ламати список проєктів."""
+    try:
+        value = json.loads(raw or '{}')
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+
 def project_dict(p, full=False, style_name=''):
     try:
         product = json.loads(p.product_json or '{}')
@@ -596,7 +605,7 @@ def project_dict(p, full=False, style_name=''):
         runs = []
     r = {'id': p.id, 'name': p.name, 'source_url': p.source_url, 'style_id': p.style_id, 'style_name': style_name, 'owner_id': p.owner_id, 'status': p.status.value, 'stage': p.stage, 'progress': p.progress,
          'lifetime_cost': float(getattr(p, 'lifetime_cost', 0) or 0), 'run_index': getattr(p, 'run_index', 1) or 1, 'runs': runs,
-         'languages': [x for x in p.languages.split(',') if x], 'variants': [x for x in p.variants.split(',') if x], 'text_model': p.text_model, 'image_model': p.image_model, 'image_quality': p.image_quality, 'faq': bool(getattr(p, 'faq_enabled', True)), 'video_url': getattr(p, 'video_url', '') or '',
+         'languages': [x for x in p.languages.split(',') if x], 'variants': [x for x in p.variants.split(',') if x], 'text_model': p.text_model, 'image_model': p.image_model, 'image_quality': p.image_quality, 'faq': bool(getattr(p, 'faq_enabled', True)), 'image_map': _safe_map(getattr(p, 'image_map_json', '')), 'video_url': getattr(p, 'video_url', '') or '',
          'custom_hero_url': p.custom_hero_url, 'custom_feature_url': p.custom_feature_url, 'product_category': p.product_category, 'sku': str(product.get('sku') or ''), 'cost_breakdown': breakdown, 'error': p.error, 'duration_seconds': p.duration_seconds, 'input_tokens': p.input_tokens, 'output_tokens': p.output_tokens,
          'image_count': p.image_count, 'text_request_count': p.text_request_count, 'image_request_count': p.image_request_count, 'text_cost': p.text_cost, 'image_cost': p.image_cost, 'estimated_cost': p.estimated_cost,
          'created_at': p.created_at, 'started_at': p.started_at, 'finished_at': p.finished_at}
@@ -2226,6 +2235,131 @@ def critic_fix(project_id: str, db: Session = Depends(get_db), user=Depends(requ
     db.add(Event(project_id=p.id, stage='critic', message=f'{user.email}: авто-виправлення за рецензією ({model}) - оновлено {updated} стор., ${cost:.4f} додано до вартості'))
     audit(db, user, 'critic.fix', 'project', p.id, {'model': model, 'cost': cost, 'updated': updated}); db.commit()
     return {'updated': updated, 'cost': cost}
+
+
+class ImageSwapIn(BaseModel):
+    replacements: dict[str, str] = Field(default_factory=dict)
+    scope: str = 'project'          # project = усі свіжі версії проєкту, artifact = лише ця
+    remember: bool = True           # зберегти мапу, щоб застосувати після наступного прогону
+
+
+def _artifact_image_rows(db: Session, artifact, project) -> list:
+    """Список кадрів сторінки з підписами з медіатеки і збереженою мапою."""
+    assets = db.scalars(select(Asset).where(Asset.project_id == artifact.project_id)).all()
+    by_url = {strip_media_query(a.url): a for a in assets if a.url}
+    saved = {}
+    try:
+        saved = json.loads(getattr(project, 'image_map_json', '') or '{}')
+    except Exception:
+        saved = {}
+    rows = []
+    for item in image_urls_in_html(artifact.html):
+        asset = by_url.get(item['canonical'])
+        rows.append({
+            'url': item['url'],
+            'canonical': item['canonical'],
+            'count': item['count'],
+            'places': item['places'],
+            'label': asset.label if asset else ('' if item['canonical'].startswith('/media/') else 'external'),
+            'width': getattr(asset, 'width', None) if asset else None,
+            'height': getattr(asset, 'height', None) if asset else None,
+            'local': item['canonical'].startswith('/media/'),
+            'mapped_to': saved.get(item['canonical'], ''),
+        })
+    return rows
+
+
+@app.get('/api/artifacts/{artifact_id}/images')
+def artifact_images(artifact_id: str, db: Session = Depends(get_db), user=Depends(current)):
+    """Усі посилання на зображення цієї сторінки - для ручної підміни на адреси магазину."""
+    artifact = db.get(Artifact, artifact_id)
+    if not artifact:
+        raise HTTPException(404, 'Результат не знайдено')
+    project = db.get(Project, artifact.project_id)
+    return {'artifact_id': artifact.id, 'language': artifact.language, 'variant': artifact.variant,
+            'version': artifact.version, 'images': _artifact_image_rows(db, artifact, project)}
+
+
+@app.put('/api/artifacts/{artifact_id}/images')
+def swap_artifact_images(artifact_id: str, payload: ImageSwapIn, db: Session = Depends(get_db),
+                         user=Depends(require_perm('project.edit_html'))):
+    """Підміняє адреси кадрів і зберігає НОВІ версії сторінок.
+
+    За замовчуванням scope='project': один кадр живе і в десктопі, і в мобайлі,
+    і в кожній мові - оператор вписує нову адресу один раз, а не шість.
+    Мапа лишається в проєкті, тож після наступного прогону її видно у формі
+    і застосувати можна одним кліком.
+    """
+    source = db.get(Artifact, artifact_id)
+    if not source:
+        raise HTTPException(404, 'Результат не знайдено')
+    project = db.get(Project, source.project_id)
+    require_project_edit(project, user)
+
+    mapping = {}
+    for old, new in (payload.replacements or {}).items():
+        value = (new or '').strip()
+        if not value:
+            continue
+        if not is_publishable_image_url(value):
+            raise HTTPException(400, f'Недопустиме посилання: {value[:120]}')
+        mapping[strip_media_query(old)] = value
+    if not mapping:
+        raise HTTPException(400, 'Немає жодного нового посилання')
+
+    targets = [source]
+    if payload.scope == 'project':
+        rows = db.scalars(select(Artifact).where(Artifact.project_id == source.project_id)
+                          .order_by(Artifact.version)).all()
+        latest = {}
+        for row in rows:
+            latest[(row.language, row.variant)] = row
+        targets = list(latest.values())
+
+    created, swapped_total = [], 0
+    try:
+        db.scalar(select(Project.id).where(Project.id == source.project_id).with_for_update())
+        for target in targets:
+            updated, swapped = replace_image_urls(target.html, mapping)
+            if not swapped:
+                continue
+            clean = sanitize_html(updated)
+            if 'Правовласник' not in clean:
+                clean += LICENSE_COMMENT
+            latest_version = db.scalar(select(func.max(Artifact.version)).where(
+                Artifact.project_id == target.project_id, Artifact.language == target.language,
+                Artifact.variant == target.variant)) or 0
+            fresh = Artifact(project_id=target.project_id, language=target.language, variant=target.variant,
+                             html=clean, version=latest_version + 1, created_by=user.id,
+                             run_index=getattr(target, 'run_index', 1) or 1)
+            db.add(fresh)
+            db.flush()
+            created.append({'id': fresh.id, 'language': fresh.language, 'variant': fresh.variant,
+                            'version': fresh.version, 'swapped': swapped})
+            swapped_total += swapped
+        if payload.remember and project is not None:
+            stored = {}
+            try:
+                stored = json.loads(getattr(project, 'image_map_json', '') or '{}')
+            except Exception:
+                stored = {}
+            stored.update(mapping)
+            project.image_map_json = json.dumps(stored, ensure_ascii=False)
+        if not created:
+            db.rollback()
+            raise HTTPException(409, 'Жодного збігу: ці посилання на сторінках не знайдені')
+        log_names = ', '.join(f"{x['language']}/{x['variant']} v{x['version']}" for x in created)
+        db.add(Event(project_id=source.project_id, stage='content', level='info',
+                     message=f'Посилання на зображення підмінено ({swapped_total}) — нові версії: {log_names}'))
+        audit(db, user, 'artifact.images', 'artifact', source.id,
+              {'replaced': len(mapping), 'artifacts': len(created)})
+        db.commit()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(500, f'Не вдалося підмінити посилання: {exc}') from exc
+    return {'artifacts': created, 'swapped': swapped_total, 'saved_map': bool(payload.remember)}
 
 
 @app.get('/api/artifacts/{artifact_id}/text')

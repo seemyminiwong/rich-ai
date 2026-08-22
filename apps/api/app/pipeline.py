@@ -624,6 +624,113 @@ def plain_text_from_html(markup: str, product_name: str = '', bullets: bool = Tr
     return text
 
 
+
+# --- Обмін посилань на зображення --------------------------------------
+# Поки викладення на сайт не автоматизоване, оператор вручну заливає кадри на
+# сервер магазину і шукає, де саме в HTML лежить кожне посилання. Це швидко
+# перетворюється на пошук по рядку: одне фото зустрічається і в src, і в
+# background:url(), і в srcset, і в двох мовах, і в двох варіантах. Тут -
+# машинне читання і машинна заміна, щоб оператор бачив список і вписував нову
+# адресу лише раз на кадр.
+
+_CSS_URL_RE = re.compile(r'url\(\s*([\'"]?)([^)\'"]+)\1\s*\)', re.I)
+
+
+def _canonical_media(url: str) -> str:
+    """Ключ порівняння: без підпису ?t= і без пробілів."""
+    return (url or '').strip().split('?', 1)[0]
+
+
+def image_urls_in_html(markup: str) -> list:
+    """Усі посилання на зображення сторінки в порядку появи.
+
+    Повертає [{'url', 'canonical', 'count', 'places'}]: places - де саме
+    трапилось ('img', 'background', 'srcset'), count - скільки разів усього.
+    """
+    if not markup:
+        return []
+    soup = BeautifulSoup(markup, 'html.parser')
+    found: dict = {}
+
+    def add(raw: str, place: str):
+        value = (raw or '').strip()
+        if not value or value.startswith('data:'):
+            return
+        key = _canonical_media(value)
+        if not key:
+            return
+        entry = found.setdefault(key, {'url': value, 'canonical': key, 'count': 0, 'places': []})
+        entry['count'] += 1
+        if place not in entry['places']:
+            entry['places'].append(place)
+
+    for img in soup.find_all('img'):
+        add(img.get('src') or '', 'img')
+        for piece in (img.get('srcset') or '').split(','):
+            add(piece.strip().split(' ')[0], 'srcset')
+    for node in soup.find_all(style=True):
+        for _, value in _CSS_URL_RE.findall(node.get('style') or ''):
+            add(value, 'background')
+    for tag in soup.find_all('style'):
+        for _, value in _CSS_URL_RE.findall(tag.string or ''):
+            add(value, 'background')
+    return list(found.values())
+
+
+def replace_image_urls(markup: str, mapping: dict) -> tuple:
+    """Замінює посилання на зображення за мапою {старе: нове}.
+
+    Порівняння за канонічним шляхом, тож підписані /media/...?t=... теж
+    ловляться. Повертає (новий_html, скільки_замін). Нічого, крім адрес
+    зображень, не чіпає - розмітка й стилі лишаються байт у байт.
+    """
+    if not markup or not mapping:
+        return markup, 0
+    table = {_canonical_media(k): v.strip() for k, v in mapping.items() if (v or '').strip()}
+    if not table:
+        return markup, 0
+    soup = BeautifulSoup(markup, 'html.parser')
+    swapped = 0
+
+    def swap(value: str):
+        nonlocal swapped
+        target = table.get(_canonical_media(value))
+        if target and target != value:
+            swapped += 1
+            return target
+        return value
+
+    for img in soup.find_all('img'):
+        if img.get('src'):
+            img['src'] = swap(img['src'])
+        if img.get('srcset'):
+            pieces = []
+            for piece in img['srcset'].split(','):
+                piece = piece.strip()
+                if not piece:
+                    continue
+                url, _, rest = piece.partition(' ')
+                pieces.append((swap(url) + (' ' + rest if rest else '')).strip())
+            img['srcset'] = ', '.join(pieces)
+    for node in soup.find_all(style=True):
+        node['style'] = _CSS_URL_RE.sub(
+            lambda m: f'url({m.group(1)}{swap(m.group(2))}{m.group(1)})', node.get('style') or '')
+    for tag in soup.find_all('style'):
+        if tag.string:
+            tag.string = _CSS_URL_RE.sub(
+                lambda m: f'url({m.group(1)}{swap(m.group(2))}{m.group(1)})', tag.string)
+    return str(soup), swapped
+
+
+def is_publishable_image_url(url: str) -> bool:
+    """Куди дозволено перенаправити кадр: публічний http(s) або шлях від кореня."""
+    value = (url or '').strip()
+    if not value or len(value) > 1000:
+        return False
+    if value.startswith('/'):
+        return not value.startswith('//') and ' ' not in value
+    return is_public_http_url(value)
+
 def _require_public_hop(request):
     """httpx request hook: every hop of every outbound fetch must stay public.
 

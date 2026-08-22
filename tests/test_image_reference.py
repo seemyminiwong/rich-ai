@@ -1497,3 +1497,48 @@ def test_plain_text_edition_of_a_rich_page():
     assert plain_text_from_html('') == ''
     assert plain_text_from_html(page) == plain_text_from_html(page), 'детермінованість'
     assert '- 2× DisplayPort 1.4' in plain_text_from_html(page, bullets=False)
+
+
+def test_image_link_swap_finds_and_repoints_every_frame():
+    """Ручне перенесення кадрів на сервер магазину: знайти і підмінити машинно.
+
+    Запит власника: поки викладення не автоматизоване, оператор заливає кадри
+    на сервер сайту руками і шукає їхні адреси по HTML. Одне фото сидить і в
+    src, і в background:url(), і в srcset - тож пошук очима гарантовано щось
+    пропускає. Збір і заміна мають бути детермінованими.
+    """
+    from app.pipeline import image_urls_in_html, replace_image_urls, is_publishable_image_url
+
+    page = ('<section><div style="background:url(/media/p1/hero-desktop.webp?t=abc) center/cover">h</div>'
+            '<img src="/media/p1/feature.webp?t=zz" srcset="/media/p1/feature.webp?t=zz 1x, /media/p1/feature@2x.webp 2x" alt="a">'
+            '<img src="https://cdn.shop/frame1.jpg" alt="b">'
+            '<div style="background-image:url(\'/media/p1/hero-desktop.webp?t=abc\')">повтор</div>'
+            '<style>.hero{background:url("/media/p1/feature.webp")}</style>'
+            '<img src="data:image/png;base64,AAA" alt="inline"></section>')
+
+    rows = {x['canonical']: x for x in image_urls_in_html(page)}
+    # підпис у ключі - канонічний шлях, тож підписані /media знаходяться разом
+    assert rows['/media/p1/hero-desktop.webp']['count'] == 2
+    assert rows['/media/p1/hero-desktop.webp']['places'] == ['background']
+    assert rows['/media/p1/feature.webp']['count'] == 3
+    assert set(rows['/media/p1/feature.webp']['places']) == {'img', 'srcset', 'background'}
+    assert 'https://cdn.shop/frame1.jpg' in rows
+    assert not any(k.startswith('data:') for k in rows), 'вбудовані data:URI не є посиланнями'
+
+    out, swapped = replace_image_urls(page, {
+        '/media/p1/hero-desktop.webp': 'https://artline.ua/upload/iblock/hero.webp',
+        '/media/p1/feature.webp?t=zz': '/upload/iblock/feature.webp',
+    })
+    assert swapped == 5, 'два фони + src + srcset + правило в <style>'
+    assert '/media/p1/hero-desktop.webp' not in out and '/media/p1/feature.webp?t=' not in out
+    assert 'https://artline.ua/upload/iblock/hero.webp' in out and '/upload/iblock/feature.webp' in out
+    # чужого не чіпаємо
+    assert 'https://cdn.shop/frame1.jpg' in out and 'data:image/png;base64,AAA' in out
+    assert '/media/p1/feature@2x.webp' in out, 'кадру немає в мапі - лишається як був'
+    # повторний прогін без мапи нічого не змінює
+    assert replace_image_urls(out, {})[1] == 0
+    # куди дозволено вести: сайт магазину або шлях від кореня
+    assert is_publishable_image_url('https://artline.ua/upload/a.webp')
+    assert is_publishable_image_url('/upload/iblock/a.webp')
+    for bad in ('javascript:alert(1)', '//evil.example/a.jpg', '', 'data:image/png;base64,AA', 'not a url'):
+        assert not is_publishable_image_url(bad), bad
