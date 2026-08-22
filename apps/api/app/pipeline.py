@@ -3379,43 +3379,74 @@ def _restore_image_urls(html: str, hero: str, feature: str, variant: str, img_he
     return ensure_feature_mounted(html, feature, hero, variant)
 
 
-def ensure_feature_mounted(html: str, feature: str, hero: str = '', variant: str = '') -> str:
-    """Оплачений Feature мусить бути на сторінці - інакше гроші викинуто.
-
-    Генерація зображень - найдорожча частина проєкту, а модель регулярно
-    будує сторінку лише з кадрів галереї і жодного разу не згадує feature-URL.
-    Куди монтуємо: перший <img> блока 04 (DARK FEATURE SPLIT - його законне
-    місце за контрактом Showcase); без блокових коментарів - перший не-Hero
-    <img> документа. Викликається і з generate_html, і з мобільного
-    перекомпонування: relayout успадковує десктопну верстку, тож якщо кадр
-    загубився там - він загубиться і тут.
-    """
-    if not feature or feature in (html or ''):
-        return html
-    soup = BeautifulSoup(html or '', 'html.parser')
-    hero_path = (hero or '').split('?', 1)[0]
-    target = None
-    for comment in soup.find_all(string=lambda v: isinstance(v, Comment) and 'ARTLINE BLOCK 04' in str(v) and 'START' in str(v)):
+def _block_photo_slot(soup, block: str, hero_path: str):
+    """Перший придатний <img> названого блока (фон-хіро й абсолют не рахуються)."""
+    for comment in soup.find_all(string=lambda v: isinstance(v, Comment) and block in str(v) and 'START' in str(v)):
         node = comment
         while node is not None:
             node = node.next_element
-            if isinstance(node, Comment) and 'ARTLINE BLOCK 04' in str(node):
-                node = None
-                break
+            if isinstance(node, Comment) and block in str(node):
+                return None
             if getattr(node, 'name', None) == 'img':
-                break
-        if node is not None:
-            target = node
-            break
-    if target is None:
-        for img in soup.find_all('img'):
-            src = img.get('src') or ''
-            if not src or (hero_path and hero_path in src):
-                continue
-            if 'position:absolute' in (img.get('style') or '').replace(' ', '').lower():
-                continue
-            target = img
-            break
+                src = node.get('src') or ''
+                if 'position:absolute' in (node.get('style') or '').replace(' ', '').lower():
+                    continue
+                if hero_path and hero_path in src:
+                    continue
+                return node
+    return None
+
+
+def ensure_feature_mounted(html: str, feature: str, hero: str = '', variant: str = '') -> str:
+    """Оплачений Feature мусить стояти В СВОЄМУ блоці, а не абиде на сторінці.
+
+    Генерація зображень - найдорожча частина проєкту, а модель регулярно
+    будує сторінку лише з кадрів галереї. Гірше: буває, що feature-кадр вона
+    все ж бере, але кладе його маленькою карткою в «трійку можливостей», а в
+    блоці 04 (DARK FEATURE SPLIT), текст якого саме цю можливість і пояснює,
+    лишає випадковий кадр галереї - скарга власника зі скріншотом QUBE 27".
+    Тому перевіряємо не «чи є URL на сторінці», а «чи стоїть він у блоці 04»:
+    якщо ні - міняємо кадри місцями (разом з alt), щоб жоден кадр не зник і
+    не задублювався. Без блокових коментарів лишається старий шлях: перший
+    не-Hero <img>. Викликається і з generate_html, і з мобільного
+    перекомпонування.
+    """
+    if not feature:
+        return html
+    soup = BeautifulSoup(html or '', 'html.parser')
+    hero_path = (hero or '').split('?', 1)[0]
+    feature_path = feature.split('?', 1)[0]
+    slot = _block_photo_slot(soup, 'ARTLINE BLOCK 04', hero_path)
+
+    if slot is not None:
+        if feature_path and feature_path in (slot.get('src') or ''):
+            return html  # уже на місці - прохід ідемпотентний
+        stray = next((img for img in soup.find_all('img')
+                      if feature_path and feature_path in (img.get('src') or '') and img is not slot), None)
+        displaced_src, displaced_alt = slot.get('src') or '', slot.get('alt') or ''
+        slot['src'] = feature
+        if stray is not None:
+            # Обмін: кадр галереї переїжджає туди, звідки прийшов feature.
+            slot['alt'] = stray.get('alt') or displaced_alt
+            stray['src'] = displaced_src
+            stray['alt'] = displaced_alt
+            for node in (slot, stray):
+                if node.get('srcset'):
+                    del node['srcset']
+            logger.info('Feature frame moved into BLOCK 04 (%s)', variant)
+        return str(soup)
+
+    if feature in (html or ''):
+        return html
+    target = None
+    for img in soup.find_all('img'):
+        src = img.get('src') or ''
+        if not src or (hero_path and hero_path in src):
+            continue
+        if 'position:absolute' in (img.get('style') or '').replace(' ', '').lower():
+            continue
+        target = img
+        break
     if target is None:
         logger.warning('Feature URL missing from generated HTML (%s) and no <img> to repair', variant)
         return html
