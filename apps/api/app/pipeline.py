@@ -2429,16 +2429,24 @@ def _finalize_showcase_layout(
                 # довелось би зрізати більш ніж на 15% - а це реальне фото
                 # товару (пакшот, банер), у якого не можна відрізати підставку.
                 fit = 'contain'
+            # Картка ТЯГНЕТЬСЯ під висоту ряду (height:100%), а розрахована
+            # висота стає підлогою (min-height). Жорсткий height робив фото-картку
+            # нижчою за текстову - низи ряду розʼїжджались (скарга «проблема з
+            # розміром» на живій сторінці). Перевірено в Chromium: у ґріді низи
+            # збігаються завжди, а якщо чужий редактор зріже display:grid,
+            # min-height на КАРТЦІ І НА <img> лишає кадр видимим (без нього
+            # висота схлопується в нуль).
             card_style = card.get('style') or ''
-            card_style = _set_css(card_style, 'height', f'{height}px')
+            card_style = _set_css(card_style, 'height', '100%')
+            card_style = _set_css(card_style, 'min-height', f'{height}px')
             card_style = _set_css(card_style, 'overflow', 'hidden')
             card_style = _set_css(card_style, 'box-sizing', 'border-box')
             if card_style != (card.get('style') or ''):
                 card['style'] = card_style
             istyle = img.get('style') or ''
             keep = [d for d in istyle.split(';') if d.strip() and not re.match(
-                r'\s*(width|height|max-width|max-height|aspect-ratio|object-fit|object-position|display)\s*:', d, re.I)]
-            keep += ['display:block', 'width:100%', 'height:100%',
+                r'\s*(width|height|min-height|max-width|max-height|aspect-ratio|object-fit|object-position|display)\s*:', d, re.I)]
+            keep += ['display:block', 'width:100%', 'height:100%', f'min-height:{height}px',
                      f'object-fit:{fit}', 'object-position:center']
             new_istyle = ';'.join(x.strip() for x in keep)
             if new_istyle != istyle:

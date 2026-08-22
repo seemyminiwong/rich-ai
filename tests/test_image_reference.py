@@ -1064,6 +1064,7 @@ def test_generated_feature_is_always_mounted_into_the_page():
 
 
 def test_environment_frames_cover_and_renders_stay_contained(tmp_path):
+    import re
     from unittest.mock import patch
     from PIL import Image
     import random
@@ -1237,12 +1238,14 @@ def test_gallery_frames_on_a_cdn_are_probed_too(tmp_path):
 def test_split_photo_cards_fit_the_frame_not_a_fixed_slot(tmp_path):
     """Висота слота йде ЗА кадром, а фото товару не ріжеться глибоко.
 
-    Історія двох скарг: спершу модель забувала height і квадратний кадр
-    роздував картку до ~1000px; фіксовані 420px це полагодили, але зрізали
-    широкий пакшот-банер («плохо стало фото» у блоці продуктивності). Тепер
-    висота рахується з власних пропорцій кадру в межах 300-460px, а глибше
-    ніж на 15% реальне фото товару не кадрується ніколи.
+    Історія трьох скарг: модель забувала height і квадратний кадр роздував
+    картку до ~1000px; фіксовані 420px це полагодили, але зрізали широкий
+    пакшот-банер; а рівний слот був НИЖЧИЙ за текстову картку - низи ряду
+    розʼїжджались. Тепер: min-height рахується з пропорцій кадру (300-460px
+    desktop, 220-340 mobile), сама картка тягнеться під ряд (height:100%),
+    а реальне фото товару не кадрується глибше ніж на 15%.
     """
+    import re
     from unittest.mock import patch
     from PIL import Image
     import random
@@ -1277,12 +1280,16 @@ def test_split_photo_cards_fit_the_frame_not_a_fixed_slot(tmp_path):
         P._surface_color_cache.clear()
         P._surface_size_cache.clear()
         out = P._finalize_showcase_layout(page('/media/p1/scene.webp?t=a', '/media/p1/render.webp?t=b'), 'desktop')
-        # 16:9-сцена лягає в слот рівно (599/1.78 ≈ 337) і заповнює його
-        assert 'height:337px' in out and 'object-fit:cover' in out
-        # квадратний рендер вписується цілком, рамка фарбується в його тло
-        assert 'height:460px' in out and 'object-fit:contain' in out
+        # висота під кадр стає ПІДЛОГОЮ, а картка тягнеться під ряд -
+        # інакше фото-картка нижча за текстову і низи ряду розʼїжджаються
+        assert 'min-height:337px' in out and 'height:100%' in out and 'object-fit:cover' in out
+        assert 'min-height:460px' in out and 'object-fit:contain' in out
         assert 'background:#FFFFFF' in out
-        assert 'height:420px' not in out, 'жорсткий слот більше не нав\'язується'
+        assert 'height:420px' not in out, 'жорсткий слот більше не навʼязується'
+        # <img> теж має свою підлогу: без неї кадр схлопується в нуль, коли
+        # чужий редактор зрізав display:grid (перевірено в Chromium)
+        img_styles = re.findall(r'<img[^>]+style="([^"]+)"', out)
+        assert any('min-height:337px' in x and 'height:100%' in x for x in img_styles)
         assert P._finalize_showcase_layout(out, 'desktop') == out, 'повторний прохід - no-op'
         assert ';;' not in out, '_set_css не копить порожні декларації'
 
@@ -1293,12 +1300,12 @@ def test_split_photo_cards_fit_the_frame_not_a_fixed_slot(tmp_path):
 
         # мобільний слот масштабується так само (460/1.78 ≈ 259)
         mob = P._finalize_showcase_layout(page('/media/p1/scene.webp?t=a', '/media/p1/render.webp?t=b'), 'mobile')
-        assert 'height:259px' in mob and 'height:340px' in mob
+        assert 'min-height:259px' in mob and 'min-height:340px' in mob
 
         # кадр без проби (чужий CDN, офлайн) лишається на контрактній висоті
         blind = P._finalize_showcase_layout(
             page('https://cdn.example.com/a.jpg', 'https://cdn.example.com/b.jpg'), 'desktop')
-        assert blind.count('height:420px') == 2 and 'object-fit:contain' in blind
+        assert blind.count('min-height:420px') >= 2 and 'object-fit:contain' in blind
 
 
 def test_bento_style_contract_and_faq_toggle():
