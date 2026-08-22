@@ -27,7 +27,7 @@ from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, h
 from app.tasks import bill_extra, image_rate, process_landing, process_project, text_rate, translate_project
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
-from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, is_public_http_url, parse_page, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
+from app.pipeline import _is_reasoning_model, fetch_bytes_capped, fetch_html, gallery_urls, is_public_http_url, parse_page, plain_text_from_html, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
 from app.landing import LANDING_PROMPT, LANDING_STYLE_NAME
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.version import __version__
@@ -1988,6 +1988,9 @@ def project_archive(project_id: str, db: Session = Depends(get_db), user=Depends
             filename = f'rich-{language}-{variant}.html'
             archive.writestr(f'html/{filename}', document)
             archive.writestr(f'fragments/{filename}', markup)
+            # Текстова редакція для майданчиків без HTML (Allegro тощо).
+            archive.writestr(f'text/rich-{language}-{variant}.txt',
+                             plain_text_from_html(artifact.html, product_name=p.name))
             exported.append({'language': language, 'variant': variant, 'version': artifact.version, 'file': f'html/{filename}'})
 
         manifest = {
@@ -2009,6 +2012,7 @@ Style: {style.name if style else 'Unknown'}
 
 html/ contains standalone latest HTML files.
 fragments/ contains section fragments for insertion into the ARTLINE editor.
+text/ contains the same copy as plain text, for marketplaces that reject HTML (Allegro and similar).
 images/ contains project images and generated assets.
 manifest.json contains generation metadata.
 ''')
@@ -2222,6 +2226,26 @@ def critic_fix(project_id: str, db: Session = Depends(get_db), user=Depends(requ
     db.add(Event(project_id=p.id, stage='critic', message=f'{user.email}: авто-виправлення за рецензією ({model}) - оновлено {updated} стор., ${cost:.4f} додано до вартості'))
     audit(db, user, 'critic.fix', 'project', p.id, {'model': model, 'cost': cost, 'updated': updated}); db.commit()
     return {'updated': updated, 'cost': cost}
+
+
+@app.get('/api/artifacts/{artifact_id}/text')
+def artifact_plain_text(artifact_id: str, bullets: bool = True, db: Session = Depends(get_db), user=Depends(current)):
+    """Текстова редакція готової сторінки - для Allegro та інших майданчиків без HTML.
+
+    Рахується з уже збереженого артефакту детерміновано: ані моделі, ані витрат,
+    ані нової версії. Тому доступна для БУДЬ-ЯКОЇ генерації, включно зі старими,
+    і завжди збігається з тим текстом, який уже схвалено в рич-сторінці.
+    """
+    artifact = db.get(Artifact, artifact_id)
+    if not artifact:
+        raise HTTPException(404, 'Результат не знайдено')
+    project = db.get(Project, artifact.project_id)
+    text = plain_text_from_html(artifact.html, product_name=(project.name if project else ''), bullets=bullets)
+    return {
+        'artifact_id': artifact.id, 'language': artifact.language, 'variant': artifact.variant,
+        'version': artifact.version, 'text': text, 'chars': len(text),
+        'words': len([w for w in re.split(r'\s+', text) if w]),
+    }
 
 
 @app.get('/api/artifacts/{artifact_id}/blocks.zip')

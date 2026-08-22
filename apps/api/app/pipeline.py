@@ -449,6 +449,181 @@ def latinize_units(markup: str, language: str) -> str:
         logger.warning('Cyrillic residue on %s page after latinize: %s', lang, sorted(set(residue))[:8])
     return out
 
+
+# --- Plain-text edition of a rich page ------------------------------------
+# Маркетплейси (Allegro, частина прайс-майданчиків) не приймають HTML: там
+# лише текст. Витягувати його ПЕРЕГЕНЕРАЦІЄЮ було б і дорого, і нечесно -
+# текст мусить збігатися з тим, що вже схвалено. Тому це чиста детермінована
+# похідна від збереженого артефакту: жодної моделі, жодної мережі. Працює і
+# для старих проєктів, бо рахується на льоту з їхнього HTML.
+
+_TEXT_SKIP_TAGS = ('style', 'script', 'iframe', 'img', 'svg', 'noscript')
+_TEXT_BLOCK_TAGS = {'section', 'div', 'article', 'ul', 'ol', 'li', 'p', 'h2', 'h3',
+                    'details', 'summary', 'figure', 'figcaption', 'table', 'tr', 'td', 'th',
+                    'blockquote', 'header', 'footer', 'main', 'aside'}
+
+
+def _text_of(node) -> str:
+    return re.sub(r'\s+', ' ', node.get_text(' ', strip=True)).strip()
+
+
+def _is_eyebrow(text: str) -> bool:
+    """Декоративний надзаголовок («ЕКРАННІ ХАРАКТЕРИСТИКИ», «QUBE · Монітор»)."""
+    if len(text) > 46 or text.endswith(('.', '!', '?')):
+        return False
+    letters = [c for c in text if c.isalpha()]
+    if len(letters) < 4:
+        return False
+    upper = sum(1 for c in letters if c.isupper())
+    words = len(text.split())
+    if ' · ' in text:
+        return True
+    if upper / len(letters) < 0.7:
+        return False
+    # Два слова капсом - завжди лейбл. Одне слово - лише коли це слово, а не
+    # значення: «ARTLINE» так, «IP65», «USB» чи «2K» - ні.
+    return words >= 2 or (len(letters) >= 5 and not any(c.isdigit() for c in text))
+
+
+def _text_nodes(node, out: list):
+    """Рекурсивно перетворює DOM на абзаци (тип, текст).
+
+    Типи: 'h' заголовок, 'p' абзац, 'li' пункт, 'card' злита картка,
+    'chips' ряд коротких плашок, 'q'/'a' питання і відповідь FAQ.
+    """
+    from bs4.element import Tag
+
+    if not isinstance(node, Tag):
+        return
+    if node.name in _TEXT_SKIP_TAGS or SHOWCASE_VIDEO_CLASS in (node.get('class') or []):
+        return
+
+    if node.name == 'details':
+        summary = node.find('summary')
+        question = re.sub(r'\s*\+\s*$', '', _text_of(summary)).strip() if summary else ''
+        answer = ' '.join(_text_of(c) for c in node.children
+                          if isinstance(c, Tag) and c is not summary and c.name not in _TEXT_SKIP_TAGS).strip()
+        if question:
+            out.append(('q', question))
+        if answer:
+            out.append(('a', answer))
+        return
+
+    if node.name in ('h2', 'h3'):
+        text = _text_of(node)
+        if text:
+            out.append(('h', text))
+        return
+    if node.name == 'li':
+        text = _text_of(node)
+        if text:
+            out.append(('li', text))
+        return
+
+    children = [c for c in node.children if isinstance(c, Tag) and c.name not in _TEXT_SKIP_TAGS]
+    blocks = [c for c in children if c.name in _TEXT_BLOCK_TAGS or c.name == 'details']
+
+    if not blocks:
+        text = _text_of(node)
+        if text:
+            if node.name in ('span', 'small', 'b', 'strong', 'em', 'div') and _is_eyebrow(text):
+                return  # декоративний надзаголовок секції
+            parts = [_text_of(c) for c in children if _text_of(c)]
+            # Ряд плашок сумісності: коротка кожна, разом - один рядок через « · ».
+            if len(parts) >= 3 and all(len(x) <= 28 for x in parts) and sum(len(x) for x in parts) >= len(text) - 6:
+                out.append(('chips', ' · '.join(parts)))
+            else:
+                out.append(('p', text))
+        return
+
+    inline = re.sub(r'\s+', ' ', ' '.join(
+        _text_of(c) if isinstance(c, Tag) else str(c)
+        for c in node.children
+        if not isinstance(c, Tag) or c.name not in _TEXT_BLOCK_TAGS)).strip()
+
+    # Картка «число + підпис + короткий рядок» - це ОДИН факт, а не три абзаци.
+    # Секційний h2 у злиття не йде ніколи: заголовок розділу лишається окремо,
+    # інакше абзац із FAQ-довжиною приклеївся б до нього.
+    leaves = [c for c in blocks if not any(
+        isinstance(g, Tag) and g.name in _TEXT_BLOCK_TAGS for g in c.children)]
+    if (len(blocks) == len(leaves) and 2 <= len(blocks) <= 4
+            and node.name not in ('ul', 'ol')
+            and not any(c.name in ('ul', 'ol', 'li', 'details', 'h2') for c in blocks)):
+        parts = ([inline] if inline and not _is_eyebrow(inline) else []) + [
+            _text_of(c) for c in blocks if _text_of(c)]
+        parts = [x for x in parts if x and not _is_eyebrow(x)]
+        deduped: list = []
+        for part in parts:
+            if not any(part.lower() == seen.lower() for seen in deduped):
+                deduped.append(part)
+        parts = deduped
+        if parts and len(parts) >= 2 and sum(len(x) for x in parts) <= 160 and all(len(x) <= 70 for x in parts):
+            out.append(('card', ' — '.join(parts)))
+            return
+
+    if inline and not _is_eyebrow(inline):
+        out.append(('p', inline))
+    for child in blocks:
+        _text_nodes(child, out)
+
+
+def plain_text_from_html(markup: str, product_name: str = '', bullets: bool = True) -> str:
+    """Текстова версія рич-сторінки для майданчиків без HTML (Allegro тощо).
+
+    Заголовки відділяються порожнім рядком, картка «число + підпис + рядок»
+    стає одним рядком через « — », списки отримують «• », FAQ - питання і
+    відповідь наступним рядком. Зображення, відео і службова розмітка не
+    потрапляють у вивід узагалі.
+    """
+    if not markup:
+        return ''
+    soup = BeautifulSoup(markup, 'html.parser')
+    for comment in soup.find_all(string=lambda v: isinstance(v, Comment)):
+        comment.extract()
+    for tag in soup.find_all(list(_TEXT_SKIP_TAGS)):
+        tag.decompose()
+
+    nodes: list = []
+    _text_nodes(soup.find('section') or soup, nodes)
+
+    marker = '• ' if bullets else '- '
+    lines: list = []
+    for kind, text in nodes:
+        if not text:
+            continue
+        if kind in ('h', 'q'):
+            if lines and lines[-1] != '':
+                lines.append('')
+            lines.append(text)
+        elif kind == 'li':
+            lines.append(marker + text)
+        else:
+            lines.append(text)
+
+    out: list = []
+    for line in lines:
+        value = line.strip()
+        if not value:
+            if out and out[-1] != '':
+                out.append('')
+            continue
+        if out and out[-1].strip().lower() == value.lower():
+            continue  # той самий текст двічі поспіль (лейбл і заголовок)
+        if len(value) >= 30 and any(value.lower() == seen.strip().lower() for seen in out):
+            continue  # дослівний повтор довгого абзацу - для маркетплейсу це шум
+        out.append(value)
+    while out and not out[0]:
+        out.pop(0)
+    while out and not out[-1]:
+        out.pop()
+
+    text = '\n'.join(out)
+    name = (product_name or '').strip()
+    if name and name.lower() not in '\n'.join(out[:3]).lower():
+        text = f'{name}\n\n{text}'
+    return text
+
+
 def _require_public_hop(request):
     """httpx request hook: every hop of every outbound fetch must stay public.
 

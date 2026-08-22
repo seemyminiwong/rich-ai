@@ -1422,3 +1422,54 @@ def test_media_location_outranks_the_static_cache_regex():
     assert route('/app.js').startswith('regex:')
     assert route('/favicon-32.png').startswith('regex:')
     assert route('/index.html') == 'exact:/index.html'
+
+
+def test_plain_text_edition_of_a_rich_page():
+    """Текстова версія для майданчиків без HTML (Allegro) - без перегенерації.
+
+    Вимога власника: з КОЖНОЇ генерації можна дістати текстовий варіант, не
+    ганяючи модель заново. Тому це детермінована похідна від збереженого
+    HTML: ті самі факти, нуль розмітки, нуль витрат.
+    """
+    from app.pipeline import plain_text_from_html
+
+    page = (
+        '<!-- ARTLINE BLOCK 01: HERO START --><section style="max-width:1240px">'
+        '<div style="background:url(/media/p/hero.webp)"><span>QUBE · Монітор 32"</span>'
+        '<h2>Монітор 32" QUBE Overlord</h2><p>Ігровий монітор 2K QHD, 180 Гц.</p></div>'
+        '<div><div><b>180Hz</b><h3>Висока частота</h3><p>Плавний рух у динаміці.</p></div>'
+        '<div><b>3ms</b><h3>Відгук матриці</h3><p>Менше шлейфів.</p></div></div>'
+        '<div><span>ЕКРАННІ ХАРАКТЕРИСТИКИ</span><h2>Без мерехтіння</h2>'
+        '<p>FreeSync знижує розриви кадрів, а Flicker Free тримає стабільне підсвічування екрана.</p>'
+        '<div><span>FreeSync</span><span>Flicker Free</span><span>8 біт</span><span>RGB</span></div>'
+        '<img src="/media/p/frame.webp" alt="монітор"></div>'
+        '<div><h2>Готове рішення</h2><ul><li>2× DisplayPort 1.4</li><li>Нахил +20°~-5°</li></ul></div>'
+        '<div class="arvid"><a href="https://www.youtube.com/watch?v=abc"><img src="p.jpg"></a><span>▶</span></div>'
+        '<div><h2>Питання і відповіді</h2>'
+        '<details class="arfaq"><summary>Чи підходить для консолей?<span class="arfaq-i">+</span></summary>'
+        '<p>Так, HDMI 2.0 дає 120 Гц.</p></details></div>'
+        '</section><!-- Правовласник -->')
+
+    text = plain_text_from_html(page, product_name='Монітор 32" QUBE Overlord')
+
+    # нуль розмітки і службовщини
+    for junk in ('<', '>', 'style=', 'media/p/hero.webp', 'youtube.com', '▶', 'ARTLINE BLOCK', 'Правовласник'):
+        assert junk not in text, junk
+    # факти на місці
+    for fact in ('180Hz', '3ms', '2K QHD', 'FreeSync', 'DisplayPort 1.4', 'HDMI 2.0'):
+        assert fact in text, fact
+    # картка «число + підпис + рядок» - один рядок, а не три
+    assert '180Hz — Висока частота — Плавний рух у динаміці.' in text
+    # плашки сумісності - одним рядком через « · »
+    assert 'FreeSync · Flicker Free · 8 біт · RGB' in text
+    # списки, FAQ і заголовки читаються
+    assert '• 2× DisplayPort 1.4' in text
+    assert 'Чи підходить для консолей?\nТак, HDMI 2.0 дає 120 Гц.' in text
+    assert '\n\nБез мерехтіння\n' in text, 'заголовок відділено порожнім рядком'
+    # декоративний надзаголовок у текст не тягнемо
+    assert 'ЕКРАННІ ХАРАКТЕРИСТИКИ' not in text
+    # назва товару не дублюється, порожній ввід не падає
+    assert text.count('Монітор 32" QUBE Overlord') == 1
+    assert plain_text_from_html('') == ''
+    assert plain_text_from_html(page) == plain_text_from_html(page), 'детермінованість'
+    assert '- 2× DisplayPort 1.4' in plain_text_from_html(page, bullets=False)
