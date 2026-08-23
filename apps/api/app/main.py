@@ -2394,6 +2394,124 @@ def infographic_icon(slug: str, user=Depends(current)):
                         headers={'Cache-Control': 'public, max-age=86400'})
 
 
+class FreeSuggestIn(BaseModel):
+    """Дані товару, якого ще немає на сайті: назва і сирі характеристики."""
+    name: str = Field(default='', max_length=200)
+    facts: str = Field(default='', max_length=6000)
+    language: str = Field(default='ua', max_length=8)
+    count: int = Field(default=4, ge=2, le=6)
+
+
+class FreeInfographicIn(BaseModel):
+    photo_url: str = Field(max_length=1000)
+    items: list[InfographicItemIn] = Field(default_factory=list)
+    title: str = Field(default='', max_length=160)
+    template: str = Field(default='icons-left', max_length=32)
+    background: str = Field(default='#FFFFFF', max_length=16)
+    logo_url: str = Field(default='', max_length=500)
+    brand: str = Field(default='ARTLINE', max_length=40)
+    name: str = Field(default='', max_length=120)
+
+
+_FREE_DIR_NAME = 'infographics'
+
+
+@app.post('/api/infographic/suggest')
+def infographic_free_suggest(payload: FreeSuggestIn, db: Session = Depends(get_db),
+                             user=Depends(require_perm('project.create'))):
+    """ПЛАТНО: підписи для товару, якого ще НЕМАЄ на сайті.
+
+    Основний сценарій власника: інфографіку роблять ДО появи картки товару,
+    тож проєкту (а отже і Product JSON) ще не існує. Модель читає те, що
+    оператор вставив руками - назву і сирі характеристики.
+    """
+    from app.infographic import icon_catalog
+    from app.pipeline import suggest_infographic
+    if not (payload.name.strip() or payload.facts.strip()):
+        raise HTTPException(400, 'Впишіть назву товару або його характеристики')
+    check_action(user.id, 'infographic_suggest', 20); check_budget(); check_user_budget(user)
+    model = settings.openai_text_model
+    product = {'name': payload.name.strip(), 'facts': payload.facts.strip()}
+    try:
+        data, in_tok, out_tok = suggest_infographic(
+            product, icon_catalog(), model, payload.language or 'ua', payload.count)
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc))
+    rate_in, rate_out = text_rate(model)
+    cost = round((in_tok * rate_in + out_tok * rate_out) / 1_000_000, 6)
+    # Проєкту немає, тож вартість лягає лише на загальний і особистий бюджети.
+    add_spend(cost); add_user_spend(user.id, cost)
+    audit(db, user, 'infographic.suggest_free', 'infographic', payload.name[:60] or 'free',
+          {'model': model, 'cost': cost}); db.commit()
+    return {**data, 'cost': cost}
+
+
+@app.get('/api/infographic/gallery')
+def infographic_gallery(user=Depends(current)):
+    """Інфографіки, зроблені поза проєктом."""
+    folder = Path(settings.media_dir) / _FREE_DIR_NAME
+    folder.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for path in sorted(folder.glob('*.webp'), key=lambda x: x.stat().st_mtime, reverse=True)[:60]:
+        rows.append({'url': media_url(_FREE_DIR_NAME, path.name),
+                     'name': _logo_title(path.name),
+                     'bytes': path.stat().st_size,
+                     'created_at': datetime.utcfromtimestamp(path.stat().st_mtime).isoformat() + 'Z'})
+    return {'items': rows}
+
+
+@app.post('/api/infographic/render')
+def infographic_free_render(payload: FreeInfographicIn,
+                            user=Depends(require_perm('project.create'))):
+    """Збирає інфографіку без проєкту: файл лягає в media/infographics."""
+    from app.infographic import CANVAS, TEMPLATES, render_infographic
+    if payload.template not in TEMPLATES:
+        raise HTTPException(400, f'Невідомий макет: {payload.template}')
+    items = [{'icon': x.icon, 'title': x.title, 'text': x.text}
+             for x in payload.items if (x.title or '').strip()]
+    if not items:
+        raise HTTPException(400, 'Потрібен хоча б один підпис')
+    check_action(user.id, 'infographic_render', 120)
+    photo = _infographic_photo_bytes(payload.photo_url)
+    logo_bytes = None
+    choice = (payload.logo_url or '').strip()
+    if choice.lower() != 'none':
+        if choice:
+            logo_bytes = _infographic_photo_bytes(choice)
+        else:
+            default_logo = Path(__file__).resolve().parent / 'infographic' / 'logo.png'
+            logo_bytes = default_logo.read_bytes() if default_logo.is_file() else None
+    try:
+        blob = render_infographic(photo, items, title=payload.title, template=payload.template,
+                                  background=payload.background or '#FFFFFF',
+                                  logo_bytes=logo_bytes, brand=payload.brand)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        logger.exception('Free infographic render failed')
+        raise HTTPException(500, f'Не вдалося зібрати інфографіку: {exc}'[:300])
+    slug = re.sub(r'[^a-z0-9-]+', '-', (payload.name or payload.title or 'infographic').strip().lower()).strip('-')[:48] or 'infographic'
+    filename = f'{slug}-{secrets.token_hex(4)}.webp'
+    folder = Path(settings.media_dir) / _FREE_DIR_NAME
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / filename).write_bytes(blob)
+    return {'url': media_url(_FREE_DIR_NAME, filename), 'name': _logo_title(filename),
+            'width': CANVAS, 'height': CANVAS, 'bytes': len(blob), 'template': payload.template}
+
+
+@app.delete('/api/infographic/render')
+def infographic_free_delete(url: str, user=Depends(require_perm('project.create'))):
+    canonical = strip_media_query(url or '')
+    prefix = f'/media/{_FREE_DIR_NAME}/'
+    if not canonical.startswith(prefix) or '/' in canonical[len(prefix):]:
+        raise HTTPException(400, 'Це не файл бібліотеки інфографік')
+    path = Path(settings.media_dir) / _FREE_DIR_NAME / canonical[len(prefix):]
+    if not path.is_file():
+        raise HTTPException(404, 'Файл не знайдено')
+    path.unlink()
+    return {'deleted': True}
+
+
 @app.post('/api/projects/{project_id}/infographic/suggest')
 def infographic_suggest(project_id: str, db: Session = Depends(get_db),
                         user=Depends(require_perm('project.create'))):
