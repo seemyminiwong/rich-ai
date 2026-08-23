@@ -1634,3 +1634,82 @@ def test_html_entities_never_reach_product_text():
     assert product['name'] == 'Монітор 27" Qube' and product['category'] == 'Монітори & ТВ'
     assert product['specs'][0]['value'] == '27"' and product['features'] == ['Частота 180 Гц']
     assert product['image_count'] == 9, 'нетекстові поля лишаються недоторканими'
+
+
+def test_infographic_renders_2000px_webp_from_brand_icons():
+    """Інфографіка на фото: картинка для галереї магазину, не HTML-блок.
+
+    Запит власника (2026-08-23): робити такі ж банери, як фірмові ARTLINE -
+    фото товару, підписи і фірмові іконки. Малюємо Pillow напряму: жодного
+    браузера, жодного окремого сервісу, точний розмір полотна і WEBP на виході.
+    """
+    from io import BytesIO
+    from PIL import Image, ImageDraw
+    from app.infographic import CANVAS, TEMPLATES, icon_catalog, render_infographic
+
+    catalog = icon_catalog()
+    assert len(catalog) > 100, 'бібліотека іконок бренду має бути в образі'
+    slugs = {x['slug'] for x in catalog}
+    assert {'wi-fi', 'harantiia', 'ventyliator'} <= slugs
+    assert all(re.fullmatch(r'[a-z0-9-]+', x['slug']) for x in catalog), 'слаги безпечні для URL'
+
+    photo = Image.new('RGB', (1200, 1500), 'white')
+    ImageDraw.Draw(photo).rounded_rectangle([250, 200, 950, 1300], radius=30, fill=(30, 30, 34))
+    buf = BytesIO(); photo.save(buf, 'PNG')
+
+    items = [
+        {'icon': 'ventyliator', 'title': '4×120 мм вентилятори', 'text': 'на нижній та задній панелях'},
+        {'icon': 'wi-fi', 'title': 'Wi-Fi моніторинг'},
+        {'icon': 'harantiia', 'title': 'Гарантія 60 місяців'},
+    ]
+    for template in TEMPLATES:
+        blob = render_infographic(buf.getvalue(), items, title='Відмінне охолодження', template=template)
+        image = Image.open(BytesIO(blob))
+        assert image.format == 'WEBP' and image.size == (CANVAS, CANVAS), (template, image.format, image.size)
+        assert len(blob) < 900_000, 'картинка має лишатись легкою для галереї'
+
+    # межі контракту
+    import pytest
+    with pytest.raises(ValueError):
+        render_infographic(buf.getvalue(), items, template='no-such-layout')
+    with pytest.raises(ValueError):
+        render_infographic(buf.getvalue(), [])
+    # неіснуюча іконка не валить рендер - просто нічого не малюється
+    ok = render_infographic(buf.getvalue(), [{'icon': 'zzz-not-here', 'title': 'Підпис'}])
+    assert Image.open(BytesIO(ok)).size == (CANVAS, CANVAS)
+
+
+def test_infographic_takes_any_brand_logo():
+    """Логотип у шапці - будь-якого бренду, не лише ARTLINE.
+
+    На картці QUBE чи DEYE фірмовий знак має бути їхній. SVG розтеризує
+    браузер (canvas), сервер отримує PNG - тож жодного растеризатора в образі
+    не потрібно. Широкий логотип-напис займає місце словесної назви.
+    """
+    from io import BytesIO
+    from PIL import Image, ImageDraw
+    from app.infographic import CANVAS, render_infographic
+
+    photo = Image.new('RGB', (1000, 1200), 'white')
+    ImageDraw.Draw(photo).rectangle([200, 200, 800, 1000], fill=(30, 30, 34))
+    shot = BytesIO(); photo.save(shot, 'PNG')
+    items = [{'icon': 'wi-fi', 'title': 'Wi-Fi моніторинг'}]
+
+    def logo(size, color=(25, 188, 201, 255)):
+        mark = Image.new('RGBA', size, (0, 0, 0, 0))
+        ImageDraw.Draw(mark).rectangle([0, 0, size[0] - 1, size[1] - 1], fill=color)
+        out = BytesIO(); mark.save(out, 'PNG')
+        return out.getvalue()
+
+    square = render_infographic(shot.getvalue(), items, title='Тест', logo_bytes=logo((512, 512)), brand='QUBE')
+    wide = render_infographic(shot.getvalue(), items, title='Тест', logo_bytes=logo((1200, 300)), brand='DEYE')
+    bare = render_infographic(shot.getvalue(), items, title='Тест', brand='')
+    for blob in (square, wide, bare):
+        assert Image.open(BytesIO(blob)).size == (CANVAS, CANVAS)
+
+    # широкий логотип займає більше місця в шапці, ніж квадратний знак
+    top_wide = Image.open(BytesIO(wide)).convert('RGB').crop((0, 0, CANVAS, 240))
+    top_square = Image.open(BytesIO(square)).convert('RGB').crop((0, 0, CANVAS, 240))
+    ink_wide = sum(1 for px in top_wide.getdata() if sum(px) < 700)
+    ink_square = sum(1 for px in top_square.getdata() if sum(px) < 700)
+    assert ink_wide > ink_square, 'лого-напис має розтягуватись, а не тиснутись у квадрат'

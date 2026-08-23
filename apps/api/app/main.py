@@ -27,7 +27,7 @@ from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, h
 from app.tasks import bill_extra, image_rate, process_landing, process_project, text_rate, translate_project
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
-from app.pipeline import _is_reasoning_model, decode_entities, fetch_bytes_capped, fetch_html, gallery_urls, image_url_rejection, image_urls_in_html, is_public_http_url, is_publishable_image_url, parse_page, plain_text_from_html, replace_image_urls, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
+from app.pipeline import _is_reasoning_model, decode_entities, suggest_infographic, fetch_bytes_capped, fetch_html, gallery_urls, image_url_rejection, image_urls_in_html, is_public_http_url, is_publishable_image_url, parse_page, plain_text_from_html, replace_image_urls, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
 from app.landing import LANDING_PROMPT, LANDING_STYLE_NAME
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.version import __version__
@@ -2267,6 +2267,226 @@ def _artifact_image_rows(db: Session, artifact, project) -> list:
             'mapped_to': saved.get(item['canonical'], ''),
         })
     return rows
+
+
+class InfographicItemIn(BaseModel):
+    icon: str = Field(default='', max_length=64)
+    title: str = Field(default='', max_length=160)
+    text: str = Field(default='', max_length=160)
+
+
+class InfographicIn(BaseModel):
+    photo_url: str = Field(max_length=1000)
+    items: list[InfographicItemIn] = Field(default_factory=list)
+    title: str = Field(default='', max_length=160)
+    template: str = Field(default='icons-left', max_length=32)
+    background: str = Field(default='#FFFFFF', max_length=16)
+    # Логотип бренду: порожньо - фірмовий ARTLINE, 'none' - без знака,
+    # /media/logos/... - завантажений оператором (SVG розтеризує браузер).
+    logo_url: str = Field(default='', max_length=500)
+    brand: str = Field(default='ARTLINE', max_length=40)
+
+
+def _infographic_photo_bytes(url: str) -> bytes:
+    """Фото для інфографіки: власне завантаження оператора або кадр галереї."""
+    canonical = strip_media_query(url or '')
+    if canonical.startswith('/media/'):
+        root = Path(settings.media_dir).resolve()
+        path = (root / canonical[len('/media/'):]).resolve()
+        if root not in path.parents or not path.is_file():
+            raise HTTPException(404, 'Файл фото не знайдено')
+        return path.read_bytes()
+    if canonical.startswith(('http://', 'https://')):
+        if not is_public_http_url(canonical):
+            raise HTTPException(400, 'Посилання на фото не є публічним')
+        with safe_client(timeout=20) as http:
+            return fetch_bytes_capped(http, canonical, cap_mb=25)
+    raise HTTPException(400, 'Підтримуються лише файли студії та публічні посилання')
+
+
+@app.get('/api/infographic/icons')
+def infographic_icons(user=Depends(current)):
+    """Бібліотека іконок бренду для добірки підписів."""
+    from app.infographic import TEMPLATES, icon_catalog
+    return {'icons': icon_catalog(), 'templates': list(TEMPLATES)}
+
+
+_LOGO_DIR_NAME = 'logos'
+
+
+def _logo_dir() -> Path:
+    folder = Path(settings.media_dir) / _LOGO_DIR_NAME
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _logo_title(filename: str) -> str:
+    stem = filename.rsplit('.', 1)[0]
+    return re.sub(r'-[0-9a-f]{8}$', '', stem).replace('-', ' ').strip() or 'логотип'
+
+
+@app.get('/api/infographic/logos')
+def infographic_logos(user=Depends(current)):
+    """Логотипи брендів, завантажені операторами (плюс фірмовий ARTLINE)."""
+    rows = []
+    for path in sorted(_logo_dir().glob('*.png')):
+        rows.append({'url': media_url(_LOGO_DIR_NAME, path.name), 'name': _logo_title(path.name)})
+    return {'logos': rows}
+
+
+@app.post('/api/infographic/logo')
+async def infographic_logo_upload(request: Request, name: str = '',
+                                  user=Depends(require_perm('project.create'))):
+    """Приймає РАСТРОВИЙ логотип (PNG/WebP/JPEG) і кладе його в бібліотеку.
+
+    SVG розтеризує браузер перед відправкою: так будь-який фірмовий знак
+    вантажиться без жодної нової залежності на сервері, а оператор одразу
+    бачить те, що потрапить у картинку. Прозорість зберігаємо.
+    """
+    check_action(user.id, 'logo_upload', 60)
+    cap = 8 * 1024 * 1024
+    if int(request.headers.get('content-length') or 0) > cap:
+        raise HTTPException(413, 'Файл більший за 8 МБ')
+    data = await request.body()
+    if len(data) > cap:
+        raise HTTPException(413, 'Файл більший за 8 МБ')
+    if len(data) < 64:
+        raise HTTPException(400, 'Порожній файл')
+    if data.lstrip()[:5].lower() == b'<?xml' or b'<svg' in data[:400].lower():
+        raise HTTPException(400, 'SVG треба перетворити на PNG у браузері — оновіть сторінку студії')
+    from PIL import Image as PILImage
+    try:
+        image = PILImage.open(io.BytesIO(data))
+        image.load()
+    except Exception:
+        raise HTTPException(400, 'Файл не схожий на зображення')
+    image = image.convert('RGBA')
+    image.thumbnail((1024, 1024), PILImage.LANCZOS)
+    slug = re.sub(r'[^a-z0-9-]+', '-', (name or 'logo').strip().lower()).strip('-')[:40] or 'logo'
+    filename = f'{slug}-{secrets.token_hex(4)}.png'
+    image.save(_logo_dir() / filename, format='PNG', optimize=True)
+    return {'url': media_url(_LOGO_DIR_NAME, filename), 'name': _logo_title(filename)}
+
+
+@app.delete('/api/infographic/logo')
+def infographic_logo_delete(url: str, user=Depends(require_perm('project.create'))):
+    """Прибирає логотип з бібліотеки (лише файли з media/logos)."""
+    canonical = strip_media_query(url or '')
+    prefix = f'/media/{_LOGO_DIR_NAME}/'
+    if not canonical.startswith(prefix) or '/' in canonical[len(prefix):]:
+        raise HTTPException(400, 'Це не файл бібліотеки логотипів')
+    path = _logo_dir() / canonical[len(prefix):]
+    if not path.is_file():
+        raise HTTPException(404, 'Логотип не знайдено')
+    path.unlink()
+    return {'deleted': True}
+
+
+@app.get('/api/infographic/icon/{slug}.png')
+def infographic_icon(slug: str, user=Depends(current)):
+    """Одна іконка бібліотеки - для попереднього перегляду у формі."""
+    if not re.fullmatch(r'[a-z0-9-]{1,64}', slug or ''):
+        raise HTTPException(404, 'Not found')
+    path = Path(__file__).resolve().parent / 'infographic' / 'icons' / f'{slug}.png'
+    if not path.is_file():
+        raise HTTPException(404, 'Not found')
+    return FileResponse(path, media_type='image/png',
+                        headers={'Cache-Control': 'public, max-age=86400'})
+
+
+@app.post('/api/projects/{project_id}/infographic/suggest')
+def infographic_suggest(project_id: str, db: Session = Depends(get_db),
+                        user=Depends(require_perm('project.create'))):
+    """ПЛАТНО: модель пропонує заголовок, підписи і підбирає до них іконки."""
+    from app.infographic import icon_catalog
+    p = db.get(Project, project_id)
+    if not p:
+        raise HTTPException(404, 'Проєкт не знайдено')
+    check_action(user.id, 'infographic_suggest', 20); check_budget(); check_user_budget(user)
+    model = p.text_model or settings.openai_text_model
+    language = (p.languages or 'ua').split(',')[0] or 'ua'
+    try:
+        data, in_tok, out_tok = suggest_infographic(
+            json.loads(p.product_json or '{}'), icon_catalog(), model, language)
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc))
+    rate_in, rate_out = text_rate(model)
+    cost = round((in_tok * rate_in + out_tok * rate_out) / 1_000_000, 6)
+    p.text_cost = float(p.text_cost or 0) + cost
+    p.estimated_cost = float(p.estimated_cost or 0) + cost
+    p.input_tokens = (p.input_tokens or 0) + in_tok
+    p.output_tokens = (p.output_tokens or 0) + out_tok
+    p.text_request_count = (p.text_request_count or 0) + 1
+    add_spend(cost); add_user_spend(user.id, cost); bill_extra(db, p, cost)
+    db.add(Event(project_id=p.id, stage='content',
+                 message=f'{user.email}: підписи інфографіки запропоновано ({model}) — ${cost:.4f}'))
+    audit(db, user, 'infographic.suggest', 'project', p.id, {'model': model, 'cost': cost})
+    db.commit()
+    return {**data, 'cost': cost}
+
+
+@app.post('/api/projects/{project_id}/infographic')
+def infographic_render(project_id: str, payload: InfographicIn, db: Session = Depends(get_db),
+                       user=Depends(require_perm('project.create'))):
+    """Збирає WEBP 2000x2000 і кладе його в медіатеку проєкту.
+
+    Рендер - Pillow на місці: жодного браузера і жодних витрат на моделі, тому
+    перезбирати макет можна скільки завгодно разів.
+    """
+    from app.infographic import CANVAS, TEMPLATES, render_infographic
+    p = db.get(Project, project_id)
+    if not p:
+        raise HTTPException(404, 'Проєкт не знайдено')
+    require_project_edit(p, user)
+    if payload.template not in TEMPLATES:
+        raise HTTPException(400, f'Невідомий макет: {payload.template}')
+    items = [{'icon': x.icon, 'title': x.title, 'text': x.text}
+             for x in payload.items if (x.title or '').strip()]
+    if not items:
+        raise HTTPException(400, 'Потрібен хоча б один підпис')
+    check_action(user.id, 'infographic_render', 120)
+    photo = _infographic_photo_bytes(payload.photo_url)
+    logo_bytes = None
+    choice = (payload.logo_url or '').strip()
+    if choice.lower() != 'none':
+        if choice:
+            logo_bytes = _infographic_photo_bytes(choice)
+        else:
+            default_logo = Path(__file__).resolve().parent / 'infographic' / 'logo.png'
+            logo_bytes = default_logo.read_bytes() if default_logo.is_file() else None
+    try:
+        blob = render_infographic(
+            photo, items, title=payload.title, template=payload.template,
+            background=payload.background or '#FFFFFF',
+            logo_bytes=logo_bytes, brand=payload.brand)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        logger.exception('Infographic render failed')
+        raise HTTPException(500, f'Не вдалося зібрати інфографіку: {exc}'[:300])
+
+    existing = db.scalars(select(Asset).where(Asset.project_id == p.id,
+                                              Asset.label.like('infographic-%'))).all()
+    number = len(existing) + 1
+    filename = f'infographic-{number}.webp'
+    folder = Path(settings.media_dir) / p.id
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / filename).write_bytes(blob)
+    url = media_url(p.id, filename)
+    asset = Asset(project_id=p.id, kind='image', label=f'infographic-{number}', url=url,
+                  prompt=payload.title or '', model='infographic', cost=0,
+                  width=CANVAS, height=CANVAS,
+                  metadata_json=json.dumps({'template': payload.template, 'items': items,
+                                            'photo_url': payload.photo_url,
+                                            'logo_url': payload.logo_url, 'brand': payload.brand},
+                                           ensure_ascii=False))
+    db.add(asset)
+    db.add(Event(project_id=p.id, stage='images',
+                 message=f'{user.email}: інфографіку зібрано ({payload.template}, {len(items)} підписів)'))
+    audit(db, user, 'infographic.render', 'project', p.id, {'template': payload.template})
+    db.commit(); db.refresh(asset)
+    return {'url': url, 'label': asset.label, 'width': CANVAS, 'height': CANVAS,
+            'bytes': len(blob), 'template': payload.template}
 
 
 @app.get('/api/artifacts/{artifact_id}/images')
