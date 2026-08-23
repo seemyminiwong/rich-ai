@@ -2383,8 +2383,14 @@ def infographic_logo_delete(url: str, user=Depends(require_perm('project.create'
 
 
 @app.get('/api/infographic/icon/{slug}.png')
-def infographic_icon(slug: str, user=Depends(current)):
-    """Одна іконка бібліотеки - для попереднього перегляду у формі."""
+def infographic_icon(slug: str):
+    """Одна іконка бібліотеки - для попереднього перегляду у формі.
+
+    БЕЗ авторизації навмисно: <img> не надсилає Bearer-токен, тож із
+    Depends(current) браузер отримував 401 і показував «битий» кадр замість
+    іконки (жива скарга зі скріншотом PETG). Це фірмові лінійні іконки, а не
+    дані користувача; slug звірено регуляркою, вийти за каталог неможливо.
+    """
     if not re.fullmatch(r'[a-z0-9-]{1,64}', slug or ''):
         raise HTTPException(404, 'Not found')
     path = Path(__file__).resolve().parent / 'infographic' / 'icons' / f'{slug}.png'
