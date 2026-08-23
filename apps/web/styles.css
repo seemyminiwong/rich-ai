@@ -480,3 +480,16 @@ tr.urow-active td{background:#E9F8FA}
 .ig-lib figcaption{padding:8px 10px;font-size:12px;display:flex;flex-direction:column;gap:4px}
 .ig-lib figcaption span{color:#6B747C}
 .ig-lib figcaption b{color:#B3261E;cursor:pointer;font-weight:600}
+
+.filter-row{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;margin:-4px 0 14px}
+.quick-chips{display:flex;flex-wrap:wrap;gap:8px}
+.quick-chips button{border:1px solid var(--line,#E3E6EA);background:#fff;border-radius:999px;padding:6px 14px;font-size:13px;cursor:pointer;color:#3B444C}
+.quick-chips button:hover{border-color:#19BCC9}
+.quick-chips button.on{background:#101010;border-color:#101010;color:#fff;font-weight:600}
+.filter-summary{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px;color:#6B747C}
+.filter-summary .chip{display:inline-flex;align-items:center;gap:6px;background:#EEF6F7;border-radius:999px;padding:4px 10px;color:#0F171E}
+.filter-summary .chip i{font-style:normal;cursor:pointer;font-weight:700;color:#6B747C}
+.filter-summary .chip i:hover{color:#B3261E}
+.project-toolbar select{min-width:150px}
+.cat-chip{cursor:pointer}
+.cat-chip:hover{outline:1px solid #19BCC9}
