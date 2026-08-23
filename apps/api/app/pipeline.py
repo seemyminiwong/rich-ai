@@ -801,6 +801,53 @@ def clean_product_entities(product):
     return product
 
 
+
+def suggest_infographic(product: dict, icons: list, model: str, language: str = 'ua', count: int = 4):
+    """Модель пропонує підписи інфографіки і підбирає іконку бренду до кожного.
+
+    Іконки НЕ вигадуються: моделі передається закритий перелік слагів, і будь-що
+    поза ним відкидається на стороні сервера. Факти - тільки з Product JSON.
+    Повертає (dict {'title','items'}, input_tokens, output_tokens).
+    """
+    if not text_ready():
+        raise RuntimeError('Text provider is not configured')
+    allowed = {str(x.get('slug')) for x in icons if x.get('slug')}
+    catalog = '\n'.join(f"{x['slug']} = {x['name']}" for x in icons)
+    prompt = (
+        'Ти готуєш ІНФОГРАФІКУ на фото товару для інтернет-магазину.\n'
+        f'Мова всього тексту: {language}. Пиши так, як пишуть у картці товару.\n'
+        f'Поверни РІВНО один JSON: {{"title": "...", "items": [{{"icon": "slug", "title": "...", "text": "..."}}]}}\n'
+        f'items - рівно {count} штук. title кожного пункту - 2-6 слів, коротка перевага або характеристика; '
+        'text - необовʼязковий уточнювальний рядок до 7 слів (можна порожній).\n'
+        'title усієї інфографіки - 3-6 слів, як заголовок рекламного банера.\n'
+        'ФАКТИ бери ЛИШЕ з PRODUCT JSON: жодних вигаданих цифр, жодних цін і доставки.\n'
+        'icon - слаг РІВНО з переліку нижче, який найточніше відповідає пункту.\n\n'
+        f'ПЕРЕЛІК ІКОНОК (slug = назва):\n{catalog}\n\n'
+        f'PRODUCT JSON:\n{json.dumps(product, ensure_ascii=False)[:6000]}'
+    )
+    response = _responses_create(model, prompt, 2000)
+    raw = (response.output_text or '').strip()
+    match = re.search(r'\{.*\}', raw, re.S)
+    data = _safe_json(match.group(0)) if match else None
+    if not isinstance(data, dict):
+        raise RuntimeError('Модель повернула невалідний JSON для інфографіки')
+    items = []
+    for row in (data.get('items') or [])[:6]:
+        if not isinstance(row, dict):
+            continue
+        slug = str(row.get('icon') or '').strip()
+        items.append({
+            'icon': slug if slug in allowed else '',
+            'title': decode_entities(str(row.get('title') or ''))[:120],
+            'text': decode_entities(str(row.get('text') or ''))[:120],
+        })
+    items = [x for x in items if x['title']]
+    if not items:
+        raise RuntimeError('Модель не запропонувала жодного підпису')
+    input_tokens, output_tokens = _usage_counts(response, prompt, raw)
+    return ({'title': decode_entities(str(data.get('title') or ''))[:120], 'items': items},
+            input_tokens, output_tokens)
+
 def _require_public_hop(request):
     """httpx request hook: every hop of every outbound fetch must stay public.
 

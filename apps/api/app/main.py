@@ -27,7 +27,7 @@ from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, h
 from app.tasks import bill_extra, image_rate, process_landing, process_project, text_rate, translate_project
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
-from app.pipeline import _is_reasoning_model, decode_entities, suggest_infographic, fetch_bytes_capped, fetch_html, gallery_urls, image_url_rejection, image_urls_in_html, is_public_http_url, is_publishable_image_url, parse_page, plain_text_from_html, replace_image_urls, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
+from app.pipeline import _is_reasoning_model, decode_entities, fetch_bytes_capped, fetch_html, gallery_urls, image_url_rejection, image_urls_in_html, is_public_http_url, is_publishable_image_url, parse_page, plain_text_from_html, replace_image_urls, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
 from app.landing import LANDING_PROMPT, LANDING_STYLE_NAME
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.version import __version__
@@ -2398,7 +2398,12 @@ def infographic_icon(slug: str, user=Depends(current)):
 def infographic_suggest(project_id: str, db: Session = Depends(get_db),
                         user=Depends(require_perm('project.create'))):
     """ПЛАТНО: модель пропонує заголовок, підписи і підбирає до них іконки."""
+    # Імпорт локальний НАВМИСНО: якщо на сервер поїхала лише частина коміту,
+    # відсутня функція має ламати ОДИН ендпоінт, а не весь API на старті
+    # (жива аварія 2026-08-23: main.py поїхав без pipeline.py і застосунок
+    # не піднявся взагалі).
     from app.infographic import icon_catalog
+    from app.pipeline import suggest_infographic
     p = db.get(Project, project_id)
     if not p:
         raise HTTPException(404, 'Проєкт не знайдено')
