@@ -1,0 +1,698 @@
+[
+ {
+  "slug": "pc",
+  "name": "PC"
+ },
+ {
+  "slug": "monoblok",
+  "name": "Моноблок"
+ },
+ {
+  "slug": "noutbuk",
+  "name": "Ноутбук"
+ },
+ {
+  "slug": "telefon",
+  "name": "Телефон"
+ },
+ {
+  "slug": "prynter",
+  "name": "Принтер"
+ },
+ {
+  "slug": "3d-prynter",
+  "name": "3D принтер"
+ },
+ {
+  "slug": "server",
+  "name": "Сервер"
+ },
+ {
+  "slug": "henerator",
+  "name": "Генератор"
+ },
+ {
+  "slug": "komp-iuterna-peryferiia",
+  "name": "Комп'ютерна периферія"
+ },
+ {
+  "slug": "zariadna-stantsiia",
+  "name": "Зарядна станція"
+ },
+ {
+  "slug": "televizor",
+  "name": "Телевізор"
+ },
+ {
+  "slug": "planshet",
+  "name": "Планшет"
+ },
+ {
+  "slug": "kolonky",
+  "name": "Колонки"
+ },
+ {
+  "slug": "dzhoistyk",
+  "name": "Джойстик"
+ },
+ {
+  "slug": "dzhoistyk-i-prystavka",
+  "name": "Джойстик і приставка"
+ },
+ {
+  "slug": "kondytsioner",
+  "name": "Кондиціонер"
+ },
+ {
+  "slug": "obihrivach",
+  "name": "Обігрівач"
+ },
+ {
+  "slug": "kholodylnyk",
+  "name": "Холодильник"
+ },
+ {
+  "slug": "chainyk",
+  "name": "Чайник"
+ },
+ {
+  "slug": "mikrokhvylovka",
+  "name": "Мікрохвильовка"
+ },
+ {
+  "slug": "elektrohryl",
+  "name": "Електрогриль"
+ },
+ {
+  "slug": "dron",
+  "name": "Дрон"
+ },
+ {
+  "slug": "likhtar",
+  "name": "Ліхтар"
+ },
+ {
+  "slug": "elektrodryl",
+  "name": "Електродриль"
+ },
+ {
+  "slug": "tsyrkuliarna-pyla",
+  "name": "Циркулярна пила"
+ },
+ {
+  "slug": "monitor",
+  "name": "Монітор"
+ },
+ {
+  "slug": "korpus",
+  "name": "Корпус"
+ },
+ {
+  "slug": "navushnyky",
+  "name": "Навушники"
+ },
+ {
+  "slug": "myshka",
+  "name": "Мишка"
+ },
+ {
+  "slug": "mikrofon",
+  "name": "Мікрофон"
+ },
+ {
+  "slug": "kamera",
+  "name": "Камера"
+ },
+ {
+  "slug": "kamera-ai",
+  "name": "Камера AI"
+ },
+ {
+  "slug": "router",
+  "name": "Роутер"
+ },
+ {
+  "slug": "klaviatura",
+  "name": "Клавіатура"
+ },
+ {
+  "slug": "paneli",
+  "name": "Панелі"
+ },
+ {
+  "slug": "kryshka-korpusa",
+  "name": "Кришка корпуса"
+ },
+ {
+  "slug": "sklo",
+  "name": "Скло"
+ },
+ {
+  "slug": "komplektuiuchi",
+  "name": "Комплектуючі"
+ },
+ {
+  "slug": "hdd",
+  "name": "HDD"
+ },
+ {
+  "slug": "ssd",
+  "name": "SSD"
+ },
+ {
+  "slug": "karta-pam-iati",
+  "name": "Карта пам'яті"
+ },
+ {
+  "slug": "sd-kardrider",
+  "name": "SD кардрідер"
+ },
+ {
+  "slug": "vidsik-dlia-hdd",
+  "name": "Відсік для HDD"
+ },
+ {
+  "slug": "ssd-nvme",
+  "name": "SSD NVMe"
+ },
+ {
+  "slug": "ram",
+  "name": "RAM"
+ },
+ {
+  "slug": "protsesor",
+  "name": "Процесор"
+ },
+ {
+  "slug": "materynska-plata",
+  "name": "Материнська плата"
+ },
+ {
+  "slug": "blok-zhyvlennia",
+  "name": "Блок живлення"
+ },
+ {
+  "slug": "videokarta",
+  "name": "Відеокарта"
+ },
+ {
+  "slug": "backplate",
+  "name": "Backplate"
+ },
+ {
+  "slug": "vodiane-okholodzhennia",
+  "name": "Водяне охолодження"
+ },
+ {
+  "slug": "distro-plate",
+  "name": "Distro plate"
+ },
+ {
+  "slug": "shnur-zhyvlennia",
+  "name": "Шнур живлення"
+ },
+ {
+  "slug": "kabeli-bloku-zhyvlennia",
+  "name": "Кабелі блоку живлення"
+ },
+ {
+  "slug": "pylovi-filtry",
+  "name": "Пилові фільтри"
+ },
+ {
+  "slug": "radiator",
+  "name": "Радіатор"
+ },
+ {
+  "slug": "kuler",
+  "name": "Кулер"
+ },
+ {
+  "slug": "ventyliator",
+  "name": "Вентилятор"
+ },
+ {
+  "slug": "ventyliatsiini-sitky",
+  "name": "Вентиляційні сітки"
+ },
+ {
+  "slug": "hryli",
+  "name": "Грилі"
+ },
+ {
+  "slug": "sitka",
+  "name": "Сітка"
+ },
+ {
+  "slug": "ips-matrytsia",
+  "name": "IPS матриця"
+ },
+ {
+  "slug": "vga-matrytsia",
+  "name": "VGA матриця"
+ },
+ {
+  "slug": "vesa",
+  "name": "VESA"
+ },
+ {
+  "slug": "rehulovana-pidstavka",
+  "name": "Регульована підставка"
+ },
+ {
+  "slug": "knopka-uvimknennia",
+  "name": "Кнопка увімкнення"
+ },
+ {
+  "slug": "va-matrytsia",
+  "name": "VA матриця"
+ },
+ {
+  "slug": "usb",
+  "name": "USB"
+ },
+ {
+  "slug": "type-c",
+  "name": "Type-C"
+ },
+ {
+  "slug": "micro-usb",
+  "name": "Micro USB"
+ },
+ {
+  "slug": "hdmi",
+  "name": "HDMI"
+ },
+ {
+  "slug": "vga",
+  "name": "VGA"
+ },
+ {
+  "slug": "dvi",
+  "name": "DVI"
+ },
+ {
+  "slug": "displayport",
+  "name": "DisplayPort"
+ },
+ {
+  "slug": "rj45",
+  "name": "RJ45"
+ },
+ {
+  "slug": "pcie",
+  "name": "PCIe"
+ },
+ {
+  "slug": "okholodzhennia",
+  "name": "Охолодження"
+ },
+ {
+  "slug": "temperatura",
+  "name": "Температура"
+ },
+ {
+  "slug": "shvydkist",
+  "name": "Швидкість"
+ },
+ {
+  "slug": "zariad",
+  "name": "Заряд"
+ },
+ {
+  "slug": "zhyvlennia",
+  "name": "Живлення"
+ },
+ {
+  "slug": "zvuk",
+  "name": "Звук"
+ },
+ {
+  "slug": "tysha",
+  "name": "Тиша"
+ },
+ {
+  "slug": "produktyvnist",
+  "name": "Продуктивність"
+ },
+ {
+  "slug": "bezpeka",
+  "name": "Безпека"
+ },
+ {
+  "slug": "hd",
+  "name": "HD"
+ },
+ {
+  "slug": "full-hd",
+  "name": "Full HD"
+ },
+ {
+  "slug": "hdr",
+  "name": "HDR"
+ },
+ {
+  "slug": "4k",
+  "name": "4K"
+ },
+ {
+  "slug": "8k",
+  "name": "8K"
+ },
+ {
+  "slug": "60-hts",
+  "name": "60 Гц"
+ },
+ {
+  "slug": "75-hts",
+  "name": "75 Гц"
+ },
+ {
+  "slug": "144-hts",
+  "name": "144 Гц"
+ },
+ {
+  "slug": "180-hts",
+  "name": "180 Гц"
+ },
+ {
+  "slug": "vertykalnyi-monitor",
+  "name": "Вертикальний монітор"
+ },
+ {
+  "slug": "diahonal",
+  "name": "Діагональ"
+ },
+ {
+  "slug": "dekilka-monitoriv",
+  "name": "Декілька моніторів"
+ },
+ {
+  "slug": "rehuliuvannia-nakhylu",
+  "name": "Регулювання нахилу"
+ },
+ {
+  "slug": "obertannia",
+  "name": "Обертання"
+ },
+ {
+  "slug": "rozmir",
+  "name": "Розмір"
+ },
+ {
+  "slug": "chastota",
+  "name": "Частота"
+ },
+ {
+  "slug": "ventyliatsiia",
+  "name": "Вентиляція"
+ },
+ {
+  "slug": "iakist",
+  "name": "Якість"
+ },
+ {
+  "slug": "erhonomichnist",
+  "name": "Ергономічність"
+ },
+ {
+  "slug": "zakhyst-dlia-ochei",
+  "name": "Захист для очей"
+ },
+ {
+  "slug": "filtr-synoho-svitla",
+  "name": "Фільтр синього світла"
+ },
+ {
+  "slug": "flicker-free",
+  "name": "Flicker Free"
+ },
+ {
+  "slug": "kastomnyi-dyzain",
+  "name": "Кастомний дизайн"
+ },
+ {
+  "slug": "dekor",
+  "name": "Декор"
+ },
+ {
+  "slug": "minimalistychnyi-dyzain",
+  "name": "Мінімалістичний дизайн"
+ },
+ {
+  "slug": "kompaktnyi-rozmir",
+  "name": "Компактний розмір"
+ },
+ {
+  "slug": "laitboks",
+  "name": "Лайтбокс"
+ },
+ {
+  "slug": "rgb",
+  "name": "RGB"
+ },
+ {
+  "slug": "bez-rgb",
+  "name": "Без RGB"
+ },
+ {
+  "slug": "modulnist",
+  "name": "Модульність"
+ },
+ {
+  "slug": "wi-fi",
+  "name": "Wi-Fi"
+ },
+ {
+  "slug": "internet",
+  "name": "Інтернет"
+ },
+ {
+  "slug": "khmarne-skhovyshche",
+  "name": "Хмарне сховище"
+ },
+ {
+  "slug": "bluetooth",
+  "name": "Bluetooth"
+ },
+ {
+  "slug": "80-plus",
+  "name": "80 PLUS"
+ },
+ {
+  "slug": "80-plus-gold",
+  "name": "80 PLUS Gold"
+ },
+ {
+  "slug": "80-plus-bronze",
+  "name": "80 PLUS Bronze"
+ },
+ {
+  "slug": "paket-prohram",
+  "name": "Пакет програм"
+ },
+ {
+  "slug": "prohramne-zabezpechennia",
+  "name": "Програмне забезпечення"
+ },
+ {
+  "slug": "windows",
+  "name": "Windows"
+ },
+ {
+  "slug": "directx",
+  "name": "DirectX"
+ },
+ {
+  "slug": "klipper",
+  "name": "Klipper"
+ },
+ {
+  "slug": "iso",
+  "name": "ISO"
+ },
+ {
+  "slug": "holosovyi-nabir",
+  "name": "Голосовий набір"
+ },
+ {
+  "slug": "shi-tekhnolohii",
+  "name": "ШІ технології"
+ },
+ {
+  "slug": "onlain-narada",
+  "name": "Онлайн нарада"
+ },
+ {
+  "slug": "viddalene-keruvannia",
+  "name": "Віддалене керування"
+ },
+ {
+  "slug": "zbirka",
+  "name": "Збірка"
+ },
+ {
+  "slug": "lehka-zbirka",
+  "name": "Легка збірка"
+ },
+ {
+  "slug": "sumisnist-komplektuiuchykh",
+  "name": "Сумісність комплектуючих"
+ },
+ {
+  "slug": "zruchnist",
+  "name": "Зручність"
+ },
+ {
+  "slug": "mozhlyvist-aphreidu",
+  "name": "Можливість апгрейду"
+ },
+ {
+  "slug": "navantazhennia",
+  "name": "Навантаження"
+ },
+ {
+  "slug": "sertyfikovane-vyrobnytstvo",
+  "name": "Сертифіковане виробництво"
+ },
+ {
+  "slug": "harantiia",
+  "name": "Гарантія"
+ },
+ {
+  "slug": "stres-test",
+  "name": "Стрес-тест"
+ },
+ {
+  "slug": "tekhpidtrymka",
+  "name": "Техпідтримка"
+ },
+ {
+  "slug": "servisnyi-tsentr",
+  "name": "Сервісний центр"
+ },
+ {
+  "slug": "dopomoha-v-moderatsii",
+  "name": "Допомога в модерації"
+ },
+ {
+  "slug": "ruchna-zbirka-ta-remont",
+  "name": "Ручна збірка та ремонт"
+ },
+ {
+  "slug": "bezkoshtovna-dostavka",
+  "name": "Безкоштовна доставка"
+ },
+ {
+  "slug": "zakryta-konstruktsiia-pryntera",
+  "name": "Закрита конструкція принтера"
+ },
+ {
+  "slug": "vidkryta-konstruktsiia-pryntera",
+  "name": "Відкрита конструкція принтера"
+ },
+ {
+  "slug": "soplo-druku",
+  "name": "Сопло друку"
+ },
+ {
+  "slug": "ekstruder",
+  "name": "Екструдер"
+ },
+ {
+  "slug": "direct-ekstruder",
+  "name": "Direct екструдер"
+ },
+ {
+  "slug": "liniina-reika",
+  "name": "Лінійна рейка"
+ },
+ {
+  "slug": "dvyhuny-druku",
+  "name": "Двигуни друку"
+ },
+ {
+  "slug": "rozmir-poverkhni-druku",
+  "name": "Розмір поверхні друку"
+ },
+ {
+  "slug": "mahnitna-poverkhnia",
+  "name": "Магнітна поверхня"
+ },
+ {
+  "slug": "rozmir-druku",
+  "name": "Розмір друку"
+ },
+ {
+  "slug": "lazer",
+  "name": "Лазер"
+ },
+ {
+  "slug": "lazernyi-promin",
+  "name": "Лазерний промінь"
+ },
+ {
+  "slug": "linza",
+  "name": "Лінза"
+ },
+ {
+  "slug": "pidsvitka",
+  "name": "Підсвітка"
+ },
+ {
+  "slug": "kompozytni-materialy",
+  "name": "Композитні матеріали"
+ },
+ {
+  "slug": "filament",
+  "name": "Філамент"
+ },
+ {
+  "slug": "sushka",
+  "name": "Сушка"
+ },
+ {
+  "slug": "smola",
+  "name": "Смола"
+ },
+ {
+  "slug": "kompensatsiia-vibratsii",
+  "name": "Компенсація вібрації"
+ },
+ {
+  "slug": "nalashtuvannia",
+  "name": "Налаштування"
+ },
+ {
+  "slug": "kalibruvannia",
+  "name": "Калібрування"
+ },
+ {
+  "slug": "avtovyrivniuvannia",
+  "name": "Автовирівнювання"
+ },
+ {
+  "slug": "sensornyi-ekran",
+  "name": "Сенсорний екран"
+ },
+ {
+  "slug": "tochnist-druku",
+  "name": "Точність друку"
+ },
+ {
+  "slug": "zruchnyi-interfeis",
+  "name": "Зручний інтерфейс"
+ },
+ {
+  "slug": "datchyk-filamentu",
+  "name": "Датчик філаменту"
+ },
+ {
+  "slug": "bahatokolorovyi-druk",
+  "name": "Багатокольоровий друк"
+ },
+ {
+  "slug": "shvydka-zapravka-filamentu",
+  "name": "Швидка заправка філаменту"
+ }
+]
