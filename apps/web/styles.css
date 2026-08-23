@@ -473,3 +473,10 @@ tr.urow-active td{background:#E9F8FA}
 .ig-logo img{width:96px;height:56px;object-fit:contain;background:#F2F5F7;border:2px solid transparent;border-radius:8px;cursor:pointer;padding:4px}
 .ig-logo.on img{border-color:#19BCC9}
 .ig-logo b{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:999px;background:#101010;color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+
+.ig-lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-top:12px}
+.ig-lib figure{margin:0;border:1px solid var(--line,#E3E6EA);border-radius:12px;overflow:hidden;background:#fff}
+.ig-lib img{width:100%;aspect-ratio:1/1;object-fit:contain;background:#F7F9FA;display:block}
+.ig-lib figcaption{padding:8px 10px;font-size:12px;display:flex;flex-direction:column;gap:4px}
+.ig-lib figcaption span{color:#6B747C}
+.ig-lib figcaption b{color:#B3261E;cursor:pointer;font-weight:600}
