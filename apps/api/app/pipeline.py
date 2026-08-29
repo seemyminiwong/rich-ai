@@ -2143,6 +2143,45 @@ def _mix(value: str, target: str, ratio: float) -> str:
     return '#%02X%02X%02X' % tuple(round(a[i] + (b[i] - a[i]) * ratio) for i in range(3))
 
 
+def _relative_luminance(color: str) -> float:
+    """Відносна яскравість за WCAG - основа розрахунку контрасту."""
+    def channel(value: int) -> float:
+        v = value / 255
+        return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = (channel(c) for c in _hex_rgb(color))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast_ratio(one: str, two: str) -> float:
+    """Коефіцієнт контрасту WCAG: 1 - однакові, 21 - чорне на білому."""
+    a, b = _relative_luminance(one), _relative_luminance(two)
+    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+
+def readable_on(color: str, background: str, target: float = 4.5) -> str:
+    """Підсунути колір до читабельності на цьому тлі, зберігши відтінок.
+
+    Навіщо: фірмовий циан #19BCC9 на темній картці #1A2128 дає 6.8:1, і вся
+    сітка стилів це мовчки припускає. Колір, знятий з фото, не гарантує
+    нічого - живий випадок: коричнево-помаранчевий акцент із корпусу ASUS на
+    темній картці, підфарбованій тим самим відтінком, і «12GB» неможливо
+    прочитати. Тому кольори, які підбирає СЕРВЕР, доводяться до 4.5:1.
+
+    Рухаємось до білого на темному тлі і до чорного на світлому: відтінок
+    лишається, міняється світлота. 50 кроків завжди досягають межі, бо
+    крайня точка - чистий білий або чорний - дає максимум можливого.
+    """
+    if contrast_ratio(color, background) >= target:
+        return color
+    goal = '#FFFFFF' if _relative_luminance(background) < 0.18 else '#000000'
+    candidate = color
+    for step in range(1, 51):
+        candidate = _mix(color, goal, step / 50)
+        if contrast_ratio(candidate, background) >= target:
+            break
+    return candidate
+
+
 def _apply_radius_scale(markup: str, scale: float) -> str:
     """Глобальний масштаб скруглень: кожен border-radius множиться на scale.
     Капсули (>=100px) і відсоткові радіуси не чіпаються - пігулка лишається
@@ -2179,8 +2218,12 @@ def apply_palette(markup: str, palette: dict | None) -> str:
     if 'accent' in clean:
         accent = clean['accent']
         mapping['#19BCC9'] = accent
-        mapping['#157985'] = _mix(accent, '#000000', 0.25)   # акцент на світлому - темніший
-        mapping['#C9F0F4'] = _mix(accent, '#FFFFFF', 0.78)   # блідий відтінок для тексту на темному
+        # Похідні відтінки рахує сервер, тому за їх читабельність відповідає
+        # теж він. Вибір оператора (сам accent) не чіпаємо: якщо людина
+        # свідомо взяла тьмяний колір - це її рішення, а не наша помилка.
+        surface = clean.get('dark_soft') or PALETTE_TOKENS['dark_soft']
+        mapping['#157985'] = readable_on(_mix(accent, '#000000', 0.25), '#FFFFFF')
+        mapping['#C9F0F4'] = readable_on(_mix(accent, '#FFFFFF', 0.78), surface)
     if 'dark' in clean:
         mapping['#101010'] = clean['dark']
     if 'dark_soft' in clean:
@@ -2259,10 +2302,18 @@ def palette_from_photo(blob: bytes) -> dict | None:
     val = min(0.80, max(0.55, val))
     tone = lambda v, s2: '#%02X%02X%02X' % tuple(round(c * 255) for c in colorsys.hsv_to_rgb(h, s2, v))
     accent = tone(val, sat)
+    # Темні поверхні лише ПІДФАРБОВУЮТЬСЯ відтінком товару. Стеля насиченості
+    # низька навмисно: густо тонована картка зливається з акцентом того ж
+    # відтінку - саме так «12GB» на темній плитці ставало нечитабельним.
+    dark = tone(0.07, min(0.22, sat * 0.5))
+    dark_soft = tone(0.15, min(0.22, sat * 0.55))
+    # Акцент несе найбільші числа на цих картках - доводимо до 4.5:1 на обох.
+    accent = readable_on(accent, dark_soft)
+    accent = readable_on(accent, dark)
     return {
         'accent': accent,
-        'dark': tone(0.07, min(0.35, sat * 0.5)),
-        'dark_soft': tone(0.15, min(0.35, sat * 0.55)),
+        'dark': dark,
+        'dark_soft': dark_soft,
         'light_soft': _mix(accent, '#FFFFFF', 0.94),
     }
 

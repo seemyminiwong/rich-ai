@@ -31,6 +31,7 @@ from app.pipeline import (
     select_key_feature,
     style_image_prompt,
     style_palette,
+    apply_palette,
     PALETTE_TOKENS,
     palette_from_photo,
     fetch_bytes_capped,
@@ -749,6 +750,15 @@ def process_project(self, project_id, reuse_images=False):
                     content_out += added_output
                     recalculate_cost(project)
                     project.cost_breakdown_json = json.dumps(cost_breakdown(project, extract_in, extract_out, content_in, content_out), ensure_ascii=False)
+                    # Кожен прохід моделі може «виправити» кольори назад на
+                    # фірмовий циан: він розсипаний по всьому промпту стилю, і
+                    # модель його впізнає. Живий випадок: десктоп виходив у
+                    # палітрі з фото, а мобільна версія - перекомпонована тією
+                    # ж моделлю - поверталась до циану. Тому схема накладається
+                    # НА ВИХОДІ, після будь-якого проходу. Повторне
+                    # застосування безпечне: мапляться лише канонічні кольори,
+                    # тож якщо їх уже підмінили, робити нема чого.
+                    rich_html = apply_palette(rich_html, _project_palette(project) or style_palette(style))
                     latest_version = db.scalar(select(func.max(Artifact.version)).where(
                         Artifact.project_id == project.id,
                         Artifact.language == language,

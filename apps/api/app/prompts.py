@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.67"
+BASE_STYLE_VERSION = "12.68"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -644,7 +644,7 @@ SECTION SET, IN ORDER
 6. TRUST SPLIT - outer canvas #F5F7FA, radius 12px, padding 18px; grid .9fr/1.1fr with align-items:stretch (mobile stacked). Left: dark panel (#1A2128, radius 10px, padding 36px) with h2 34-36px and one supportive paragraph about choosing/completing the setup with artline - no invented services or warranties beyond Product JSON. Right: 2x2 grid of equal-height soft cards. Each tile answers a real buyer decision from Product JSON: what it pairs with (battery voltage/type, communication, parallel operation), an operating limit (temperature, IP rating, mounting), a capacity boundary, or a confirmed warranty term. REGISTRY DATA IS BANNED HERE: never SKU, article number, internal code, EAN/barcode or country of origin - a buyer decides nothing with those.
 7. FINAL RECAP - centered dark section, radius 12px, padding 48px 28px, background linear-gradient(135deg,#1A2128,#252525): pill badge with brand/model, h2 40-42px white, one summary paragraph #d0d7de max-width 700px, chip row of 3 white pills with exact confirmed values (dimensions, key spec, capacity).
 8. FAQ - native questions and answers, quiet light canvas
-- Container: background:#FFFFFF;border-radius:12px;padding:32px 30px 12px (mobile 24px 16px 8px);max-width:940px;margin:0 auto. At the top one h2 30-32px/900;text-align:center;margin:0 0 14px, with the natural target-language heading for frequently asked questions.
+- Container: background:#FFFFFF;border-radius:12px;padding:32px 30px 12px (mobile 24px 16px 8px). At the top one h2 30-32px/900;text-align:center;margin:0 0 14px, with the natural target-language heading for frequently asked questions.
 - Then 4-6 <details> items and nothing else. Each details: margin:0;padding:0;border-bottom:1px solid #E7EAEE.
 - Each <summary>: display:flex;align-items:center;padding:20px 2px;cursor:pointer;list-style:none;font-size:17px;font-weight:600;color:#101010. The question is plain text directly inside the summary - no number, no wrapper span around it. Do NOT draw any +/-, arrow or circle icon yourself: the server prepends the toggle glyph mechanically as the first child of the summary.
 - After the summary exactly one answer <p style="margin:0;padding:0 0 22px 36px;font-size:15px;line-height:1.55;color:#555555;max-width:900px"> with 1-3 sentences.
@@ -823,8 +823,8 @@ for _old, _new in (
     ('- Rhythm rule: the Podium opens LIGHT; from section 3 onward strictly alternate dark and light canvases.',
      '- Rhythm rule: the page is fully dark; alternate #0D1013 and #1A2128 canvases so neighbouring sections differ.'),
     # Блок 08 успадковується світлим - на суцільно темній сторінці це біла пляма.
-    ('- Container: background:#FFFFFF;border-radius:12px;padding:32px 30px 12px (mobile 24px 16px 8px);max-width:940px;margin:0 auto.',
-     '- Container: background:#1A2128;border-radius:12px;padding:32px 30px 12px (mobile 24px 16px 8px);max-width:940px;margin:0 auto.'),
+    ('- Container: background:#FFFFFF;border-radius:12px;padding:32px 30px 12px (mobile 24px 16px 8px).',
+     '- Container: background:#1A2128;border-radius:12px;padding:32px 30px 12px (mobile 24px 16px 8px).'),
     ('border-bottom:1px solid #E7EAEE.',
      'border-bottom:1px solid rgba(255,255,255,.10).'),
     ('cursor:pointer;list-style:none;font-size:17px;font-weight:600;color:#101010.',
