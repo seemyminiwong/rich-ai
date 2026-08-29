@@ -101,7 +101,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.66"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.67"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 3 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -298,7 +298,17 @@ checks.update({
     'bento light edition seeded': "'ARTLINE Bento Light'" in web.split('MANAGED_STYLE_NAMES=')[1].split(']')[0] and 'BENTO_LIGHT_STYLE_NAME' in main and '_BENTO_LIGHT_SWAPS' in prompts and "('#19BCC9', '#157985')" in prompts,
     'split photo slots stretch with the row and never deep-crop the product': 'def _photo_aspect' in pipeline and 'min_slot, max_slot' in pipeline and 'ideal > height * 1.15' in pipeline and "for index in (2, 3):" in pipeline and "_set_css(card_style, 'height', '100%')" in pipeline and "f'min-height:{height}px'" in pipeline,
     'faq block: native details accordion, no js': "'details', 'summary'" in pipeline and "'open'" in pipeline and '_finalize_faq' in pipeline and '.arfaq' in pipeline and 'ARTLINE BLOCK 08: FAQ' in prompts and prompts.count('exactly eight direct child blocks') == 1 and 'FAQ' in pipeline.split('_SHOWCASE_BLOCK_NAMES')[1].split(')')[0],
-    'faq state indicator survives a hostile editor': "('display', 'list-item')" in pipeline and "'float:right" in pipeline and 'section details[open]>summary>span:last-child' in pipeline and 'section details:open>summary>span:last-child' in pipeline and pipeline.count('rotate(45deg)!important') >= 2,
+    # Значок стоїть ПЕРШИМ у summary (референс - блок «Питання» на artline.ua),
+    # тому запасний селектор ловить :first-child, а підпірки float більше немає.
+    'faq state indicator survives a hostile editor': "('display', 'list-item')" in pipeline and 'summary.insert(0, icon)' in pipeline and 'section details[open]>summary>span:first-child' in pipeline and 'section details:open>summary>span:first-child' in pipeline and pipeline.count('rotate(45deg)!important') >= 2,
+    # Вигляд блока: тонкий бірюзовий плюс ліворуч, без кружка й без нумерації.
+    'faq matches the block used on artline.ua': (
+        'color:#19BCC9' in pipeline.split('def _finalize_faq')[1].split('def ')[0]
+        and 'border-radius:999px' not in pipeline.split('def _finalize_faq')[1].split('def ')[0]
+        and 'item number' not in prompts
+        and 'text-align:center' in prompts.split('8. FAQ')[1].split('FACTS AND TONE')[0]
+        and 'border-bottom:1px solid #E7EAEE' in prompts
+    ),
     'labels hug text, photo frames take photo backdrop': 'width:fit-content;max-width:100%;min-height:30px' in pipeline and 'width:280px' not in pipeline and '_photo_surface_color' in pipeline and 'width:280px' not in prompts,
     'base radius is quiet and machine-enforced': '_MAX_SURFACE_RADIUS = 12' in pipeline and '_clamp_surface_radii(output)' in pipeline and '_clamp_surface_radii(relaid)' in (root / 'apps/api/app/tasks.py').read_text(encoding='utf-8') and 'radius 30px' not in prompts and 'border-radius:32px' not in prompts and 'radius 28px' not in prompts,
     'promo showcase style seeded and locked': "'ARTLINE Showcase Promo'" in web.split('MANAGED_STYLE_NAMES=')[1].split(']')[0] and 'SHOWCASE_PROMO_STYLE_NAME' in main and 'PROMO EDITION OVERRIDES' in prompts and 'BRAND + MODEL CODE' not in prompts.split('PROMO EDITION OVERRIDES')[1] and prompts.count('LOGOS, PLACEHOLDERS AND TEXT ON THE PRODUCT') == 2,

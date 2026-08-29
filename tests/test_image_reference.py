@@ -937,11 +937,13 @@ def test_golden_example_is_structure_only_and_scrubs_urls():
 def test_showcase_faq_is_native_interactive_and_idempotent():
     from app.pipeline import _finalize_showcase_layout, sanitize_html
 
+    # Нумерація в зразку - навмисно: сторінки, згенеровані старим контрактом,
+    # мусять чиститись на місці при перекладі та перерозкладці.
     faq = (
-        '<details style="border-top:none"><summary style="font-size:18px">'
+        '<details style="border-bottom:1px solid #E7EAEE"><summary style="font-size:17px">'
         '<span style="min-width:22px">1</span>Чи сумісний модуль?</summary>'
         '<p>Так, LiFePO4 51.2 В.</p></details>'
-        '<details open style="border-top:1px solid #E3E6EA"><summary>'
+        '<details open style="border-bottom:1px solid #E7EAEE"><summary>'
         '<span>2</span>Що в комплекті?</summary><p>Кронштейн і кабель.</p></details>'
     )
     markup = ('<section><div>hero</div><div>strip</div><div>light</div><div>dark</div>'
@@ -959,6 +961,14 @@ def test_showcase_faq_is_native_interactive_and_idempotent():
     assert not details[0].has_attr('open') and not details[1].has_attr('open'), 'модельне open знімається: покупець розгортає сам'
     icon = details[0].find('span', class_='arfaq-i')
     assert icon is not None and icon.get_text(strip=True) == '+', 'плюс - текст, живе без <style>'
+    # Референс artline.ua: плюс ПЕРШИМ у summary, без кружка, без номера.
+    summary_spans = details[0].find('summary').find_all('span')
+    assert len(summary_spans) == 1 and summary_spans[0] is icon, 'номер прибирається, лишається сам значок'
+    assert details[0].find('summary').contents[0] is icon, 'значок - перший вузол summary'
+    istyle = icon.get('style') or ''
+    assert 'color:#19BCC9' in istyle, 'колір канонічний - палітра стилю його перефарбує'
+    assert 'border-radius' not in istyle and 'background' not in istyle, 'кружка більше немає'
+    assert 'margin-right:14px' in istyle and 'float' not in istyle
     # повторний прогін - no-op: жодних другого кружка чи другого <style>
     again = _finalize_showcase_layout(out, 'desktop')
     assert again.count('arfaq-i') == out.count('arfaq-i')
@@ -975,15 +985,18 @@ def test_showcase_faq_is_native_interactive_and_idempotent():
     #    показує і перемикає штатний трикутник; інлайнових вбивць маркера немає
     assert 'display:list-item' in summary_style
     assert 'list-style' not in summary_style and 'display:flex' not in summary_style
-    assert 'float:right' in (icon.get('style') or ''), 'кружок праворуч і без flex'
+    # без таблиці стилів значок лишається інлайновим і стоїть перед текстом
+    # сам по собі - ліворуч його тримає порядок у DOM, а не CSS
+    assert 'float' not in (icon.get('style') or '')
     # 2) якщо санітайзер зріже class - поворот тримає селектор без класів
     css = soup.find('style').string
-    assert 'section details[open]>summary>span:last-child' in css
-    assert 'section details:open>summary>span:last-child' in css
+    assert 'section details[open]>summary>span:first-child' in css
+    assert 'section details:open>summary>span:first-child' in css
     # 3) власний CSS магазину не має перебивати поворот
     assert css.count('rotate(45deg)!important') >= 2
     # красива flex-розкладка живе в таблиці стилів, а не інлайном
-    assert 'display:flex!important' in css and 'margin-left:auto!important' in css
+    assert 'display:flex!important' in css
+    assert 'margin-left:auto' not in css, 'підпірка для значка праворуч більше не потрібна'
 
 
 def test_contained_photo_frame_takes_the_photo_own_backdrop(tmp_path):
