@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, func, select, update
@@ -30,6 +31,10 @@ from app.pipeline import (
     select_key_feature,
     style_image_prompt,
     style_palette,
+    PALETTE_TOKENS,
+    palette_from_photo,
+    fetch_bytes_capped,
+    safe_client,
     translate_html,
     critic_html,
 )
@@ -87,12 +92,52 @@ def image_rate(model: str, quality: str):
 
 
 def _project_palette(project) -> dict | None:
-    """Знімок схеми, обраної при запуску проєкту; None = діє схема стилю."""
+    """Знімок схеми, обраної при запуску проєкту; None = діє схема стилю.
+
+    Фільтр до відомих токенів обовʼязковий: «палітра з фото» кладе сюди
+    маркер {'source': 'photo'} ще ДО того, як токени зняті з кадру. Без
+    фільтра маркер робив би словник істинним і глушив би схему стилю."""
     try:
         tokens = json.loads(getattr(project, 'palette_json', None) or '{}') or {}
     except Exception:
         tokens = {}
+    tokens = {k: v for k, v in tokens.items() if k in PALETTE_TOKENS or k == 'radius'}
     return tokens or None
+
+
+def _photo_palette_requested(project) -> bool:
+    try:
+        raw = json.loads(getattr(project, 'palette_json', None) or '{}') or {}
+    except Exception:
+        return False
+    return raw.get('source') == 'photo'
+
+
+def _adopt_photo_palette(db, project, blob: bytes | None) -> None:
+    """Зняти палітру з фото товару і покласти в знімок проєкту.
+
+    Викликається ПІСЛЯ збереження референса і ДО генерації зображень: акцент
+    із фото має встигнути і в підказку BRAND ACCENT для Hero/Feature, і в
+    apply_palette для HTML. Ідемпотентно: якщо токени вже зняті (повторний
+    запуск із reuse_images), кадр не аналізується вдруге."""
+    if not _photo_palette_requested(project):
+        return
+    try:
+        current = json.loads(project.palette_json or '{}') or {}
+    except Exception:
+        current = {'source': 'photo'}
+    if any(k in current for k in PALETTE_TOKENS):
+        return
+    tokens = palette_from_photo(blob) if blob else None
+    if tokens:
+        current.update(tokens)
+        project.palette_json = json.dumps(current)
+        log(db, project, 'images',
+            'Палітру знято з фото товару: акцент ' + tokens['accent'], 21)
+    else:
+        log(db, project, 'images',
+            'Фото товару без виразного кольору — сторінка йде у фірмовій палітрі', 21, 'warning')
+    db.commit()
 
 
 def recalculate_cost(project):
@@ -351,6 +396,9 @@ def process_project(self, project_id, reuse_images=False):
                 reference_path = None
                 feature_photo_fallback = ''
                 log(db, project, 'images', f'Зображення взято з попередньої генерації ({len(existing_images)} шт.) — нові не створювались', 35)
+                if _photo_palette_requested(project):
+                    stored = Path(settings.media_dir) / project.id / 'product-reference.png'
+                    _adopt_photo_palette(db, project, stored.read_bytes() if stored.is_file() else None)
                 recalculate_cost(project)
                 project.cost_breakdown_json = json.dumps(cost_breakdown(project, extract_in, extract_out, content_in, content_out), ensure_ascii=False)
                 db.commit()
@@ -391,6 +439,23 @@ def process_project(self, project_id, reuse_images=False):
                 else:
                     log(db, project, 'images', 'На сторінці не знайдено придатного фото товару — AI-зображення буде пропущено', 20, 'warning')
                     db.commit()
+
+                if _photo_palette_requested(project):
+                    palette_blob = None
+                    if reference_path is not None:
+                        try:
+                            palette_blob = Path(reference_path).read_bytes()
+                        except Exception:
+                            palette_blob = None
+                    if palette_blob is None and page_gallery:
+                        # Стилі без AI-зображень (Bento) можуть жити самою
+                        # галереєю - тоді колір знімаємо з першого кадру.
+                        try:
+                            with safe_client(timeout=60, headers={'User-Agent': 'Mozilla/5.0'}) as http:
+                                palette_blob = fetch_bytes_capped(http, page_gallery[0], cap_mb=8)
+                        except Exception:
+                            palette_blob = None
+                    _adopt_photo_palette(db, project, palette_blob)
 
                 style_hero = style_image_prompt(style.prompt, 'HERO_IMAGE') or style.hero_prompt.strip()
                 style_feature = style_image_prompt(style.prompt, 'FEATURE_IMAGE') or style.feature_prompt.strip()
