@@ -221,6 +221,14 @@ checks = {
     # Шапка - це знак ПЛЮС назва. «без знака» прибирало тільки картинку,
     # і на її місце виїжджав текст ARTLINE - прибрати бренд повністю було
     # неочевидно. Тепер один вибір із трьох.
+    # logo.png був квадратною іконкою, тому поруч зі знаком щоразу
+    # друкувався ще й текст ARTLINE. Тепер це справжній лого-напис.
+    'default brand mark is the real wordmark': (
+        (root / 'apps/api/app/infographic/logo-source.svg').exists()
+        and 'def ink_logo' in infographic
+        and 'brand_logo = ink_logo(brand_logo, ink)' in infographic
+    ),
+    'brand mark is pinned by a test': 'def test_default_brand_mark_is_the_real_artline_wordmark' in tests,
     'brand in the header can be removed in one click': (
         'function igSetBrandMode' in web and 'Без бренду' in web
         and "g.logo='none';g.brand=''" in web
@@ -322,6 +330,9 @@ checks = {
         and nginx.count('proxy_pass $') == 3
     ),
     'media outranks the static cache regex': 'location ^~ /media/' in nginx and nginx.index('location ^~ /media/') < nginx.index('location ~*'),
+    # Без ^~ regex-локація кешу краде будь-яку адресу API, що кінчається на
+    # .png/.svg/.js/.css: прев'ю іконок не вантажились саме через це.
+    'api outranks the static cache regex too': 'location ^~ /api/' in nginx and 'location /api/ {' not in nginx,
     'frontend crashes reach the alert channel': "addEventListener('error'" in web and "@app.post('/api/client-error')" in main,
     'close buttons are labelled': web.count('aria-label="Закрити"') + web.count('aria-label="Прибрати"') == web.count('>×</button>'),
     'refuses to boot on shipped secrets': 'def check_secrets' in main and 'check_secrets()' in main and 'SHIPPED_DEFAULTS' in config,

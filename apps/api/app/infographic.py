@@ -290,6 +290,26 @@ def _paste_icon(canvas: Image.Image, slug: str, cx: int, cy: int, size: int,
     canvas.paste(icon, (int(cx - icon.width / 2), int(cy - icon.height / 2)), icon)
 
 
+def ink_logo(logo: Image.Image, ink: str) -> Image.Image:
+    """Одноколірний знак перефарбовуємо під полотно, кольоровий - ніколи.
+
+    Фірмовий ARTLINE - БІЛИЙ лого-напис: він зроблений для темної шапки сайту
+    і на білому полотні інфографіки був би просто невидимий. Знаки партнерів
+    (QUBE, DEYE) не чіпаємо - у них колір і є брендом.
+
+    Ознака одноколірності - відсутність власного відтінку взагалі або мізерна
+    частка кольорових пікселів: біле лого з дрібною кольоровою крапкою теж
+    треба перефарбувати, інакше зникне все, крім тієї крапки.
+    """
+    rgba = logo.convert('RGBA')
+    profile = _hue_profile(rgba)
+    if profile is not None and profile[1] >= 0.2:
+        return logo
+    solid = Image.new('RGBA', rgba.size, hex_rgb(ink) + (255,))
+    solid.putalpha(rgba.getchannel('A'))
+    return solid
+
+
 def _header(canvas: Image.Image, draw, title: str, brand_logo, pad: int, ink: str,
             brand: str = 'ARTLINE') -> int:
     """Шапка: знак бренду + назва + заголовок капсом. Повертає нижню межу шапки.
@@ -313,6 +333,7 @@ def _header(canvas: Image.Image, draw, title: str, brand_logo, pad: int, ink: st
                            CANVAS - left - pad, ink, line_gap=6)
         return y + used + 46
     if brand_logo is not None:
+        brand_logo = ink_logo(brand_logo, ink)
         aspect = brand_logo.width / max(1, brand_logo.height)
         if aspect > 2.0:
             # Це логотип-напис: даємо йому ширину і не дублюємо назву текстом.

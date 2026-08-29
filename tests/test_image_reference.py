@@ -1498,6 +1498,16 @@ def test_media_location_outranks_the_static_cache_regex():
     # кожен медіафайл іде на API, якого б розширення не був
     for name in ('product-reference.png', 'hero-desktop.webp', 'feature.webp', 'frame.jpg'):
         assert route(f'/media/p1/{name}') == 'prefix:/media/', name
+
+    # Те саме стосується САМОГО API. Аварія 29.08: прев'ю іконок не
+    # вантажились узагалі, бо /api/infographic/icon/<slug>.png підхоплювала та
+    # сама regex-локація кешу і віддавала 404 зі статики - запит до API просто
+    # не доходив. Перша діагностика списала це на 401 і зняла авторизацію,
+    # хоча авторизація була ні до чого.
+    assert 'location ^~ /api/' in conf
+    for uri in ('/api/infographic/icon/pc.png', '/api/infographic/icon/wi-fi.svg',
+                '/api/projects', '/api/artifacts/1/blocks.zip'):
+        assert route(uri) == 'prefix:/api/', uri
     # статика при цьому лишається імутабельно закешованою
     assert route('/app.js').startswith('regex:')
     assert route('/favicon-32.png').startswith('regex:')
@@ -2360,3 +2370,49 @@ def test_brand_in_the_header_can_be_removed_completely():
     off = web.split("if(mode==='off'){")[1].split('}')[0]
     assert "g.logo='none'" in off and "g.brand=''" in off, 'вимкнення знімає І знак, І назву'
     assert 'Без бренду' in web
+
+
+def test_default_brand_mark_is_the_real_artline_wordmark():
+    """Знак за замовчуванням - справжній фірмовий лого-напис із сайту.
+
+    Було два дефекти в одному файлі. По-перше, logo.png був КВАДРАТНОЮ
+    іконкою 512x512: перевірка «широкий лого-напис» (aspect > 2) не
+    спрацьовувала, тож поруч зі знаком щоразу друкувався ще й текст ARTLINE -
+    саме на це скаржився власник. По-друге, вихідний SVG залитий БІЛИМ (він
+    для темної шапки сайту), тож на білому полотні інфографіки був би
+    невидимий - одноколірний знак підганяється під колір полотна.
+    """
+    from pathlib import Path
+    from PIL import Image, ImageDraw
+    from app.infographic import CANVAS, _header, ink_logo
+
+    pack = Path(__file__).resolve().parents[1] / 'apps/api/app/infographic'
+    logo = Image.open(pack / 'logo.png').convert('RGBA')
+    assert logo.width / logo.height > 2.0, 'лого-напис, а не квадратна іконка'
+    assert (pack / 'logo-source.svg').is_file(), 'джерело поруч із растром'
+
+    # білий напис стає кольором полотна, форма недоторкана
+    dark = ink_logo(logo, '#101010')
+    opaque = [p for p in dark.getdata() if p[3] > 200][:1]
+    assert opaque and opaque[0][:3] == (16, 16, 16), opaque
+    assert list(dark.getchannel('A').getdata()) == list(logo.getchannel('A').getdata())
+
+    # кольоровий знак партнера не чіпаємо: колір у нього і є брендом
+    partner = Image.new('RGBA', (400, 100), (0, 0, 0, 0))
+    for x in range(20, 380):
+        for y in range(20, 80):
+            partner.putpixel((x, y), (30, 90, 220, 255))
+    assert ink_logo(partner, '#101010').getpixel((200, 50))[:3] == (30, 90, 220)
+
+    # лого-напис займає місце назви - текст поруч не дублюється
+    def header_with(logo_image, brand):
+        canvas = Image.new('RGB', (CANVAS, CANVAS), 'white')
+        draw = ImageDraw.Draw(canvas)
+        before = canvas.copy()
+        _header(canvas, draw, '', logo_image, 96, '#101010', brand)
+        return canvas, before
+
+    painted, _ = header_with(logo, 'ARTLINE')
+    plain, _ = header_with(logo, '')
+    # з назвою і без назви результат однаковий: широкий напис глушить текст
+    assert list(painted.getdata()) == list(plain.getdata()), 'текст поруч із лого-написом не друкується'
