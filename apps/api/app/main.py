@@ -2305,6 +2305,9 @@ class InfographicIn(BaseModel):
     title: str = Field(default='', max_length=160)
     template: str = Field(default='icons-left', max_length=32)
     background: str = Field(default='#FFFFFF', max_length=16)
+    # Колір іконок і виносок. Порожньо = акцент палітри проєкту
+    # (у вільному розділі - фірмовий циан).
+    accent: str = Field(default='', max_length=16)
     # Логотип бренду: порожньо - фірмовий ARTLINE, 'none' - без знака,
     # /media/logos/... - завантажений оператором (SVG розтеризує браузер).
     logo_url: str = Field(default='', max_length=500)
@@ -2407,7 +2410,7 @@ def infographic_logo_delete(url: str, user=Depends(require_perm('project.create'
 
 
 @app.get('/api/infographic/icon/{slug}.png')
-def infographic_icon(slug: str):
+def infographic_icon(slug: str, c: str = ''):
     """Одна іконка бібліотеки - для попереднього перегляду у формі.
 
     БЕЗ авторизації навмисно: <img> не надсилає Bearer-токен, тож із
@@ -2415,13 +2418,73 @@ def infographic_icon(slug: str):
     іконки (жива скарга зі скріншотом PETG). Це фірмові лінійні іконки, а не
     дані користувача; slug звірено регуляркою, вийти за каталог неможливо.
     """
+    from app.infographic import _icon_path, recolor_icon
     if not re.fullmatch(r'[a-z0-9-]{1,64}', slug or ''):
         raise HTTPException(404, 'Not found')
-    path = Path(__file__).resolve().parent / 'infographic' / 'icons' / f'{slug}.png'
-    if not path.is_file():
+    path = _icon_path(slug)
+    if path is None:
         raise HTTPException(404, 'Not found')
+    # ?c=RRGGBB - той самий поворот відтінку, що й при збиранні картинки, тож
+    # у формі видно РІВНО те, що потрапить у WEBP, а не приблизний колір.
+    tint = (c or '').strip().lstrip('#').upper()
+    if tint:
+        if not re.fullmatch(r'[0-9A-F]{6}', tint):
+            raise HTTPException(400, 'Колір має вигляд RRGGBB')
+        from PIL import Image as PILImage
+        buffer = io.BytesIO()
+        recolor_icon(PILImage.open(path), f'#{tint}').save(buffer, format='PNG', optimize=True)
+        return Response(content=buffer.getvalue(), media_type='image/png',
+                        headers={'Cache-Control': 'public, max-age=86400'})
     return FileResponse(path, media_type='image/png',
                         headers={'Cache-Control': 'public, max-age=86400'})
+
+
+@app.post('/api/infographic/icon')
+async def infographic_icon_upload(request: Request, name: str = '',
+                                  user=Depends(require_perm('project.create'))):
+    """Приймає власну іконку і приводить її до формату бібліотеки.
+
+    Файл лягає в media/icons - у ТОМІ, а не в образі: тека app/infographic/icons
+    копіюється всередину образу, тож усе завантажене туди зникло б на першій
+    же пересборці. Том переживає її і потрапляє в нічний бекап медіа.
+
+    SVG, як і для логотипів, розтеризує браузер: жодної нової залежності на
+    сервері, а оператор одразу бачить те, що збережеться.
+    """
+    from app.infographic import normalize_uploaded_icon, user_icons_dir
+    check_action(user.id, 'icon_upload', 60)
+    cap = 8 * 1024 * 1024
+    if int(request.headers.get('content-length') or 0) > cap:
+        raise HTTPException(413, 'Файл більший за 8 МБ')
+    data = await request.body()
+    if len(data) > cap:
+        raise HTTPException(413, 'Файл більший за 8 МБ')
+    if len(data) < 64:
+        raise HTTPException(400, 'Порожній файл')
+    if data.lstrip()[:5].lower() == b'<?xml' or b'<svg' in data[:400].lower():
+        raise HTTPException(400, 'SVG треба перетворити на PNG у браузері — оновіть сторінку студії')
+    try:
+        blob = normalize_uploaded_icon(data)
+    except Exception:
+        raise HTTPException(400, 'Файл не схожий на зображення')
+    slug = re.sub(r'[^a-z0-9-]+', '-', (name or 'icon').strip().lower()).strip('-')[:40] or 'icon'
+    filename = f'{slug}-{secrets.token_hex(4)}.png'
+    (user_icons_dir() / filename).write_bytes(blob)
+    stem = filename[:-4]
+    return {'slug': stem, 'name': _logo_title(filename), 'custom': True}
+
+
+@app.delete('/api/infographic/icon')
+def infographic_icon_delete(slug: str, user=Depends(require_perm('project.create'))):
+    """Прибирає ВЛАСНУ іконку. Вбудовані 174 недоторкані назавжди."""
+    from app.infographic import user_icons_dir
+    if not re.fullmatch(r'[a-z0-9-]{1,64}', slug or ''):
+        raise HTTPException(400, 'Некоректна іконка')
+    path = user_icons_dir() / f'{slug}.png'
+    if not path.is_file():
+        raise HTTPException(404, 'Іконку не знайдено або вона вбудована')
+    path.unlink()
+    return {'deleted': True}
 
 
 class FreeSuggestIn(BaseModel):
@@ -2438,6 +2501,9 @@ class FreeInfographicIn(BaseModel):
     title: str = Field(default='', max_length=160)
     template: str = Field(default='icons-left', max_length=32)
     background: str = Field(default='#FFFFFF', max_length=16)
+    # Колір іконок і виносок. Порожньо = акцент палітри проєкту
+    # (у вільному розділі - фірмовий циан).
+    accent: str = Field(default='', max_length=16)
     logo_url: str = Field(default='', max_length=500)
     brand: str = Field(default='ARTLINE', max_length=40)
     name: str = Field(default='', max_length=120)
@@ -2513,6 +2579,7 @@ def infographic_free_render(payload: FreeInfographicIn,
             logo_bytes = default_logo.read_bytes() if default_logo.is_file() else None
     try:
         blob = render_infographic(photo, items, title=payload.title, template=payload.template,
+                                  accent=payload.accent or '#19BCC9',
                                   background=payload.background or '#FFFFFF',
                                   logo_bytes=logo_bytes, brand=payload.brand)
     except ValueError as exc:
@@ -2608,8 +2675,19 @@ def infographic_render(project_id: str, payload: InfographicIn, db: Session = De
             default_logo = Path(__file__).resolve().parent / 'infographic' / 'logo.png'
             logo_bytes = default_logo.read_bytes() if default_logo.is_file() else None
     try:
+        # Інфографіка і сторінка товару мусять виглядати одним комплектом,
+        # тому колір іконок за замовчуванням - той самий акцент, що й у річа
+        # (включно зі знятим з фото). Явне поле у формі його перебиває.
+        project_accent = _palette_raw(p).get('accent') or ''
+        if not project_accent:
+            style_row = db.get(Style, p.style_id)
+            try:
+                project_accent = (json.loads(getattr(style_row, 'palette_json', None) or '{}') or {}).get('accent') or ''
+            except Exception:
+                project_accent = ''
         blob = render_infographic(
             photo, items, title=payload.title, template=payload.template,
+            accent=payload.accent or project_accent or '#19BCC9',
             background=payload.background or '#FFFFFF',
             logo_bytes=logo_bytes, brand=payload.brand)
     except ValueError as exc:
@@ -2631,7 +2709,8 @@ def infographic_render(project_id: str, payload: InfographicIn, db: Session = De
                   width=CANVAS, height=CANVAS,
                   metadata_json=json.dumps({'template': payload.template, 'items': items,
                                             'photo_url': payload.photo_url,
-                                            'logo_url': payload.logo_url, 'brand': payload.brand},
+                                            'logo_url': payload.logo_url, 'brand': payload.brand,
+                                            'accent': payload.accent or project_accent or ''},
                                            ensure_ascii=False))
     db.add(asset)
     db.add(Event(project_id=p.id, stage='images',

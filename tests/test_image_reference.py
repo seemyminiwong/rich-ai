@@ -2138,3 +2138,225 @@ def test_palette_is_reapplied_after_every_model_pass():
     assert '#1A2128' not in fixed and '#26211E' in fixed
     # повторне накладання - точний no-op, тож зайвий прохід нічого не псує
     assert apply_palette(fixed, tokens) == fixed
+
+
+def test_infographic_icons_are_visible_and_history_is_restorable():
+    """Бібліотека іконок мусить бути ВИДИМОЮ, а історія — робочою.
+
+    Скарга власника: «бібліотеку іконок не видно». Формально 174 іконки були,
+    але лише в <datalist> на полі вводу: щоб побачити хоч одну, треба вгадати
+    slug і почати його друкувати. Тепер сітка з пошуком, яку відкриває і
+    кнопка, і сам квадрат іконки.
+
+    Друга скарга - «погано зроблена історія генерацій». Кожна зібрана
+    картинка лягає в медіатеку проєкту як ассет infographic-N РАЗОМ із
+    метаданими (макет, підписи, фото, логотип). Тому історія не стрічка
+    картинок, а перезбирані записи: «відновити» повертає налаштування у
+    форму. Збірка безкоштовна, отже це найдешевший шлях до правки.
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
+    css = (root / 'apps/web/styles.css').read_text(encoding='utf-8')
+    main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
+
+    # пікер: пошук по назві І по слагу, відкривається з двох місць
+    for fn in ('igOpenIcons', 'igIconGridTpl', 'igIconMatches', 'igPickIcon', 'igIconPickerTpl'):
+        assert f'function {fn}' in web, fn
+    assert 'onclick="igOpenIcons(${i})"' in web
+    assert web.count('igOpenIcons(${i})') == 2, 'і кнопка, і квадрат іконки'
+    assert '`${x.name} ${x.slug}`.toLowerCase()' in web, 'шукаємо і за назвою, і за слагом'
+    assert '.ig-picker' in css and '.ig-pick' in css
+
+    # діалог присутній в ОБОХ екранах - і у вкладці проєкту, і в розділі
+    assert web.count('igIconPickerTpl()') == 3, 'означення + два екрани'
+
+    # історія проєкту будується з ассетів infographic-* і вміє відновлювати
+    assert "startsWith('infographic')" in web
+    assert 'function igRestore' in web and 'function igHistoryTpl' in web
+    for key in ('m.template', 'm.photo_url', 'm.logo_url', 'm.brand', 'm.items'):
+        assert key in web.split('function igRestore')[1].split('\n')[0], key
+
+    # бекенд справді зберігає ці метадані - інакше відновлювати нічого
+    saved = main.split("asset = Asset(project_id=p.id, kind='image', label=f'infographic-")[1][:400]
+    for key in ("'template'", "'items'", "'photo_url'", "'logo_url'", "'brand'"):
+        assert key in saved, key
+
+    # вільна галерея віддає розмір і дату - історія показує їх, а не голі назви
+    gallery = main.split("@app.get('/api/infographic/gallery')")[1].split('@app.')[0]
+    assert "'bytes'" in gallery and "'created_at'" in gallery
+    free = web.split('function infographicPage')[1].split('\nasync function')[0]
+    assert 'x.bytes' in free and 'x.created_at' in free
+
+    # порожня історія пояснює себе, а не зникає мовчки
+    assert web.count('Історія порожня') == 2
+
+
+def test_icons_recolor_by_hue_rotation_and_uploads_live_in_the_volume():
+    """Іконки перефарбовуються, а завантажені переживають пересборку образу.
+
+    Виміряно по всій бібліотеці: усі 174 іконки лежать у смузі відтінку
+    155°..185° з насиченістю 1.0 - це один і той самий двоточковий градієнт.
+    Саме ця регулярність дозволяє перефарбовувати їх ПОВОРОТОМ відтінку, а не
+    заливкою: насиченість, яскравість, градієнт і згладжування країв кожного
+    пікселя лишаються своїми, альфа не чіпається взагалі.
+
+    Друге, важливіше за красу: тека app/infographic/icons копіюється ВСЕРЕДИНУ
+    docker-образу, тож усе завантажене туди зникло б на першій же пересборці.
+    Власні іконки мусять лежати в media_dir - у томі, який переживає
+    пересборку і потрапляє в нічний бекап медіа.
+    """
+    import colorsys
+    import math
+    import tempfile
+    from io import BytesIO
+    from pathlib import Path
+    from unittest.mock import patch
+    from PIL import Image
+    from app import infographic as IG
+    from app.raster import contrast_ratio, readable_on
+
+    def hue_of(image):
+        """Коловий середній відтінок: звичайне середнє між 350° і 10° дало б 180°."""
+        rgba = image.convert('RGBA')
+        hsv = rgba.convert('RGB').convert('HSV')
+        x = y = weight = 0.0
+        for (h, s, v), a in zip(hsv.getdata(), rgba.getchannel('A').getdata()):
+            if a < 120 or s < 90 or v < 40:
+                continue
+            angle = h / 255 * 2 * math.pi
+            x += math.cos(angle) * s / 255
+            y += math.sin(angle) * s / 255
+            weight += s / 255
+        return math.degrees(math.atan2(y, x)) % 360 if weight > 1 else None
+
+    catalog = IG.icon_catalog()
+    assert len(catalog) > 100, 'бібліотека має бути в образі'
+    sample = IG._icon_image(catalog[0]['slug'])
+    assert sample is not None
+
+    for target in ('#CC713E', '#7486CA', '#379C6F', '#19BCC9'):
+        painted = IG.recolor_icon(sample, target)
+        want = colorsys.rgb_to_hsv(*(int(target[i:i + 2], 16) / 255 for i in (1, 3, 5)))[0] * 360
+        got = hue_of(painted)
+        assert got is not None and abs((got - want + 180) % 360 - 180) < 25, (target, got, want)
+        # форма недоторкана: альфа побайтово та сама
+        assert list(painted.getchannel('A').getdata()) == list(sample.getchannel('A').getdata())
+
+    # безбарвний силует повертати нема куди - йому малюється градієнт
+    mono = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
+    for x in range(10, 54):
+        for y in range(10, 54):
+            mono.putpixel((x, y), (18, 18, 18, 255))
+    gradient = IG.recolor_icon(mono, '#CC713E')
+    assert gradient.getpixel((32, 12))[:3] != gradient.getpixel((32, 52))[:3], 'має бути градієнт'
+    assert gradient.getpixel((32, 12))[3] == 255 and gradient.getpixel((2, 2))[3] == 0
+
+    with tempfile.TemporaryDirectory() as tmp:
+        with patch.object(IG, 'user_icons_dir', lambda: Path(tmp)):
+            # завантажена іконка приводиться до формату бібліотеки
+            buffer = BytesIO(); mono.save(buffer, format='PNG')
+            blob = IG.normalize_uploaded_icon(buffer.getvalue())
+            normalized = Image.open(BytesIO(blob))
+            assert normalized.size == (256, 256)
+            assert abs((hue_of(normalized) - IG.BRAND_HUE + 180) % 360 - 180) < 25
+
+            (Path(tmp) / 'my-icon-aabbccdd.png').write_bytes(blob)
+            merged = IG.icon_catalog()
+            assert merged[0] == {'slug': 'my-icon-aabbccdd', 'name': 'my icon', 'custom': True}
+            assert len(merged) == len(catalog) + 1
+            assert all(x['custom'] is False for x in merged[1:]), 'вбудовані не позначені своїми'
+            # і фарбується разом з рештою
+            own = IG.recolor_icon(IG._icon_image('my-icon-aabbccdd'), '#CC713E')
+            assert abs((hue_of(own) - 22 + 180) % 360 - 180) < 25
+
+    # колір іконок доводиться до видимості НА ПОЛОТНІ, а не на картках річа
+    pale = '#EADFD6'
+    assert contrast_ratio(pale, '#FFFFFF') < 2
+    assert contrast_ratio(readable_on(pale, '#FFFFFF', 3.0), '#FFFFFF') >= 3.0
+
+
+def test_infographic_accent_follows_the_project_palette():
+    """Інфографіка і сторінка товару - один комплект.
+
+    Колір іконок за замовчуванням той самий акцент, що й у річа (включно зі
+    знятим із фото); явне поле у формі його перебиває. Порядок однаковий на
+    сервері й у формі, інакше превью брехало б про результат.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
+    web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
+
+    assert main.count("accent: str = Field(default='', max_length=16)") == 2, 'обидві схеми'
+    assert "accent=payload.accent or project_accent or '#19BCC9'" in main
+    assert "project_accent = _palette_raw(p).get('accent') or ''" in main
+    assert "'accent': payload.accent or project_accent or ''" in main, 'історія відновлює й колір'
+
+    # той самий порядок у формі
+    order = web.split('function igAccent()')[1].split('\n')[0]
+    assert 'g.accent' in order and 'palette_tokens?.accent' in order and '#19BCC9' in order
+    assert 'function igColorBlock' in web and 'igColorBlock()' in web
+    assert web.count('${igColorBlock()}') == 2, 'колір є в обох екранах'
+    # превью у формі показує саме той колір, що піде у WEBP
+    assert 'function igIconSrc' in web and '?c=${c}' in web
+    assert "igIconSrc(x.slug)" in web and "igIconSrc(it.icon)" in web
+
+    # завантаження і видалення власних іконок
+    assert "@app.post('/api/infographic/icon')" in main
+    assert "@app.delete('/api/infographic/icon')" in main
+    assert 'normalize_uploaded_icon' in main and 'user_icons_dir' in main
+    assert 'function igIconUpload' in web and 'function igIconDelete' in web
+    assert 'x.custom?' in web, 'кнопка видалення лише у власних іконок'
+
+
+def test_brand_in_the_header_can_be_removed_completely():
+    """Прибрати бренд із шапки має бути ОДНИМ явним вибором.
+
+    Скарга власника: «не бачу можливості видалити базовий текстовий логотип».
+    Шапка складається з двох незалежних речей - знака і словесної назви.
+    Кнопка «без знака» прибирала лише картинку, і на її місце виїжджав ТЕКСТ
+    ARTLINE; щоб зняти і його, треба було здогадатись очистити поле «Назва».
+    Дві приховані ручки замість одного стану.
+
+    Плюс порожня смуга: шапка резервувала висоту марки навіть тоді, коли
+    малювати не було чого.
+    """
+    import re
+    from pathlib import Path
+    from PIL import Image, ImageDraw
+    from app.infographic import CANVAS, _header
+
+    root = Path(__file__).resolve().parents[1]
+    web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
+
+    def bottom(logo, brand, title='Заголовок картинки'):
+        canvas = Image.new('RGB', (CANVAS, CANVAS), 'white')
+        return _header(canvas, ImageDraw.Draw(canvas), title, logo, 96, '#101010', brand)
+
+    mark = Image.new('RGBA', (200, 200), (0, 180, 190, 255))
+    with_mark = bottom(mark, 'ARTLINE')
+    text_only = bottom(None, 'ARTLINE')
+    nothing = bottom(None, '')
+    assert nothing < text_only < with_mark + 1, (nothing, text_only, with_mark)
+    # без бренду І без заголовка шапки немає взагалі - жодної порожньої смуги
+    assert bottom(None, '', title='') == 96
+
+    # порожня назва доходить до рендера як порожня: default спрацьовує лише
+    # тоді, коли ключа немає, а форма шле його завжди
+    main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
+    assert 'brand=payload.brand' in main
+    assert main.count("brand: str = Field(default='ARTLINE', max_length=40)") == 2
+
+    # один стан із трьох замість двох прихованих ручок
+    assert 'function igBrandMode' in web and 'function igSetBrandMode' in web
+    # три режими приходять у кнопки через хелпер opt(), а не літералами
+    block = web.split('function igBrandBlock')[1].split('\nfunction ')[0]
+    modes = set(re.findall(r"opt\('(\w+)',", block))
+    assert modes == {'logo', 'text', 'off'}, modes
+    off = web.split("if(mode==='off'){")[1].split('}')[0]
+    assert "g.logo='none'" in off and "g.brand=''" in off, 'вимкнення знімає І знак, І назву'
+    assert 'Без бренду' in web
