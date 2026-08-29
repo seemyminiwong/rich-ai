@@ -194,6 +194,15 @@ checks = {
     'assets are immutable': 'max-age=31536000, immutable' in nginx,
     'security headers repeated where add_header breaks inheritance': nginx.count('X-Content-Type-Options') == 4,
     'media is embeddable from any context': 'Cross-Origin-Resource-Policy "cross-origin"' in nginx,
+    # Статичний proxy_pass = разовий резолв імені: після пересоздання
+    # контейнера api web проксіює на мертвий IP і віддає 502 на все.
+    'nginx re-resolves the api container': (
+        # рядок коментаря named той самий текст - беремо лише директиви
+        'proxy_pass http://' not in '\n'.join(
+            line for line in nginx.splitlines() if not line.strip().startswith('#'))
+        and 'resolver 127.0.0.11' in nginx
+        and nginx.count('proxy_pass $') == 3
+    ),
     'media outranks the static cache regex': 'location ^~ /media/' in nginx and nginx.index('location ^~ /media/') < nginx.index('location ~*'),
     'frontend crashes reach the alert channel': "addEventListener('error'" in web and "@app.post('/api/client-error')" in main,
     'close buttons are labelled': web.count('aria-label="Закрити"') + web.count('aria-label="Прибрати"') == web.count('>×</button>'),
