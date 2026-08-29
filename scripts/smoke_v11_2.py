@@ -196,6 +196,20 @@ checks = {
     'media is embeddable from any context': 'Cross-Origin-Resource-Policy "cross-origin"' in nginx,
     # Статичний proxy_pass = разовий резолв імені: після пересоздання
     # контейнера api web проксіює на мертвий IP і віддає 502 на все.
+    # Публічний домен без Cloudflare Access: сторінка входу відкрита, тож
+    # ліміт спроб мусить бачити справжню адресу, а не одну на всіх.
+    'real visitor ip survives the tunnel': (
+        'real_ip_header CF-Connecting-IP;' in nginx
+        and nginx.count('set_real_ip_from') == 3
+        and 'proxy_set_header X-Real-IP $remote_addr;' in nginx
+    ),
+    'original scheme survives the tunnel': (
+        'map $http_x_forwarded_proto $forwarded_scheme' in nginx
+        and 'proxy_set_header X-Forwarded-Proto $forwarded_scheme;' in nginx
+        and '--proxy-headers' in (root / 'apps/api/Dockerfile').read_text(encoding='utf-8')
+    ),
+    'nginx body cap is not below the api cap': int(
+        __import__('re').search(r'client_max_body_size\s+(\d+)m;', nginx).group(1)) >= 30,
     'nginx re-resolves the api container': (
         # рядок коментаря named той самий текст - беремо лише директиви
         'proxy_pass http://' not in '\n'.join(

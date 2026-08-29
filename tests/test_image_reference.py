@@ -1828,3 +1828,41 @@ def test_nginx_reresolves_the_api_container_after_it_is_recreated():
     # рівно та сама маршрутизація, що була зі статичними адресами.
     assert targets.count('$api_upstream') == 2, '/api/ і /media/ мають ходити на корінь'
     assert targets.count('$api_health') == 1
+
+
+def test_public_tunnel_does_not_collapse_every_visitor_into_one_ip():
+    """За Cloudflare Tunnel ліміт входу мусить бачити СПРАВЖНЮ адресу.
+
+    Без цього $remote_addr - адреса контейнера cloudflared, одна на всіх:
+    ліміт «30 спроб на IP за 5 хвилин» рахує відвідувачів разом, тож один
+    перебірник вибиває решту, а сам лишається невидимим. Access перед студією
+    вирішили не ставити, тому сторінка входу публічна і це єдиний замок.
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    conf = (root / 'apps/web/nginx.conf').read_text(encoding='utf-8')
+    limits = (root / 'apps/api/app/limits.py').read_text(encoding='utf-8')
+    dockerfile = (root / 'apps/api/Dockerfile').read_text(encoding='utf-8')
+
+    assert 'real_ip_header CF-Connecting-IP;' in conf
+    # довіряємо лише приватним мережам: ззовні такий заголовок не підставити
+    trusted = re.findall(r'set_real_ip_from\s+(\S+);', conf)
+    assert set(trusted) == {'10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'}, trusted
+
+    # ланцюжок цілий: nginx кладе виправлений $remote_addr у X-Real-IP,
+    # а limits.client_ip читає саме його
+    assert 'proxy_set_header X-Real-IP $remote_addr;' in conf
+    assert "request.headers.get('x-real-ip')" in limits
+
+    # Схема оригінального запиту: Cloudflare терминує TLS, до нас іде http.
+    assert 'map $http_x_forwarded_proto $forwarded_scheme' in conf
+    assert 'proxy_set_header X-Forwarded-Proto $forwarded_scheme;' in conf
+    assert '--proxy-headers' in dockerfile, 'uvicorn мусить довіряти X-Forwarded-Proto'
+
+    # Стеля nginx не може бути нижчою за ту, що перевіряє API: інакше замість
+    # зрозумілого повідомлення студії оператор бачить голий 413 від проксі.
+    nginx_cap = int(re.search(r'client_max_body_size\s+(\d+)m;', conf).group(1))
+    api_cap = 30
+    assert nginx_cap >= api_cap, (nginx_cap, api_cap)
