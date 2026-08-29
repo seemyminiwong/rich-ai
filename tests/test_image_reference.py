@@ -2013,12 +2013,24 @@ def test_tab_loaders_cannot_spin_the_renderer():
 
     web = (Path(__file__).resolve().parents[1] / 'apps/web/app.js').read_text(encoding='utf-8')
 
-    # хто саме планується з хвоста workspace()
     tail = web.split('function workspace()')[1].split('\nfunction ')[0]
-    scheduled = set(re.findall(r"setTimeout\((\w+)[,)]", tail))
-    assert {'loadIconLibrary', 'loadArtifactText', 'loadArtifactImages'} <= scheduled, scheduled
 
-    for name in sorted(scheduled):
+    # ПРИЧИНА, а не симптом: завантажувачі ДАНИХ плануються один раз на пару
+    # «вкладка + версія», тому навіть завантажувач, написаний недбало, більше
+    # не може розкрутити рендер. Перевірено в Chromium: із навмисно зіпсованим
+    # loadIconLibrary (безумовний render) вкладка все одно перемикається.
+    assert 'function scheduleTabData' in web
+    assert 'if(tabDataKey===key)return' in web
+    data_loaders = set(re.findall(r"scheduleTabData\((\w+)\)", tail))
+    assert data_loaders == {'loadArtifactText', 'loadArtifactImages', 'loadIconLibrary'}, data_loaders
+
+    # Патчери DOM лишаються на кожному рендері - вони переписують щойно
+    # створені вузли і render() не кличуть.
+    patchers = set(re.findall(r"setTimeout\((\w+),0\)", tail))
+    assert patchers == {'updateReviewUI', 'auditPreviewMedia'}, patchers
+
+    # ДРУГИЙ рубіж: самі завантажувачі теж не рендерять безумовно
+    for name in sorted(data_loaders | patchers):
         match = re.search(r'(?:async )?function ' + name + r'\([^)]*\)\{.*', web)
         assert match, name
         body = match.group(0).split('\n')[0]
@@ -2032,3 +2044,97 @@ def test_tab_loaders_cannot_spin_the_renderer():
     # обидва інфографічні завантажувачі рендерять лише на зміну
     assert 'if(changed)render()' in web
     assert 'if(!same)render()' in web
+
+
+def test_photo_palette_stays_readable_on_its_own_dark_surfaces():
+    """Акцент із фото мусить читатись на картках, які сам і задає.
+
+    Скарга зі скріншота: «12GB» на темній плитці не читається. Причина -
+    палітра з фото нічого не гарантувала: помаранчевий акцент корпуса ASUS
+    (#C45618) лягав на картку, підфарбовану ТИМ САМИМ відтінком (#261E19),
+    і давав 3.66:1. Фірмовий циан на #1A2128 дає 7.0:1 - саме під такий
+    запас спроєктована вся сітка стилів.
+
+    Тепер кольори, які підбирає СЕРВЕР, доводяться до 4.5:1. Вибір оператора
+    (акцент, вписаний руками) лишається недоторканим - там людина відповідає.
+    """
+    import colorsys
+    import re
+    from io import BytesIO
+    from PIL import Image
+    from app.pipeline import palette_from_photo, apply_palette, contrast_ratio, readable_on
+
+    # еталон, на який спирається верстка
+    assert contrast_ratio('#19BCC9', '#1A2128') > 6.5
+
+    def packshot(rgb):
+        frame = Image.new('RGB', (120, 120), (248, 248, 250))
+        for x in range(30, 90):
+            for y in range(30, 90):
+                frame.putpixel((x, y), (60, 60, 62))     # темний корпус
+        for x in range(42, 78):
+            for y in range(42, 78):
+                frame.putpixel((x, y), rgb)              # колір товару
+        buffer = BytesIO(); frame.save(buffer, format='PNG')
+        return buffer.getvalue()
+
+    cases = {
+        'помаранчевий ASUS': (196, 86, 24),
+        'темно-червоний': (150, 40, 30),
+        'синій': (30, 60, 170),
+        'зелений': (20, 130, 80),
+        'фіолетовий': (120, 40, 160),
+    }
+    for name, rgb in cases.items():
+        tokens = palette_from_photo(packshot(rgb))
+        assert tokens, name
+        accent, soft, dark = tokens['accent'], tokens['dark_soft'], tokens['dark']
+        assert contrast_ratio(accent, soft) >= 4.4, f'{name}: {contrast_ratio(accent, soft):.2f}'
+        assert contrast_ratio(accent, dark) >= 4.4, f'{name}: {contrast_ratio(accent, dark):.2f}'
+
+        # похідні відтінки, які рахує сервер, теж читабельні
+        page = ('<b style="color:#19BCC9">12GB</b>'
+                '<i style="color:#157985;background:#FFFFFF">світле</i>'
+                '<u style="color:#C9F0F4;background:#1A2128">бліде</u>')
+        out = apply_palette(page, tokens)
+        light = re.search(r'color:(#[0-9A-F]{6});background:#FFFFFF', out).group(1)
+        pale = re.search(r'color:(#[0-9A-F]{6});background:(#[0-9A-F]{6})">бліде', out)
+        assert contrast_ratio(light, '#FFFFFF') >= 4.4, name
+        assert contrast_ratio(pale.group(1), pale.group(2)) >= 4.4, name
+
+    # відтінок зберігається: акцент помаранчевого товару лишається теплим
+    warm = palette_from_photo(packshot((196, 86, 24)))['accent']
+    h, _, _ = colorsys.rgb_to_hsv(*(int(warm[i:i + 2], 16) / 255 for i in (1, 3, 5)))
+    assert h < 0.12 or h > 0.95, warm
+
+    # свідомий вибір оператора не переписується
+    assert readable_on('#19BCC9', '#1A2128') == '#19BCC9'
+    picked = apply_palette('<b style="color:#19BCC9">x</b>', {'accent': '#333333'})
+    assert '#333333' in picked, 'акцент, вписаний руками, лишається як є'
+
+
+def test_palette_is_reapplied_after_every_model_pass():
+    """Мобільна верстка й переклад не сміють повертати фірмовий циан.
+
+    Живий випадок: десктоп виходив у палітрі з фото, а мобільна версія -
+    перекомпонована тією ж моделлю з десктопної - поверталась до циану.
+    Промптом це не лікується: канонічний колір розсипаний по всьому стилю.
+    Тому схема накладається МЕХАНІЧНО на виході, після будь-якого проходу.
+    """
+    from pathlib import Path
+    from app.pipeline import apply_palette
+
+    tasks = (Path(__file__).resolve().parents[1] / 'apps/api/app/tasks.py').read_text(encoding='utf-8')
+    # одна точка на всі гілки: перекомпонування, генерація і переклад
+    # сходяться перед створенням артефакта
+    assert 'rich_html = apply_palette(rich_html, _project_palette(project) or style_palette(style))' in tasks
+    head, tail = tasks.split('rich_html = apply_palette', 1)
+    assert 'db.add(Artifact(' not in head.rsplit('for language', 1)[-1], 'схема накладається ДО збереження'
+
+    tokens = {'accent': '#CC713E', 'dark_soft': '#26211E'}
+    reverted = '<b style="color:#19BCC9">12GB</b><div style="background:#1A2128"></div>'
+    fixed = apply_palette(reverted, tokens)
+    assert '#19BCC9' not in fixed and '#CC713E' in fixed
+    assert '#1A2128' not in fixed and '#26211E' in fixed
+    # повторне накладання - точний no-op, тож зайвий прохід нічого не псує
+    assert apply_palette(fixed, tokens) == fixed

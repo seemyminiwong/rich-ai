@@ -101,7 +101,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.67"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.68"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 3 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -207,6 +207,12 @@ checks = {
         'if(changed)render()' in web and 'if(!same)render()' in web
         and "state.igFree=d.items||[];render()" not in web
     ),
+    # Причина класу: рендер планував довантаження на КОЖЕН свій прохід.
+    'tab data is scheduled once per tab, not per render': (
+        'function scheduleTabData' in web and 'if(tabDataKey===key)return' in web
+        and web.count('scheduleTabData(') == 4          # означення + три вкладки
+        and "setTimeout(loadIconLibrary,0)" not in web
+    ),
     'render loop is pinned by a test': 'def test_tab_loaders_cannot_spin_the_renderer' in tests,
     'every screen has its own address': (
         'function routePath' in web and 'function parseRoute' in web
@@ -215,6 +221,22 @@ checks = {
         and web.count('syncUrl()') >= 2
     ),
     'deep links are pinned by a test': 'def test_deep_links_reach_the_spa_shell_not_a_404' in tests,
+    # Акцент із фото нічого не гарантував: помаранчевий на підфарбованій
+    # тим самим відтінком картці давав 3.7:1 і «12GB» не читалось.
+    'server-picked colors are forced readable': (
+        'def contrast_ratio' in pipeline and 'def readable_on' in pipeline
+        and 'accent = readable_on(accent, dark_soft)' in pipeline
+        and "readable_on(_mix(accent, '#000000', 0.25), '#FFFFFF')" in pipeline
+    ),
+    # Кожен прохід моделі може повернути фірмовий циан - схема лягає на виході.
+    'palette survives relayout and translation': (
+        'rich_html = apply_palette(rich_html, _project_palette(project) or style_palette(style))' in tasks
+    ),
+    'faq spans the page, not a narrower column': 'max-width:940px' not in prompts,
+    'contrast and mobile palette are pinned by tests': (
+        'def test_photo_palette_stays_readable_on_its_own_dark_surfaces' in tests
+        and 'def test_palette_is_reapplied_after_every_model_pass' in tests
+    ),
     'photo palette ships end to end': (
         'def palette_from_photo' in pipeline
         # 3 = означення + два виклики (основна гілка і reuse_images)
