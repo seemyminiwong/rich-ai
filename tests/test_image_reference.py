@@ -1793,3 +1793,38 @@ def test_infographic_trims_a_transparent_packshot_by_its_alpha(tmp_path):
     trimmed = _trim_uniform_border(frame)
     assert trimmed.size == (176, 256), trimmed.size
     assert trimmed.mode == 'RGBA', 'прозорість переживає обрізку'
+
+
+def test_nginx_reresolves_the_api_container_after_it_is_recreated():
+    """502 при здоровому API: nginx тримав IP мертвого контейнера.
+
+    Аварія 29.08: `docker compose up -d api` підняв новий контейнер з новим
+    IP, `/health` зсередини віддавав 200, а ззовні все летіло в 502 - бо web
+    підняли двома днями раніше і він досі проксіював на стару адресу.
+    Причина класова: зі статичним `proxy_pass http://api:8000` nginx резолвить
+    імʼя ОДИН раз при завантаженні конфіга. Змінна в proxy_pass знімає цей
+    разовий резолв, resolver дає докерівський DNS.
+    """
+    import re
+    from pathlib import Path
+
+    conf = (Path(__file__).resolve().parents[1] / 'apps/web/nginx.conf').read_text(encoding='utf-8')
+    # коментар пояснює саме цю пастку і містить той самий текст - тому
+    # директиви перевіряємо окремо від коментарів
+    directives = '\n'.join(l for l in conf.splitlines() if not l.strip().startswith('#'))
+
+    # жодного статичного апстріму не лишилось
+    assert 'proxy_pass http://' not in directives, 'статичний proxy_pass повертає разовий резолв'
+    assert re.search(r'resolver\s+127\.0\.0\.11\b', conf), 'потрібен вбудований DNS docker-мережі'
+    assert 'set $api_upstream http://api:8000;' in conf
+    assert 'set $api_health http://api:8000/health;' in conf
+
+    # кожна проксі-локація йде через змінну
+    targets = re.findall(r'proxy_pass\s+(\S+);', directives)
+    assert targets, 'проксі-локації зникли'
+    assert all(t.startswith('$') for t in targets), targets
+
+    # Змінна БЕЗ URI лишає оригінальний request_uri, змінна З URI його заміняє -
+    # рівно та сама маршрутизація, що була зі статичними адресами.
+    assert targets.count('$api_upstream') == 2, '/api/ і /media/ мають ходити на корінь'
+    assert targets.count('$api_health') == 1
