@@ -15,6 +15,8 @@ runtime = (root / 'apps/api/app/runtime.py').read_text(encoding='utf-8')
 config = (root / 'apps/api/app/config.py').read_text(encoding='utf-8')
 nginx = (root / 'apps/web/nginx.conf').read_text(encoding='utf-8')
 media = (root / 'apps/api/app/media.py').read_text(encoding='utf-8')
+infographic = (root / 'apps/api/app/infographic.py').read_text(encoding='utf-8')
+tests = (root / 'tests/test_image_reference.py').read_text(encoding='utf-8')
 limits = (root / 'apps/api/app/limits.py').read_text(encoding='utf-8')
 bulk_import = (root / 'apps/api/app/bulk_import.py').read_text(encoding='utf-8')
 runtime_src = (root / 'apps/api/app/runtime.py').read_text(encoding='utf-8')
@@ -171,7 +173,7 @@ checks = {
     'openrouter text only': 'OPENROUTER_BASE_URL' in runtime and 'def image_client' in pipeline,
     'gemini image provider': 'GEMINI_BASE_URL' in runtime and 'def _gemini_edit' in pipeline,
     'image provider routed by model name': "return 'gemini' if (model or '').startswith('gemini-')" in pipeline,
-    'gemini output normalised to webp': "Image.open(BytesIO(raw)).convert('RGB').save(path, 'WEBP'" in pipeline,
+    'gemini output normalised to webp': "flatten_to_white(Image.open(BytesIO(raw))).save(path, 'WEBP'" in pipeline,
     'gemini models gated on the key': "if cfg['gemini_api_key']:" in main,
     'gemini pricing known': 'gemini-2.5-flash-image' in config and 'gemini-3-pro-image-preview' in config,
     'gpt-image-2 priced and alias-verified': '"gpt-image-2": {"low"' in config and 'def has' not in main and "has = lambda name: name in live or any(x.startswith(name + '-') for x in live)" in main,
@@ -367,6 +369,26 @@ checks.update({
     'operator can curate the gallery': 'gallery_json' in models and 'chosen_gallery' in tasks and 'function toggleFrame' in web,
     'showcase verdict warns on thin galleries': 'для Showcase замало' in web,
     'broken previews are dropped from the run': 'function frameError' in web and 'x.on&&!x.dead' in web,
+    # Прозорий PNG не мусить ставати чорною плашкою у світлій палітрі.
+    # Помилка КЛАСОВА: convert('RGB') підкладає чорне скрізь, де кадр
+    # нормалізують або міряють, тому пінимо саме відсутність такого виклику.
+    'raster helper ships and is used everywhere a frame is flattened': (
+        (root / 'apps/api/app/raster.py').exists()
+        and 'from app.raster import flatten_to_white' in pipeline
+        and 'from app.raster import flatten_to_white' in main
+        and 'from app.raster import alpha_bbox, flatten_to_white' in infographic
+    ),
+    'no frame is flattened onto black': not [
+        line for src in (pipeline, main, infographic)
+        for line in src.splitlines()
+        # коментар не код; гілка `if mode in (...RGBA...) else convert('RGB')`
+        # альфу вже відсіяла, тому чорного під нею взятись нема звідки
+        if "convert('RGB')" in line.split('#')[0] and 'RGBA' not in line
+    ],
+    'transparent packshots are pinned by a test': (
+        'def test_transparent_png_lands_on_white_not_black' in tests
+        and 'def test_infographic_trims_a_transparent_packshot_by_its_alpha' in tests
+    ),
     'probe box cannot inflate the dialog': 'dialog form>*{min-width:0}' in css and '.probe-grid{max-height' in css,
 })
 

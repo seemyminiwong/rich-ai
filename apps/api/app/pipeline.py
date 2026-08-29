@@ -17,6 +17,7 @@ from openai import OpenAI
 from PIL import Image, ImageOps
 from app.config import settings
 from app.media import media_url
+from app.raster import flatten_to_white
 from app.runtime import GEMINI_BASE_URL, OPENROUTER_BASE_URL, runtime_config
 
 logger = logging.getLogger("richstudio.pipeline")
@@ -1829,7 +1830,9 @@ def generate_image(
         if provider == 'gemini':
             raw = _gemini_edit(model, edit_prompt, reference_path.read_bytes(), _mime_for(reference_path), size)
             # Gemini answers in PNG/JPEG; the page expects webp like the OpenAI path.
-            Image.open(BytesIO(raw)).convert('RGB').save(path, 'WEBP', quality=90)
+            # WEBP пишемо без альфи, тому прозоре тло треба ЧИМОСЬ підкласти;
+            # convert('RGB') підклав би чорне і запік би його назавжди.
+            flatten_to_white(Image.open(BytesIO(raw))).save(path, 'WEBP', quality=90)
             return media_url(project_id, f'{label}.webp'), True, ''
         with reference_path.open('rb') as image_file:
             edit_options = dict(
@@ -2256,7 +2259,9 @@ def _probe_media_surface(src: str) -> tuple[bool, str | None]:
                 blob = fetch_bytes_capped(http, canonical, cap_mb=8)
         if blob:
             found = True
-            image = Image.open(BytesIO(blob)).convert('RGB')
+            # Прозорий периметр мусить читатись як БІЛИЙ: інакше медіана
+            # виходить #000000 і слот під пакшотом стає чорною плашкою.
+            image = flatten_to_white(Image.open(BytesIO(blob)))
             # Розмір кадру знімаємо ДО thumbnail: за ним підбирається висота
             # слота, щоб фото лягало без обрізання і без порожніх смуг.
             _surface_size_cache[canonical] = image.size

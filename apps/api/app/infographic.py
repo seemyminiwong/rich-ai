@@ -13,6 +13,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from app.raster import alpha_bbox, flatten_to_white
+
 CANVAS = 2000
 TEMPLATES = ('icons-left', 'icons-right', 'callouts', 'strip-bottom')
 
@@ -69,21 +71,26 @@ def _icon_image(slug: str):
 
 def _trim_uniform_border(image: Image.Image, tolerance: int = 12) -> Image.Image:
     """Прибирає рівні поля навколо товару, щоб кадр не губився в порожнечі."""
-    rgb = image.convert('RGB')
-    px = rgb.load()
-    w, h = rgb.size
-    corners = [px[0, 0], px[w - 1, 0], px[0, h - 1], px[w - 1, h - 1]]
-    base = corners[0]
-    if any(max(abs(c[i] - base[i]) for i in range(3)) > tolerance for c in corners):
-        return image
-    mask = Image.new('L', (w, h), 0)
-    mdraw = mask.load()
-    for y in range(h):
-        for x in range(w):
-            c = px[x, y]
-            if max(abs(c[i] - base[i]) for i in range(3)) > tolerance:
-                mdraw[x, y] = 255
-    bbox = mask.getbbox()
+    w, h = image.size
+    # Кадр з альфою вже КАЖЕ, де порожнеча - шукати однорідний колір не треба.
+    # Раніше сюди приходив convert('RGB'), тобто прозоре ставало чорним: якщо
+    # сам товар був темний, він зливався з «тлом» і кадр обрізався по живому.
+    bbox = alpha_bbox(image)
+    if bbox is None:
+        rgb = flatten_to_white(image)
+        px = rgb.load()
+        corners = [px[0, 0], px[w - 1, 0], px[0, h - 1], px[w - 1, h - 1]]
+        base = corners[0]
+        if any(max(abs(c[i] - base[i]) for i in range(3)) > tolerance for c in corners):
+            return image
+        mask = Image.new('L', (w, h), 0)
+        mdraw = mask.load()
+        for y in range(h):
+            for x in range(w):
+                c = px[x, y]
+                if max(abs(c[i] - base[i]) for i in range(3)) > tolerance:
+                    mdraw[x, y] = 255
+        bbox = mask.getbbox()
     if not bbox:
         return image
     pad = int(min(w, h) * 0.02)

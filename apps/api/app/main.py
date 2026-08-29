@@ -27,6 +27,7 @@ from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, h
 from app.tasks import bill_extra, image_rate, process_landing, process_project, text_rate, translate_project
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
+from app.raster import flatten_to_white
 from app.pipeline import _is_reasoning_model, decode_entities, fetch_bytes_capped, fetch_html, gallery_urls, image_url_rejection, image_urls_in_html, is_public_http_url, is_publishable_image_url, parse_page, plain_text_from_html, replace_image_urls, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
 from app.landing import LANDING_PROMPT, LANDING_STYLE_NAME
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
@@ -1576,7 +1577,9 @@ async def upload_reference_image(request: Request, user=Depends(require_perm('pr
     name = f'{secrets.token_hex(16)}.webp'
     target_dir = Path(settings.media_dir) / 'uploads'
     target_dir.mkdir(parents=True, exist_ok=True)
-    PILOps.exif_transpose(image).convert('RGB').save(target_dir / name, format='WEBP', quality=88)
+    # PNG з прозорим тлом - звичайна справа для пакшотів. WEBP тут без альфи,
+    # тож прозоре підкладаємо білим: convert('RGB') підклав би чорне.
+    flatten_to_white(PILOps.exif_transpose(image)).save(target_dir / name, format='WEBP', quality=88)
     return {'url': media_url('uploads', name), 'width': image.width, 'height': image.height}
 
 
@@ -1839,7 +1842,7 @@ def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depen
             from PIL import Image as PILImage, ImageOps as PILOps
             try:
                 frame = PILImage.open(source)
-                frame = PILOps.exif_transpose(frame).convert('RGB')
+                frame = flatten_to_white(PILOps.exif_transpose(frame))
                 frame.thumbnail((1000, 1000), PILImage.Resampling.LANCZOS)
                 frame.save(project_dir / target_name, format='WEBP', quality=82)
             except Exception:

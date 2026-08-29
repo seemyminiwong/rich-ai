@@ -1713,3 +1713,83 @@ def test_infographic_takes_any_brand_logo():
     ink_wide = sum(1 for px in top_wide.getdata() if sum(px) < 700)
     ink_square = sum(1 for px in top_square.getdata() if sum(px) < 700)
     assert ink_wide > ink_square, 'лого-напис має розтягуватись, а не тиснутись у квадрат'
+
+
+def test_transparent_png_lands_on_white_not_black(tmp_path):
+    """PNG з прозорим тлом не стає вугільною плашкою у світлій палітрі.
+
+    Жива скарга зі скріншотом: акумулятор Deye AE-F2.56 у світлому Showcase
+    сидів на чорній картці. Причина - Pillow'ів convert('RGB'), який відкидає
+    альфу і лишає під нею нуль. Тому периметр читався як #000000 і слот
+    фарбувався в чорне, а при завантаженні чорне ще й запікалось у WEBP.
+
+    Перевіряємо обидва шляхи разом і - окремим кадром - що справжнє чорне
+    студійне тло чорним і лишилось: правка не мусить забілювати темні стилі.
+    """
+    from unittest.mock import patch
+    from io import BytesIO
+    from PIL import Image
+    from app import pipeline as P
+    from app.raster import alpha_bbox, flatten_to_white
+
+    (tmp_path / 'p1').mkdir()
+
+    def packshot(mode):
+        # темний корпус посеред тла: на прозорому він раніше зливався з чорним
+        base = (0, 0, 0, 0) if mode == 'RGBA' else (0, 0, 0)
+        frame = Image.new(mode, (120, 120), base)
+        body = (34, 38, 44, 255) if mode == 'RGBA' else (34, 38, 44)
+        for x in range(30, 90):
+            for y in range(30, 90):
+                frame.putpixel((x, y), body)
+        return frame
+
+    packshot('RGBA').save(tmp_path / 'p1' / 'clear.png')
+    packshot('RGB').save(tmp_path / 'p1' / 'black.png')
+
+    with patch.object(P.settings, 'media_dir', str(tmp_path)):
+        P._surface_color_cache.clear()
+        P._surface_size_cache.clear()
+        assert P._probe_media_surface('/media/p1/clear.png') == (True, '#FFFFFF')
+        # прозорий пакшот - студійний рендер, не сцена: його не можна кадрувати
+        assert P._is_environment_photo('/media/p1/clear.png') is False
+        # справжнє чорне тло лишається чорним, інакше зламались би темні стилі
+        assert P._probe_media_surface('/media/p1/black.png') == (True, '#000000')
+
+        slot = ('<section><div style="height:250px;background:#101010;border-radius:12px">'
+                '<img src="/media/p1/clear.png" style="aspect-ratio:1/1"></div></section>')
+        P._surface_color_cache.clear()
+        out = P._fit_framed_images(slot)
+    assert 'background:#FFFFFF' in out and 'background:#101010' not in out
+
+    # Другий шлях: завантаження нормалізує кадр у WEBP, де альфи немає взагалі.
+    # Саме тут чорне запікалось у файл назавжди - переглядач уже нічим не зарадить.
+    buffer = BytesIO()
+    flatten_to_white(packshot('RGBA')).save(buffer, format='WEBP', quality=88)
+    stored = Image.open(BytesIO(buffer.getvalue())).convert('RGB')
+    assert stored.getpixel((2, 2)) == (255, 255, 255)
+    assert max(abs(a - b) for a, b in zip(stored.getpixel((60, 60)), (34, 38, 44))) <= 6
+
+    # Непрозорі кадри проходять наскрізь незмінними, а альфа дає точні межі.
+    opaque = packshot('RGB')
+    assert flatten_to_white(opaque).tobytes() == opaque.tobytes()
+    assert alpha_bbox(opaque) is None
+    assert alpha_bbox(packshot('RGBA')) == (30, 30, 90, 90)
+
+
+def test_infographic_trims_a_transparent_packshot_by_its_alpha(tmp_path):
+    """Обрізка порожнечі йде по альфі, а не по «однорідному кольору».
+
+    Темний товар на прозорому тлі раніше зливався з чорнотою, яку підставляв
+    convert('RGB'), і кадр обрізало по живому.
+    """
+    from PIL import Image
+    from app.infographic import _trim_uniform_border
+
+    frame = Image.new('RGBA', (400, 400), (0, 0, 0, 0))
+    for x in range(120, 280):
+        for y in range(80, 320):
+            frame.putpixel((x, y), (18, 20, 24, 255))
+    trimmed = _trim_uniform_border(frame)
+    assert trimmed.size == (176, 256), trimmed.size
+    assert trimmed.mode == 'RGBA', 'прозорість переживає обрізку'
