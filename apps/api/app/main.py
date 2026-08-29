@@ -424,6 +424,9 @@ class ProjectIn(BaseModel):
     source_url: HttpUrl
     style_id: str | None = Field(default=None, max_length=200)
     palette_id: str | None = Field(default=None, max_length=200)
+    # Палітра з фото товару: акцент і відтінки знімаються воркером із
+    # референса перед генерацією. Взаємовиключно з palette_id.
+    photo_palette: bool = False
     languages: list[str] = Field(default_factory=lambda: ['ua', 'ru'], max_length=10)
     variants: list[str] = Field(default_factory=lambda: ['desktop', 'mobile'], max_length=10)
     text_model: str | None = Field(default=None, max_length=200)
@@ -501,6 +504,8 @@ class ReviewIn(BaseModel):
 class RerunIn(BaseModel):
     style_id: str | None = None
     palette_id: str | None = None
+    # True = зняти палітру з фото заново (токени скидаються — фото могло змінитись).
+    photo_palette: bool = False
     languages: list[str] | None = None
     variants: list[str] | None = None
     reuse_images: bool = False
@@ -591,6 +596,13 @@ def _safe_map(raw: str) -> dict:
         return {}
 
 
+def _palette_raw(p) -> dict:
+    try:
+        return json.loads(getattr(p, 'palette_json', None) or '{}') or {}
+    except Exception:
+        return {}
+
+
 def project_dict(p, full=False, style_name=''):
     try:
         product = json.loads(p.product_json or '{}')
@@ -609,7 +621,10 @@ def project_dict(p, full=False, style_name=''):
          'languages': [x for x in p.languages.split(',') if x], 'variants': [x for x in p.variants.split(',') if x], 'text_model': p.text_model, 'image_model': p.image_model, 'image_quality': p.image_quality, 'faq': bool(getattr(p, 'faq_enabled', True)), 'image_map': _safe_map(getattr(p, 'image_map_json', '')), 'video_url': getattr(p, 'video_url', '') or '',
          'custom_hero_url': p.custom_hero_url, 'custom_feature_url': p.custom_feature_url, 'product_category': decode_entities(p.product_category), 'sku': str(product.get('sku') or ''), 'cost_breakdown': breakdown, 'error': p.error, 'duration_seconds': p.duration_seconds, 'input_tokens': p.input_tokens, 'output_tokens': p.output_tokens,
          'image_count': p.image_count, 'text_request_count': p.text_request_count, 'image_request_count': p.image_request_count, 'text_cost': p.text_cost, 'image_cost': p.image_cost, 'estimated_cost': p.estimated_cost,
-         'created_at': p.created_at, 'started_at': p.started_at, 'finished_at': p.finished_at}
+         'created_at': p.created_at, 'started_at': p.started_at, 'finished_at': p.finished_at,
+         'photo_palette': _palette_raw(p).get('source') == 'photo',
+         'palette_tokens': {k: v for k, v in _palette_raw(p).items()
+                            if k in ('accent', 'dark', 'dark_soft', 'light_soft')}}
     if full:
         r['product_json'] = p.product_json; r['source_images'] = p.source_images
         r['artifacts'] = [artifact_dict(x) for x in sorted(p.artifacts, key=lambda a: (a.language, a.variant, a.version))]
@@ -1361,7 +1376,10 @@ def _project_values(payload: ProjectIn, db: Session) -> tuple[dict, Style]:
 def _new_project_record(payload: ProjectIn, db: Session, user) -> tuple[Project, Style]:
     values, style = _project_values(payload, db)
     project = Project(owner_id=user.id, status=Status.queued, stage='queued', **values)
-    project.palette_json = resolve_palette_snapshot(db, payload.palette_id)
+    # 'source: photo' - лише НАМІР: токени зніме воркер із збереженого
+    # референса. Свідомо без міграції - палітра живе у наявному palette_json.
+    project.palette_json = (json.dumps({'source': 'photo'}) if payload.photo_palette
+                            else resolve_palette_snapshot(db, payload.palette_id))
     db.add(project)
     db.flush()
     return project, style
@@ -2059,7 +2077,10 @@ def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends
     _lock_bulk_commit(db)
     style = db.get(Style, p.style_id)
     if not style: raise HTTPException(400, 'Обраний стиль не знайдено')
-    if payload and payload.palette_id is not None:
+    if payload and payload.photo_palette:
+        # Токени скидаються до наміру: фото могло змінитись між прогонами.
+        p.palette_json = json.dumps({'source': 'photo'})
+    elif payload and payload.palette_id is not None:
         p.palette_json = resolve_palette_snapshot(db, payload.palette_id or None)
     if payload and payload.faq is not None:
         p.faq_enabled = bool(payload.faq)

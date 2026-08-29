@@ -2200,6 +2200,73 @@ def apply_palette(markup: str, palette: dict | None) -> str:
     return out
 
 
+def palette_from_photo(blob: bytes) -> dict | None:
+    """Палітра з фото товару: домінантний насичений колір стає акцентом.
+
+    Навіщо: деякі товари мають власну виразну гаму (біло-блакитний корпус ASUS,
+    помаранчевий Deye), і фірмовий циан на такій сторінці виглядає чужим.
+    Механізм добровільний: оператор вмикає «З фото товару» при запуску.
+
+    Як: кадр вирівнюється на біле (прозорі PNG!), стискається, пікселі
+    розкладаються по 24 кошиках відтінку. Нейтралі, тіні й відблиски не
+    голосують. Перемагає кошик із сусідами за вагою s²·v - насиченість
+    важливіша за площу, інакше сірий корпус завжди перемагав би підсвітку.
+
+    Захисти:
+    - менше 1% кольорових пікселів у переможному відтінку - повертаємо None:
+      випадковий логотип чи кабель не має перефарбовувати сторінку;
+    - акцент затискається у діапазон читабельності (S 0.45-0.95, V 0.55-0.80):
+      apply_palette виведе з нього і темнішу версію для світлого тла, і бліду
+      для тексту на темному - обидві мають лишатись контрастними;
+    - темні токени лише ПІДФАРБОВУЮТЬСЯ відтінком товару (низька насиченість,
+      та сама глибина, що у фірмових #101010/#1A2128) - контраст тексту
+      гарантовано не пливе.
+    """
+    import colorsys
+    try:
+        image = flatten_to_white(Image.open(BytesIO(blob)))
+    except Exception:
+        return None
+    image.thumbnail((96, 96))
+    pixels = list(image.getdata())
+    if not pixels:
+        return None
+    buckets: dict[int, list] = {}
+    for r, g, b in pixels:
+        h, sat, val = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+        if sat < 0.22 or val < 0.16 or val > 0.98:
+            continue
+        weight = sat * sat * val
+        entry = buckets.setdefault(int(h * 24) % 24, [0.0, 0.0, 0.0, 0.0, 0])
+        entry[0] += weight
+        entry[1] += r * weight
+        entry[2] += g * weight
+        entry[3] += b * weight
+        entry[4] += 1
+    if not buckets:
+        return None
+    ring = lambda k: buckets.get(k % 24, [0.0, 0.0, 0.0, 0.0, 0])
+    best = max(buckets, key=lambda k: ring(k - 1)[0] + ring(k)[0] + ring(k + 1)[0])
+    weight = rs = gs = bs = 0.0
+    count = 0
+    for k in (best - 1, best, best + 1):
+        e = ring(k)
+        weight += e[0]; rs += e[1]; gs += e[2]; bs += e[3]; count += e[4]
+    if not weight or count < len(pixels) * 0.01:
+        return None
+    h, sat, val = colorsys.rgb_to_hsv(rs / weight / 255, gs / weight / 255, bs / weight / 255)
+    sat = min(0.95, max(0.45, sat))
+    val = min(0.80, max(0.55, val))
+    tone = lambda v, s2: '#%02X%02X%02X' % tuple(round(c * 255) for c in colorsys.hsv_to_rgb(h, s2, v))
+    accent = tone(val, sat)
+    return {
+        'accent': accent,
+        'dark': tone(0.07, min(0.35, sat * 0.5)),
+        'dark_soft': tone(0.15, min(0.35, sat * 0.55)),
+        'light_soft': _mix(accent, '#FFFFFF', 0.94),
+    }
+
+
 def style_palette(style) -> dict:
     """Палітра зі стилю (db-обʼєкт або SimpleNamespace); порожньо = фірмова."""
     try:
