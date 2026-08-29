@@ -1980,3 +1980,42 @@ def test_deep_links_reach_the_spa_shell_not_a_404():
     assert "addEventListener('popstate'" in web
     assert web.count('syncUrl()') >= 2, 'обидві гілки render мусять синхронізувати адресу'
     assert 'await applyRoute()' in web.split('async function boot')[1].split('}')[0] + web.split('async function boot')[1][:200], 'boot читає адресу до першого render'
+
+
+def test_tab_loaders_cannot_spin_the_renderer():
+    """Завантажувач вкладки не сміє рендерити безумовно.
+
+    Жива скарга: на вкладці «Інфографіка» проєкт «залипав» - жодної помилки,
+    просто не перемикались вкладки. Причина - пара, замкнена сама на себе:
+    хвіст workspace() планує loadIconLibrary при tab==='info', а той у кінці
+    завжди кличе render(), який знову планує loadIconLibrary. Сторінка
+    перемальовувалась сотні разів на секунду; клік не встигав народитись, бо
+    кнопка зникала між mousedown і mouseup (виміряно: 501 рендер за 300 мс).
+
+    Правило класове, не точкове: КОЖЕН завантажувач, який планується з
+    хвоста workspace(), рендерить лише коли щось справді змінилось.
+    """
+    import re
+    from pathlib import Path
+
+    web = (Path(__file__).resolve().parents[1] / 'apps/web/app.js').read_text(encoding='utf-8')
+
+    # хто саме планується з хвоста workspace()
+    tail = web.split('function workspace()')[1].split('\nfunction ')[0]
+    scheduled = set(re.findall(r"setTimeout\((\w+)[,)]", tail))
+    assert {'loadIconLibrary', 'loadArtifactText', 'loadArtifactImages'} <= scheduled, scheduled
+
+    for name in sorted(scheduled):
+        match = re.search(r'(?:async )?function ' + name + r'\([^)]*\)\{.*', web)
+        assert match, name
+        body = match.group(0).split('\n')[0]
+        calls = body.count('render()')
+        if not calls:
+            continue                      # updateReviewUI і подібні DOM-патчі
+        # безумовний render() = замкнене коло; має бути під умовою
+        guarded = re.search(r'if\([^)]*\)\s*render\(\)', body)
+        assert guarded, f'{name} рендерить безумовно — це нескінченний цикл'
+
+    # обидва інфографічні завантажувачі рендерять лише на зміну
+    assert 'if(changed)render()' in web
+    assert 'if(!same)render()' in web

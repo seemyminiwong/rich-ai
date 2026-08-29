@@ -381,7 +381,14 @@ function igSet(key,value){igState()[key]=value;render()}
 function igItem(i,key,value){const g=igState();if(g.items[i]){g.items[i][key]=value;if(key!=='icon')return;render()}}
 function igAdd(){const g=igState();if(g.items.length<6){g.items.push({icon:'',title:'',text:''});render()}}
 function igRemove(){const g=igState();if(g.items.length>1){g.items.pop();render()}}
-async function loadIconLibrary(){try{if(!state.igIcons){const d=await api('/api/infographic/icons');state.igIcons=d.icons||[]}if(!state.igLogos){const l=await api('/api/infographic/logos');state.igLogos=l.logos||[]}render()}catch(x){toast(x.message,true)}}
+// Завантажувач, який ЗАВЖДИ рендерить, у парі з рендером, який ЗАВЖДИ його
+// планує (хвіст workspace: tab==='info' -> setTimeout(loadIconLibrary)), дає
+// нескінченний цикл. Помилки не видно: сторінка малюється сотні разів на
+// секунду, DOM щоразу новий, і клік не встигає народитись - кнопка зникає
+// між mousedown і mouseup. Зовні це «вкладка не перемикається».
+// Тому рендер лише коли щось СПРАВДІ довантажилось - як у сусідніх
+// loadArtifactText/loadArtifactImages.
+async function loadIconLibrary(){try{let changed=false;if(!state.igIcons){const d=await api('/api/infographic/icons');state.igIcons=d.icons||[];changed=true}if(!state.igLogos){const l=await api('/api/infographic/logos');state.igLogos=l.logos||[];changed=true}if(changed)render()}catch(x){toast(x.message,true)}}
 // SVG у canvas: будь-який фірмовий знак стає PNG із прозорістю просто в браузері,
 // тому серверу не потрібен жоден растеризатор. Без width/height беремо viewBox -
 // інакше Chrome малює такий SVG нульового розміру.
@@ -406,7 +413,9 @@ ${g.photo?`<div class="ig-gallery"><img src="${esc(g.photo)}" alt="" class="on">
 ${g.result?`<div class="ig-result"><b>Готово:</b> ${Math.round(g.result.bytes/1024)} КБ<div><img src="${esc(g.result.url)}" alt="інфографіка"></div><div class="row"><a class="btn secondary" href="${esc(g.result.url)}" download>Завантажити WEBP</a><a class="btn ghost" href="${esc(g.result.url)}" target="_blank" rel="noopener">Відкрити</a></div></div>`:''}
 </div><div>${igItemsBlock(g,icons)}</div></div></section>
 ${lib.length?`<section class="panel"><h2>Зроблені інфографіки</h2><div class="ig-lib">${lib.map(x=>`<figure><img src="${esc(x.url)}" alt="${esc(x.name)}" loading="lazy"><figcaption>${esc(x.name)}<span><a href="${esc(x.url)}" download>завантажити</a> · <b onclick="igFreeDelete('${esc(x.url)}')">прибрати</b></span></figcaption></figure>`).join('')}</div></section>`:''}`)}
-async function loadFreeGallery(){try{const d=await api('/api/infographic/gallery');state.igFree=d.items||[];render()}catch(x){toast(x.message,true)}}
+// Те саме правило: галерея перемальовує лише коли список змінився. Виклик
+// після збирання картинки нічого не втрачає - там render() стоїть явно.
+async function loadFreeGallery(){try{const d=await api('/api/infographic/gallery');const next=d.items||[];const same=JSON.stringify(next)===JSON.stringify(state.igFree||[]);state.igFree=next;if(!same)render()}catch(x){toast(x.message,true)}}
 async function igFreeSuggest(button){const g=igState();if(!g.name.trim()&&!g.facts.trim())return toast('Впишіть назву або характеристики',true);const original=button?.textContent;if(button){button.disabled=true;button.textContent='Модель думає…'}try{const d=await api('/api/infographic/suggest',{method:'POST',body:JSON.stringify({name:g.name,facts:g.facts,count:Math.max(2,Math.min(6,g.items.length||4))})});g.title=d.title||g.title;g.items=(d.items||[]).map(x=>({icon:x.icon||'',title:x.title||'',text:x.text||''}));toast(`Підписи готові · $${Number(d.cost||0).toFixed(4)}`);render()}catch(x){toast(x.message,true)}finally{if(button){button.disabled=false;button.textContent=original}}}
 async function igFreeRender(button){const g=igState();if(!g.photo)return toast('Спершу завантажте фото',true);if(!g.items.some(x=>x.title.trim()))return toast('Впишіть хоча б один підпис',true);const original=button?.textContent;if(button){button.disabled=true;button.textContent='Збираю…'}try{const d=await api('/api/infographic/render',{method:'POST',body:JSON.stringify({photo_url:g.photo,title:g.title,template:g.template,items:g.items,logo_url:g.logo,brand:g.brand,name:g.name})});g.result=d;await loadFreeGallery();toast('Інфографіку зібрано');render()}catch(x){toast(x.message,true)}finally{if(button){button.disabled=false;button.textContent=original}}}
 async function igFreeDelete(url){try{await api(`/api/infographic/render?url=${encodeURIComponent(url)}`,{method:'DELETE'});state.igFree=(state.igFree||[]).filter(x=>x.url!==url);toast('Прибрано');render()}catch(x){toast(x.message,true)}}
