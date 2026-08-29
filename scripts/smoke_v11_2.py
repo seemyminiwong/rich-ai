@@ -198,6 +198,32 @@ checks = {
     # контейнера api web проксіює на мертвий IP і віддає 502 на все.
     # Публічний домен без Cloudflare Access: сторінка входу відкрита, тож
     # ліміт спроб мусить бачити справжню адресу, а не одну на всіх.
+    # Палітра з фото товару: намір їде маркером у наявному palette_json
+    # (жодної міграції), токени знімає воркер після збереження референса.
+    # Сторінкова система: кожен екран, проєкт і вкладка мають власну адресу.
+    'every screen has its own address': (
+        'function routePath' in web and 'function parseRoute' in web
+        and 'function applyRoute' not in web.split('async function applyRoute')[0]
+        and "addEventListener('popstate'" in web
+        and web.count('syncUrl()') >= 2
+    ),
+    'deep links are pinned by a test': 'def test_deep_links_reach_the_spa_shell_not_a_404' in tests,
+    'photo palette ships end to end': (
+        'def palette_from_photo' in pipeline
+        # 3 = означення + два виклики (основна гілка і reuse_images)
+        and tasks.count('_adopt_photo_palette(db, project,') == 3
+        and main.count("json.dumps({'source': 'photo'})") == 2
+        and web.count('__photo__') >= 4
+    ),
+    'photo palette marker cannot mute the style scheme': (
+        "k in PALETTE_TOKENS or k == 'radius'" in tasks
+    ),
+    'photo palette lands before the image prompts': (
+        tasks.index('_adopt_photo_palette(db, project, palette_blob)')
+        < tasks.index("_accent = (_project_palette(project)")
+    ),
+    'landing dialog has no photo palette option': 'paletteSelect()' in web,
+    'photo palette is pinned by a test': 'def test_photo_palette_extracts_the_product_accent' in tests,
     'real visitor ip survives the tunnel': (
         'real_ip_header CF-Connecting-IP;' in nginx
         and nginx.count('set_real_ip_from') == 3

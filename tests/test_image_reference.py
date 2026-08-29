@@ -1866,3 +1866,117 @@ def test_public_tunnel_does_not_collapse_every_visitor_into_one_ip():
     nginx_cap = int(re.search(r'client_max_body_size\s+(\d+)m;', conf).group(1))
     api_cap = 30
     assert nginx_cap >= api_cap, (nginx_cap, api_cap)
+
+
+def test_photo_palette_extracts_the_product_accent():
+    """Палітра з фото: виразний колір товару стає акцентом сторінки.
+
+    Референс - кейс ASUS ROG White: білий корпус із блакитною ARGB-підсвіткою.
+    Біле й сіре не голосують, перемагає насичений відтінок; з нього ж
+    виводяться темні і світлі токени, які apply_palette розкладе по сторінці.
+    """
+    from io import BytesIO
+    from PIL import Image
+    from app.pipeline import palette_from_photo, apply_palette, _hex_rgb
+
+    def png(paint):
+        frame = Image.new('RGB', (120, 120), (245, 246, 248))
+        paint(frame)
+        buffer = BytesIO(); frame.save(buffer, format='PNG')
+        return buffer.getvalue()
+
+    def cyan_fans(frame):
+        for x in range(30, 90):
+            for y in range(30, 90):
+                frame.putpixel((x, y), (200, 202, 205))  # сірий корпус
+        for x in range(40, 80):
+            for y in range(40, 80):
+                frame.putpixel((x, y), (40, 190, 215))   # підсвітка
+
+    tokens = palette_from_photo(png(cyan_fans))
+    assert tokens and set(tokens) == {'accent', 'dark', 'dark_soft', 'light_soft'}
+    r, g, b = _hex_rgb(tokens['accent'])
+    assert b > r and g > r, tokens['accent']            # відтінок лишився блакитним
+    assert max(_hex_rgb(tokens['dark'])) < 40           # темний токен справді темний
+    assert min(_hex_rgb(tokens['light_soft'])) > 225    # світлий - справді світлий
+
+    # застосування: фірмовий циан у розмітці стає акцентом товару
+    page = '<b style="color:#19BCC9;background:#1A2128">4 x 120mm ARGB</b>'
+    out = apply_palette(page, tokens)
+    assert '#19BCC9' not in out and tokens['accent'] in out
+    assert tokens['dark_soft'] in out
+
+    # чорно-білий товар: кольору немає - палітра не вигадується
+    def grayscale(frame):
+        for x in range(20, 100):
+            for y in range(20, 100):
+                v = 30 + (x + y) % 60
+                frame.putpixel((x, y), (v, v, v))
+    assert palette_from_photo(png(grayscale)) is None
+
+    # дрібна кольорова пляма (логотип, кабель) не перефарбовує сторінку
+    def tiny_logo(frame):
+        for x in range(58, 62):
+            for y in range(58, 62):
+                frame.putpixel((x, y), (220, 40, 40))
+    assert palette_from_photo(png(tiny_logo)) is None
+
+    # прозорий PNG: тло читається білим, а не чорним нейтралом
+    rgba = Image.new('RGBA', (120, 120), (0, 0, 0, 0))
+    for x in range(40, 80):
+        for y in range(40, 80):
+            rgba.putpixel((x, y), (240, 120, 20, 255))  # помаранчевий Deye
+    buffer = BytesIO(); rgba.save(buffer, format='PNG')
+    orange = palette_from_photo(buffer.getvalue())
+    assert orange, 'прозоре тло не мусить глушити колір товару'
+    r, g, b = _hex_rgb(orange['accent'])
+    assert r > b and g > b, orange['accent']
+
+
+def test_deep_links_reach_the_spa_shell_not_a_404():
+    """Сторінкова система: /projects/<id>/<вкладка> мусить віддавати оболонку.
+
+    Роутер живе в app.js, але глибоке посилання першим зустрічає nginx: якщо
+    воно провалиться в regex-локацію статики чи в 404 - адресу не можна буде
+    ані відкрити з закладки, ані переслати колезі. Симулюємо вибір локації
+    так само, як у тесті /media.
+    """
+    import re
+    from pathlib import Path
+
+    conf = (Path(__file__).resolve().parents[1] / 'apps/web/nginx.conf').read_text(encoding='utf-8')
+    web = (Path(__file__).resolve().parents[1] / 'apps/web/app.js').read_text(encoding='utf-8')
+    index = (Path(__file__).resolve().parents[1] / 'apps/web/index.html').read_text(encoding='utf-8')
+
+    prefixes = re.findall(r'location\s+(=|\^~)?\s*(/[^\s{]*)\s*\{', conf)
+    regexes = re.findall(r'location\s+~\*?\s+(\S+)\s*\{', conf)
+
+    def route(uri):
+        for op, path in prefixes:
+            if op == '=' and uri == path:
+                return 'exact:' + path
+        best = None
+        for op, path in prefixes:
+            if op != '=' and uri.startswith(path) and (best is None or len(path) > len(best[1])):
+                best = (op, path)
+        if best and best[0] == '^~':
+            return 'prefix:' + best[1]
+        for rx in regexes:
+            if re.search(rx, uri, re.I):
+                return 'regex:' + rx
+        return 'prefix:' + best[1] if best else 'none'
+
+    # кожна адреса застосунку падає в catch-all з try_files -> /index.html
+    for uri in ('/projects', '/projects/8f3a-11/overview', '/projects/8f3a-11/text',
+                '/landings/77', '/styles', '/media', '/usage', '/settings', '/infographic'):
+        assert route(uri) == 'prefix:/', uri
+    assert '/index.html;' in conf.replace(' ', ''), 'catch-all мусить падати в оболонку'
+
+    # оболонка на глибокому шляху тягне ассети з кореня, а не відносно
+    assert 'src="/app.js' in index and 'href="/styles.css' in index
+
+    # роутер: адреса йде слідом за станом через єдину точку render()
+    assert 'function routePath' in web and 'function parseRoute' in web
+    assert "addEventListener('popstate'" in web
+    assert web.count('syncUrl()') >= 2, 'обидві гілки render мусять синхронізувати адресу'
+    assert 'await applyRoute()' in web.split('async function boot')[1].split('}')[0] + web.split('async function boot')[1][:200], 'boot читає адресу до першого render'
