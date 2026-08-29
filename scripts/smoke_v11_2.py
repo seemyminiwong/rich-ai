@@ -201,6 +201,13 @@ checks = {
     # Палітра з фото товару: намір їде маркером у наявному palette_json
     # (жодної міграції), токени знімає воркер після збереження референса.
     # Сторінкова система: кожен екран, проєкт і вкладка мають власну адресу.
+    # Завантажувач вкладки + безумовний render() = нескінченний цикл, у якому
+    # кнопка зникає між mousedown і mouseup і вкладки перестають клікатись.
+    'tab loaders render only on change': (
+        'if(changed)render()' in web and 'if(!same)render()' in web
+        and "state.igFree=d.items||[];render()" not in web
+    ),
+    'render loop is pinned by a test': 'def test_tab_loaders_cannot_spin_the_renderer' in tests,
     'every screen has its own address': (
         'function routePath' in web and 'function parseRoute' in web
         and 'function applyRoute' not in web.split('async function applyRoute')[0]
