@@ -2791,14 +2791,18 @@ def _finalize_showcase_layout(
 # покупець бачить стан пункту. 2) Поворот дублюється селектором БЕЗ наших
 # класів - на випадок, коли санітайзер вирізає class, але лишає стилі.
 # 3) !important - проти власного CSS магазину, який скидає transform.
+# Знак «+» стоїть ПЕРШИМ у summary - так само, як у блоці питань на
+# artline.ua. Це заразом прибрало давню підпірку margin-left:auto: щоб
+# опинитись ліворуч, значку не треба нічого перебивати, він там за порядком
+# у DOM. Запасний селектор тепер :first-child - саме туди сервер його кладе.
 _FAQ_CSS = (
     '.arfaq summary::-webkit-details-marker{display:none}'
     '.arfaq summary::marker{content:""}'
     '.arfaq summary{display:flex!important;align-items:center;list-style:none}'
-    '.arfaq .arfaq-i{float:none!important;margin-left:auto!important}'
+    '.arfaq .arfaq-i{float:none!important}'
     '.arfaq[open] .arfaq-i{transform:rotate(45deg)!important}'
-    'section details[open]>summary>span:last-child{transform:rotate(45deg)!important}'
-    'section details:open>summary>span:last-child{transform:rotate(45deg)!important}'
+    'section details[open]>summary>span:first-child{transform:rotate(45deg)!important}'
+    'section details:open>summary>span:first-child{transform:rotate(45deg)!important}'
 )
 
 
@@ -3030,12 +3034,13 @@ def _finalize_faq(soup, dark_edition: bool = False) -> None:
     items = soup.find_all('details')
     if not items:
         return
+    # Референс - блок «Питання» на artline.ua: тонкий бірюзовий плюс ЛІВОРУЧ,
+    # без кружка й без нумерації. Колір - канонічний циан, тому палітра стилю
+    # (і знята з фото) перефарбує його разом з рештою сторінки.
     icon_style = (
-        'float:right;margin-left:12px;flex:0 0 28px;width:28px;height:28px;border-radius:999px;'
-        'display:inline-flex;align-items:center;justify-content:center;'
-        'font-size:18px;font-weight:600;line-height:1;transition:transform .2s;'
-        + ('background:rgba(255,255,255,.14);color:#FFFFFF'
-           if dark_edition else 'background:#101010;color:#FFFFFF')
+        'flex:0 0 auto;margin-right:14px;display:inline-block;'
+        'font-size:22px;font-weight:400;line-height:1;transition:transform .2s;'
+        'color:#19BCC9'
     )
     for index, item in enumerate(items):
         classes = set(item.get('class') or ())
@@ -3055,19 +3060,25 @@ def _finalize_faq(soup, dark_edition: bool = False) -> None:
         for prop, value in (('display', 'list-item'), ('cursor', 'pointer')):
             sstyle = _set_css(sstyle, prop, value)
         summary['style'] = sstyle.strip().strip(';')
+        # Нумерація прибрана: на artline.ua її немає. Сторінки, згенеровані
+        # старим контрактом, чистяться на місці - інакше після перекладу чи
+        # перерозкладки «01» лишалось би поруч із новим плюсом.
+        for span in summary.find_all('span'):
+            if 'arfaq-i' in (span.get('class') or ()):
+                continue
+            if re.fullmatch(r'\d{1,2}', span.get_text(strip=True) or ''):
+                span.decompose()
         icon = summary.find('span', class_='arfaq-i')
         if icon is None:
             icon = soup.new_tag('span')
             icon['class'] = ['arfaq-i']
-            summary.append(icon)
+        # Завжди ПЕРШИМ: extract+insert робить перенос ідемпотентним і
+        # переставляє значок на старих сторінках, де він стояв у кінці.
+        icon.extract()
+        summary.insert(0, icon)
         icon['style'] = icon_style
         if not icon.get_text(strip=True):
             icon.string = '+'
-        # Номер пункту: gap працює лише у flex, а в деградованому режимі
-        # summary - list-item, тож «01Питання» злипалось. Відступ інлайном.
-        number = summary.find('span')
-        if number is not None and number is not icon:
-            number['style'] = _set_css(number.get('style') or '', 'margin-right', '10px')
     if not soup.find('style', string=lambda v: v and '.arfaq' in v):
         style_tag = soup.new_tag('style')
         style_tag.string = _FAQ_CSS
