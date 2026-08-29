@@ -214,6 +214,55 @@ checks = {
         and "setTimeout(loadIconLibrary,0)" not in web
     ),
     'render loop is pinned by a test': 'def test_tab_loaders_cannot_spin_the_renderer' in tests,
+    # 174 іконки були лише в <datalist>: побачити їх було неможливо,
+    # треба було вгадати slug. Тепер сітка з пошуком.
+    # Тека app/infographic/icons копіюється В ОБРАЗ: завантажене туди
+    # зникло б на першій пересборці. Власні іконки - у томі media_dir.
+    # Шапка - це знак ПЛЮС назва. «без знака» прибирало тільки картинку,
+    # і на її місце виїжджав текст ARTLINE - прибрати бренд повністю було
+    # неочевидно. Тепер один вибір із трьох.
+    'brand in the header can be removed in one click': (
+        'function igSetBrandMode' in web and 'Без бренду' in web
+        and "g.logo='none';g.brand=''" in web
+        and 'if brand_logo is None and not (brand or \'\').strip():' in infographic
+    ),
+    'uploaded icons survive an image rebuild': (
+        'def user_icons_dir' in infographic
+        and "Path(settings.media_dir) / _USER_DIR_NAME" in infographic
+        and "@app.post('/api/infographic/icon')" in main
+        and "@app.delete('/api/infographic/icon')" in main
+    ),
+    # Перефарбування - поворот відтінку, а не заливка: градієнт і
+    # згладжування країв бібліотеки лишаються цілими.
+    'icons recolor by hue rotation': (
+        'def recolor_icon' in infographic and 'def normalize_uploaded_icon' in infographic
+        and 'BRAND_HUE' in infographic and "out.putalpha(alpha)" in infographic
+    ),
+    'icon color follows the project palette': (
+        "accent=payload.accent or project_accent or '#19BCC9'" in main
+        and 'function igAccent' in web and web.count('${igColorBlock()}') == 2
+    ),
+    'contrast helpers are shared, not duplicated': (
+        'def readable_on' in (root / 'apps/api/app/raster.py').read_text(encoding='utf-8')
+        and 'from app.raster import contrast_ratio, flatten_to_white, readable_on' in pipeline
+        and 'from app.raster import alpha_bbox, flatten_to_white, hex_rgb, readable_on' in infographic
+    ),
+    'icon library changes are pinned by tests': (
+        'def test_icons_recolor_by_hue_rotation_and_uploads_live_in_the_volume' in tests
+        and 'def test_infographic_accent_follows_the_project_palette' in tests
+    ),
+    'icon library is visible, not a hidden datalist': (
+        'function igIconPickerTpl' in web and '.ig-picker' in css
+        and web.count('igOpenIcons(${i})') == 2
+        and web.count('igIconPickerTpl()') == 3
+    ),
+    # Історія - перезбирані записи, а не стрічка картинок.
+    'infographic history can be restored into the form': (
+        'function igRestore' in web and 'function igHistoryTpl' in web
+        and "startsWith('infographic')" in web
+        and web.count('Історія порожня') == 2
+    ),
+    'infographic ui is pinned by a test': 'def test_infographic_icons_are_visible_and_history_is_restorable' in tests,
     'every screen has its own address': (
         'function routePath' in web and 'function parseRoute' in web
         and 'function applyRoute' not in web.split('async function applyRoute')[0]
@@ -224,7 +273,7 @@ checks = {
     # Акцент із фото нічого не гарантував: помаранчевий на підфарбованій
     # тим самим відтінком картці давав 3.7:1 і «12GB» не читалось.
     'server-picked colors are forced readable': (
-        'def contrast_ratio' in pipeline and 'def readable_on' in pipeline
+        'def contrast_ratio' in (root / 'apps/api/app/raster.py').read_text(encoding='utf-8') and 'def readable_on' in (root / 'apps/api/app/raster.py').read_text(encoding='utf-8')
         and 'accent = readable_on(accent, dark_soft)' in pipeline
         and "readable_on(_mix(accent, '#000000', 0.25), '#FFFFFF')" in pipeline
     ),
@@ -312,7 +361,7 @@ checks.update({
     'html entities never reach product text': 'def decode_entities' in pipeline and 'def clean_product_entities' in pipeline and 'def _extract_product_raw' in pipeline and 'clean_product_entities(product)' in pipeline and 'decode_entities(detected_name)' in tasks and 'decode_entities(product.get(' in tasks and 'decode_entities(p.product_category)' in main,
     'infographic: brand icon library, four layouts, 2000px webp without a browser': (root / 'apps/api/app/infographic/icons.json').exists() and len(list((root / 'apps/api/app/infographic/icons').glob('*.png'))) > 100 and 'def render_infographic' in (root / 'apps/api/app/infographic.py').read_text(encoding='utf-8') and "TEMPLATES = ('icons-left', 'icons-right', 'callouts', 'strip-bottom')" in (root / 'apps/api/app/infographic.py').read_text(encoding='utf-8') and 'def suggest_infographic' in pipeline and "/api/projects/{project_id}/infographic" in main and '/api/infographic/icons' in main and 'function infographicPanel' in web and "t.push('info')" in web and 'fonts-dejavu-core' in (root / 'apps/api/Dockerfile').read_text(encoding='utf-8'),
     'project filters: merged categories, facets, quick chips, saved between visits': 'const catKey=' in web and 'function projectCategoryGroups' in web and 'catIsProductName' in web and 'QUICK_FILTERS' in web and 'function activeFilterChips' in web and 'projectFilters' in web and 'styleFilter' in web and 'modelFilter' in web,
-    'icon previews load without a bearer token (img cannot send headers)': "def infographic_icon(slug: str):" in main and 'infographic/icon/' in web,
+    'icon previews load without a bearer token (img cannot send headers)': "def infographic_icon(slug: str, c: str = ''):" in main and 'infographic/icon/' in web,
     'standalone infographic section works before the product page exists': "@app.post('/api/infographic/suggest')" in main and "@app.post('/api/infographic/render')" in main and '/api/infographic/gallery' in main and 'function infographicPage' in web and "['infographic','Інфографіка']" in web and 'infographic:infographicPage' in web and 'function igBrandBlock' in web and 'function igItemsBlock' in web,
     'infographic suggest imported lazily so a partial deploy cannot kill the api': 'from app.pipeline import suggest_infographic' in main and 'suggest_infographic' not in main.split('\n')[main.split('\n').index([l for l in main.split('\n') if l.startswith('from app.pipeline import _is_reasoning_model')][0])],
     'infographic: any brand logo from the ui, svg rasterized in the browser': '/api/infographic/logos' in main and "@app.post('/api/infographic/logo')" in main and 'async function svgToPng' in web and 'igLogoUpload' in web and "brand: str = 'ARTLINE'" in (root / 'apps/api/app/infographic.py').read_text(encoding='utf-8') and 'wordmark_only' in (root / 'apps/api/app/infographic.py').read_text(encoding='utf-8'),
@@ -462,16 +511,20 @@ checks.update({
     # нормалізують або міряють, тому пінимо саме відсутність такого виклику.
     'raster helper ships and is used everywhere a frame is flattened': (
         (root / 'apps/api/app/raster.py').exists()
-        and 'from app.raster import flatten_to_white' in pipeline
+        and 'from app.raster import contrast_ratio, flatten_to_white, readable_on' in pipeline
         and 'from app.raster import flatten_to_white' in main
-        and 'from app.raster import alpha_bbox, flatten_to_white' in infographic
+        and 'from app.raster import alpha_bbox, flatten_to_white, hex_rgb, readable_on' in infographic
     ),
     'no frame is flattened onto black': not [
         line for src in (pipeline, main, infographic)
         for line in src.splitlines()
         # коментар не код; гілка `if mode in (...RGBA...) else convert('RGB')`
         # альфу вже відсіяла, тому чорного під нею взятись нема звідки
-        if "convert('RGB')" in line.split('#')[0] and 'RGBA' not in line
+        # Перетворення заради АНАЛІЗУ (HSV) альфу не втрачає: її знімають
+        # окремим каналом і повертають назад. Небезпечне лише те, що йде
+        # у файл або в піксельну пробу.
+        if "convert('RGB')" in line.split('#')[0]
+        and 'RGBA' not in line and "convert('HSV')" not in line
     ],
     'transparent packshots are pinned by a test': (
         'def test_transparent_png_lands_on_white_not_black' in tests

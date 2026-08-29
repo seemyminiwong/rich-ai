@@ -17,7 +17,7 @@ from openai import OpenAI
 from PIL import Image, ImageOps
 from app.config import settings
 from app.media import media_url
-from app.raster import flatten_to_white
+from app.raster import contrast_ratio, flatten_to_white, readable_on
 from app.runtime import GEMINI_BASE_URL, OPENROUTER_BASE_URL, runtime_config
 
 logger = logging.getLogger("richstudio.pipeline")
@@ -2143,43 +2143,9 @@ def _mix(value: str, target: str, ratio: float) -> str:
     return '#%02X%02X%02X' % tuple(round(a[i] + (b[i] - a[i]) * ratio) for i in range(3))
 
 
-def _relative_luminance(color: str) -> float:
-    """Відносна яскравість за WCAG - основа розрахунку контрасту."""
-    def channel(value: int) -> float:
-        v = value / 255
-        return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
-    r, g, b = (channel(c) for c in _hex_rgb(color))
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
-
-
-def contrast_ratio(one: str, two: str) -> float:
-    """Коефіцієнт контрасту WCAG: 1 - однакові, 21 - чорне на білому."""
-    a, b = _relative_luminance(one), _relative_luminance(two)
-    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
-
-
-def readable_on(color: str, background: str, target: float = 4.5) -> str:
-    """Підсунути колір до читабельності на цьому тлі, зберігши відтінок.
-
-    Навіщо: фірмовий циан #19BCC9 на темній картці #1A2128 дає 6.8:1, і вся
-    сітка стилів це мовчки припускає. Колір, знятий з фото, не гарантує
-    нічого - живий випадок: коричнево-помаранчевий акцент із корпусу ASUS на
-    темній картці, підфарбованій тим самим відтінком, і «12GB» неможливо
-    прочитати. Тому кольори, які підбирає СЕРВЕР, доводяться до 4.5:1.
-
-    Рухаємось до білого на темному тлі і до чорного на світлому: відтінок
-    лишається, міняється світлота. 50 кроків завжди досягають межі, бо
-    крайня точка - чистий білий або чорний - дає максимум можливого.
-    """
-    if contrast_ratio(color, background) >= target:
-        return color
-    goal = '#FFFFFF' if _relative_luminance(background) < 0.18 else '#000000'
-    candidate = color
-    for step in range(1, 51):
-        candidate = _mix(color, goal, step / 50)
-        if contrast_ratio(candidate, background) >= target:
-            break
-    return candidate
+# _relative_luminance / contrast_ratio / readable_on живуть у app.raster:
+# ними користується і студія, і інфографіка. Тут лише реекспорт, щоб не
+# правити десятки місць виклику.
 
 
 def _apply_radius_scale(markup: str, scale: float) -> str:

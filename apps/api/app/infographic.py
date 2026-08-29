@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from app.raster import alpha_bbox, flatten_to_white
+from app.raster import alpha_bbox, flatten_to_white, hex_rgb, readable_on
 
 CANVAS = 2000
 TEMPLATES = ('icons-left', 'icons-right', 'callouts', 'strip-bottom')
@@ -54,19 +54,165 @@ def _font(kind: str, size: int):
     return font
 
 
+def _pretty_name(stem: str) -> str:
+    """Назва для показу: знімаємо хвіст-хеш і робимо з дефісів пробіли."""
+    return re.sub(r'-[0-9a-f]{8}$', '', stem).replace('-', ' ').strip() or 'іконка'
+
+
 def icon_catalog() -> list:
-    """Бібліотека іконок бренду: [{'slug','name'}]."""
+    """Бібліотека іконок: вбудовані бренд-іконки + завантажені оператором.
+
+    Завантажені йдуть першими: їх мало, і саме їх шукають після додавання.
+    """
     try:
-        return json.loads(_INDEX.read_text(encoding='utf-8'))
+        built_in = json.loads(_INDEX.read_text(encoding='utf-8'))
     except Exception:
-        return []
+        built_in = []
+    for item in built_in:
+        item.setdefault('custom', False)
+    own = []
+    try:
+        for path in sorted(user_icons_dir().glob('*.png'), key=lambda x: x.stat().st_mtime, reverse=True):
+            own.append({'slug': path.stem, 'name': _pretty_name(path.stem), 'custom': True})
+    except Exception:
+        own = []
+    return own + built_in
+
+
+# Фірмова смуга відтінків бібліотеки: усі 174 іконки - двоточковий градієнт
+# 155°..185° (зелено-бірюзовий -> циан) з насиченістю 1.0. Виміряно по всьому
+# набору; саме ця регулярність і дозволяє перефарбовувати їх поворотом
+# відтінку, не чіпаючи ані градієнт, ані згладжування країв.
+BRAND_HUE = 184.0
+BRAND_SPAN = 30.0
+_USER_DIR_NAME = 'icons'
+
+
+def user_icons_dir() -> Path:
+    """Іконки оператора живуть у ТОМІ, а не в образі.
+
+    _ICONS_DIR лежить усередині app/ і копіюється в образ - усе, завантажене
+    туди, зникло б на першій же `docker compose build`. media_dir - том, який
+    переживає пересборку і потрапляє в нічний бекап медіа. Логотипи вже
+    зроблені так само.
+    """
+    # settings імпортуємо ліниво: модуль малює картинки і не мусить тягнути
+    # за собою конфіг застосунку - так його видно і з простого скрипта.
+    from app.config import settings
+    folder = Path(settings.media_dir) / _USER_DIR_NAME
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _icon_path(slug: str) -> Path | None:
+    name = (slug or '').strip()
+    if not name or '/' in name or '\\' in name or name.startswith('.'):
+        return None
+    built_in = _ICONS_DIR / f'{name}.png'
+    if built_in.is_file():
+        return built_in
+    own = user_icons_dir() / f'{name}.png'
+    return own if own.is_file() else None
 
 
 def _icon_image(slug: str):
-    path = _ICONS_DIR / f'{(slug or "").strip()}.png'
-    if not path.is_file():
+    path = _icon_path(slug)
+    return Image.open(path).convert('RGBA') if path else None
+
+
+def _hue_profile(image: Image.Image) -> tuple[float, float] | None:
+    """Середній відтінок і насиченість кольорових пікселів, або None.
+
+    Відтінок усереднюється КОЛОВО (через одиничні вектори): звичайне середнє
+    між 350° і 10° дало б 180° - рівно протилежний колір.
+    """
+    import math
+    probe = image.copy()
+    probe.thumbnail((48, 48))
+    hsv = probe.convert('RGB').convert('HSV')
+    alpha = probe.getchannel('A')
+    x = y = weight = 0.0
+    for (h, sat, val), a in zip(hsv.getdata(), alpha.getdata()):
+        if a < 120 or sat < 40 or val < 20:
+            continue
+        angle = h / 255 * 2 * math.pi
+        w = sat / 255
+        x += math.cos(angle) * w; y += math.sin(angle) * w; weight += w
+    if weight < 1:
         return None
-    return Image.open(path).convert('RGBA')
+    return (math.degrees(math.atan2(y, x)) % 360, min(1.0, weight / max(1, sum(
+        1 for a in alpha.getdata() if a >= 120))))
+
+
+def recolor_icon(image: Image.Image, color: str) -> Image.Image:
+    """Перефарбувати іконку в заданий колір, зберігши її градієнт.
+
+    Не заливка: беремо власну смугу відтінків іконки і ПОВЕРТАЄМО її так, щоб
+    середина лягла на потрібний колір. Насиченість і яскравість кожного
+    пікселя лишаються своїми, тож двоточковий градієнт, внутрішні переходи і
+    згладжування країв виживають піксель у піксель. Альфа не чіпається.
+
+    Безбарвну іконку (чорний або білий силует) повертати нема куди - їй
+    градієнт малюється по яскравості.
+    """
+    import colorsys
+    source = image.convert('RGBA')
+    alpha = source.getchannel('A')
+    target_h, target_s, target_v = colorsys.rgb_to_hsv(*(c / 255 for c in hex_rgb(color)))
+    profile = _hue_profile(source)
+    if profile is None:
+        return _paint_gradient(source, color)
+    own_h, _ = profile
+    shift = int(round(((target_h * 360 - own_h) % 360) / 360 * 255))
+    hsv = source.convert('RGB').convert('HSV')
+    h, sat, val = hsv.split()
+    h = h.point(lambda v: (v + shift) % 256)
+    # Насиченість і яскравість підтягуємо до обраного кольору, зберігаючи
+    # відносну структуру: множник, а не заміна.
+    s_scale = max(0.25, min(2.5, target_s / 0.95))
+    v_scale = max(0.35, min(1.6, target_v / 0.80))
+    sat = sat.point(lambda v: min(255, int(v * s_scale)))
+    val = val.point(lambda v: min(255, int(v * v_scale)))
+    out = Image.merge('HSV', (h, sat, val)).convert('RGB').convert('RGBA')
+    out.putalpha(alpha)
+    return out
+
+
+def _paint_gradient(image: Image.Image, color: str) -> Image.Image:
+    """Силует без власного кольору -> вертикальний двоточковий градієнт."""
+    import colorsys
+    alpha = image.convert('RGBA').getchannel('A')
+    width, height = image.size
+    h, sat, val = colorsys.rgb_to_hsv(*(c / 255 for c in hex_rgb(color)))
+    top = colorsys.hsv_to_rgb((h - BRAND_SPAN / 720) % 1.0, sat, min(1.0, val * 1.12))
+    bottom = colorsys.hsv_to_rgb((h + BRAND_SPAN / 720) % 1.0, sat, val)
+    ramp = Image.new('RGB', (1, height))
+    for y in range(height):
+        k = y / max(1, height - 1)
+        ramp.putpixel((0, y), tuple(round(255 * (top[i] + (bottom[i] - top[i]) * k)) for i in range(3)))
+    out = ramp.resize((width, height)).convert('RGBA')
+    out.putalpha(alpha)
+    return out
+
+
+def normalize_uploaded_icon(blob: bytes, size: int = 256) -> bytes:
+    """Привести завантажену іконку до формату бібліотеки.
+
+    Обрізаємо порожні поля, вписуємо в квадрат і фарбуємо у фірмову смугу -
+    далі така іконка поводиться рівно як решта 174 і так само перефарбовується
+    разом з ними. Прозорість зберігається, тому SVG-силует лишається силуетом.
+    """
+    image = Image.open(BytesIO(blob)).convert('RGBA')
+    box = alpha_bbox(image)
+    if box:
+        image = image.crop(box)
+    image.thumbnail((size, size), Image.LANCZOS)
+    square = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    square.paste(image, ((size - image.width) // 2, (size - image.height) // 2), image)
+    brand = '#%02X%02X%02X' % tuple(round(c * 255) for c in __import__('colorsys').hsv_to_rgb(BRAND_HUE / 360, 1.0, 0.8))
+    out = BytesIO()
+    recolor_icon(square, brand).save(out, format='PNG', optimize=True)
+    return out.getvalue()
 
 
 def _trim_uniform_border(image: Image.Image, tolerance: int = 12) -> Image.Image:
@@ -133,10 +279,13 @@ def _text_block(draw, x: int, y: int, text: str, font, max_width: int, fill, lin
     return len(lines) * line_h
 
 
-def _paste_icon(canvas: Image.Image, slug: str, cx: int, cy: int, size: int) -> None:
+def _paste_icon(canvas: Image.Image, slug: str, cx: int, cy: int, size: int,
+                color: str = '') -> None:
     icon = _icon_image(slug)
     if icon is None:
         return
+    if color:
+        icon = recolor_icon(icon, color)
     icon = _fit(icon, size, size)
     canvas.paste(icon, (int(cx - icon.width / 2), int(cy - icon.height / 2)), icon)
 
@@ -153,6 +302,16 @@ def _header(canvas: Image.Image, draw, title: str, brand_logo, pad: int, ink: st
     left = pad
     mark_h = 118
     wordmark_only = False
+    # Порожня шапка не мусить лишати по собі порожню смугу: без знака І без
+    # назви резервувати висоту марки нема за що - заголовок піднімається
+    # догори, а без заголовка шапки немає взагалі.
+    if brand_logo is None and not (brand or '').strip():
+        if not title:
+            return y
+        title_font = _font('bold', 54)
+        used = _text_block(draw, left, y, title.upper(), title_font,
+                           CANVAS - left - pad, ink, line_gap=6)
+        return y + used + 46
     if brand_logo is not None:
         aspect = brand_logo.width / max(1, brand_logo.height)
         if aspect > 2.0:
@@ -178,7 +337,7 @@ def _header(canvas: Image.Image, draw, title: str, brand_logo, pad: int, ink: st
 
 
 def _callout_column(canvas, draw, items, x: int, width: int, top: int, bottom: int,
-                    ink: str, muted: str) -> None:
+                    ink: str, muted: str, icon_color: str = '') -> None:
     """Колонка «іконка зверху, підпис під нею» - як в еталонному макеті бренду."""
     if not items:
         return
@@ -188,7 +347,7 @@ def _callout_column(canvas, draw, items, x: int, width: int, top: int, bottom: i
     slot = (bottom - top) / len(items)
     for index, item in enumerate(items):
         center_y = top + slot * index + slot / 2
-        _paste_icon(canvas, item.get('icon', ''), x + width // 2, int(center_y - slot * 0.24), icon_size)
+        _paste_icon(canvas, item.get('icon', ''), x + width // 2, int(center_y - slot * 0.24), icon_size, icon_color)
         text_top = int(center_y - slot * 0.24 + icon_size / 2 + 26)
         used = _text_block(draw, x, text_top, item.get('title', ''), title_font, width, ink,
                            line_gap=8, center=True)
@@ -215,6 +374,12 @@ def render_infographic(photo_bytes: bytes, items: list, title: str = '', templat
     items: [{'icon': slug, 'title': 'короткий підпис', 'text': 'необовʼязковий рядок'}]
     template: icons-left | icons-right | callouts | strip-bottom
     """
+    # Іконки і виноски беруть акцент сторінки, але спершу доводимо його до
+    # видимості НА ПОЛОТНІ: акцент, підібраний під темні картки річа, на
+    # білому тлі інфографіки міг би загубитись. 3:1 - поріг WCAG для великої
+    # графіки, а іконка тут завбільшки з монету.
+    accent = (accent or '#19BCC9').strip() or '#19BCC9'
+    icon_color = readable_on(accent, background or '#FFFFFF', 3.0)
     if template not in TEMPLATES:
         raise ValueError(f'Невідомий макет: {template}')
     items = [x for x in (items or []) if (x.get('title') or x.get('icon'))][:6]
@@ -250,7 +415,7 @@ def render_infographic(photo_bytes: bytes, items: list, title: str = '', templat
             column_x = CANVAS - pad - column_w
             photo_box = (pad, body_top, CANVAS - pad - column_w - gap, body_bottom)
         _photo_box(canvas, photo, photo_box)
-        _callout_column(canvas, draw, items, column_x, column_w, body_top, body_bottom, ink, muted)
+        _callout_column(canvas, draw, items, column_x, column_w, body_top, body_bottom, ink, muted, icon_color)
 
     elif template == 'strip-bottom':
         strip_h = 430 if any(x.get('text') for x in items) else 360
@@ -264,7 +429,7 @@ def render_infographic(photo_bytes: bytes, items: list, title: str = '', templat
         draw.line([(pad, line_y), (CANVAS - pad, line_y)], fill='#E3E6EA', width=3)
         for index, item in enumerate(items):
             cx = pad + cell_w * index + cell_w // 2
-            _paste_icon(canvas, item.get('icon', ''), cx, line_y + 120, 130)
+            _paste_icon(canvas, item.get('icon', ''), cx, line_y + 120, 130, icon_color)
             text_top = line_y + 200
             used = _text_block(draw, pad + cell_w * index + 14, text_top, item.get('title', ''),
                                title_font, cell_w - 28, ink, line_gap=6, center=True)
@@ -288,7 +453,7 @@ def render_infographic(photo_bytes: bytes, items: list, title: str = '', templat
             for index, item in enumerate(entries):
                 center_y = int(body_top + slot * index + slot / 2)
                 icon_cx = x + (width - 70 if align_right else 70)
-                _paste_icon(canvas, item.get('icon', ''), icon_cx, center_y - 70, 112)
+                _paste_icon(canvas, item.get('icon', ''), icon_cx, center_y - 70, 112, icon_color)
                 used = _text_block(draw, x, center_y + 6, item.get('title', ''), title_font,
                                    width, ink, line_gap=6, center=True)
                 if item.get('text'):
