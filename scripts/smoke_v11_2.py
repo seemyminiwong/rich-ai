@@ -259,6 +259,15 @@ checks = {
         'def test_icons_recolor_by_hue_rotation_and_uploads_live_in_the_volume' in tests
         and 'def test_infographic_accent_follows_the_project_palette' in tests
     ),
+    # Нативний <select> відкривав системне меню (на macOS темне, без кольорів).
+    # Власний список поверх схованого select: форми й onchange не чіпаються.
+    'dropdowns are custom, select stays the source of truth': (
+        'function enhanceSelect' in web and "sel.dispatchEvent(new Event('change',{bubbles:true}))" in web
+        and 'new MutationObserver(()=>enhanceSelects()).observe(root' in web
+        and '.dd-native{position:absolute!important' in css
+    ),
+    'palette dropdown shows the colors': 'data-dots="${paletteDots(p.tokens)}"' in web and '.dd-dots.auto b{background:conic-gradient' in css,
+    'dropdowns are pinned by a test': 'def test_dropdowns_are_custom_but_forms_still_read_the_native_select' in tests,
     'icon library is visible, not a hidden datalist': (
         'function igIconPickerTpl' in web and '.ig-picker' in css
         and web.count('igOpenIcons(${i})') == 2
@@ -310,6 +319,18 @@ checks = {
     ),
     'landing dialog has no photo palette option': 'paletteSelect()' in web,
     'photo palette is pinned by a test': 'def test_photo_palette_extracts_the_product_accent' in tests,
+    'palette presets are artline.ua brands, derived contrast-safe': (
+        'BRAND_ACCENTS = [' in main
+        and 'palette_from_accent(accent)) for brand, accent in BRAND_ACCENTS' in main
+        and "('DEYE', '#015CBB')" in main and "('ASUS ROG'" in main and "('Samsung'" in main
+        and 'def palette_from_accent' in pipeline and 'def _palette_from_hsv' in pipeline
+        and pipeline.count('return _palette_from_hsv(h, sat, val)') == 2
+    ),
+    'untouched placeholder presets are retired, edited ones stay': (
+        'LEGACY_PALETTES = {' in main
+        and "json.loads(stale.tokens_json or '{}') == shipped" in main and 'db.delete(stale)' in main
+        and 'def test_brand_palettes_follow_artline_assortment_and_stay_readable' in tests
+    ),
     'real visitor ip survives the tunnel': (
         'real_ip_header CF-Connecting-IP;' in nginx
         and nginx.count('set_real_ip_from') == 3

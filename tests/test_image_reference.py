@@ -2461,3 +2461,118 @@ def test_showcase_contract_has_no_internal_contradictions():
     assert 'The product category appears in the Hero badge' in promo and 'appear in the Hero h2' not in promo
     for i in range(1, 9):
         assert f'ARTLINE BLOCK 0{i}' in t
+
+
+def test_dropdowns_are_custom_but_forms_still_read_the_native_select():
+    """Власні випадні списки поверх схованого <select>.
+
+    Нативний <select> відкриває СИСТЕМНЕ меню: на macOS - темне, без кольорів,
+    чужої форми (скарга власника зі скріншотом). Замінювати його на власну
+    розмітку цілком - означало б переписати всі FormData і inline-onchange у
+    застосунку. Тому <select> лишається в DOM схованим і є джерелом правди;
+    видимий контрол лише керує ним і кидає change через dispatchEvent.
+
+    Палітри показують кружки кольорів, «з фото» - веселку, стилі - плашки
+    «базовий» і «з FAQ» замість суфіксів у тексті.
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
+    css = (root / 'apps/web/styles.css').read_text(encoding='utf-8')
+
+    for fn in ('enhanceSelect', 'enhanceSelects', 'closeAllDd', 'ddOptionTpl'):
+        assert f'function {fn}' in web, fn
+    body = web.split('function enhanceSelect(')[1].split('\nfunction ')[0]
+    # select лишається джерелом правди для форм
+    assert "sel.classList.add('dd-native')" in body
+    assert "sel.dispatchEvent(new Event('change',{bubbles:true}))" in body
+    assert 'sel.selectedIndex=' in body
+    # ідемпотентно: підсилений select позначається і вдруге не чіпається
+    assert "if(sel.dataset.dd" in body and "sel.dataset.dd='1'" in body
+    # клавіатура і закриття
+    assert "e.key==='ArrowDown'" in body and "e.key==='Escape'" in body
+    assert "document.addEventListener('pointerdown'" in web
+    # підсилення після кожного render і після часткових перемальовок
+    assert web.count('enhanceSelects();') >= 2
+    assert "new MutationObserver(()=>enhanceSelects()).observe(root" in web
+    # живий полінг не перемальовує сторінку під відкритим списком
+    assert "document.querySelector('.dd.open')" in web.split('function startLive')[1].split('\n')[0]
+
+    # кольори в опціях палітри
+    pal = web.split('function paletteSelect(')[1].split('\n')[0]
+    assert 'data-dots="${paletteDots(p.tokens)}"' in pal
+    assert 'data-dots="auto"' in pal and 'data-tag="авто"' in pal
+    assert 'data-dots="${paletteDots(null)}" data-tag="стиль"' in pal
+    # стилі: плашки замість суфіксів
+    assert web.count("data-tag=\"${[") == 3
+    assert "' · з FAQ'" not in web.split('function advancedFields')[1].split('function rerunProjectDialogTpl')[0]
+
+    # схований select справді схований, а не display:none (валідація форм)
+    assert '.dd-native{position:absolute!important' in css and 'opacity:0' in css
+    assert 'display:none' not in css.split('.dd-native{')[1].split('}')[0]
+    assert '.dd-dots.auto b{background:conic-gradient' in css
+    # контейнери, що розмірювали select, розмірюють обгортку
+    for sel in ('.toolbar>.dd', '.panel-tools .dd', '.project-toolbar .dd'):
+        assert sel in css, sel
+
+
+def test_brand_palettes_follow_artline_assortment_and_stay_readable():
+    """Пресети кольорів - це бренди, які продає artline.ua, і кожен читабельний.
+
+    Було: Ocean/Ember/Forest/Grape/Lime - «просто кольори», що не відповідали
+    жодному товару в каталозі; оператор під ASUS чи Samsung підбирав hex руками.
+    Стало: пресет на бренд. Але фірмовий hex логотипа (#1428A0 Samsung,
+    #015CBB Deye) розрахований під біле тло; покладений напряму в токени він дає
+    нечитабельні числа на темних плитках. Тому пресет проходить через
+    palette_from_accent - те саме ядро, що й палітра з фото, з тими самими
+    гарантіями 4.5:1. Заповнювачі прибираються лише якщо їх ніхто не правив.
+    """
+    import ast
+    import colorsys
+    from pathlib import Path
+    from app.pipeline import palette_from_accent, palette_from_photo, contrast_ratio, apply_palette, PALETTE_TOKENS
+
+    root = Path(__file__).resolve().parents[1]
+    main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
+    tree = ast.parse(main)
+    consts = {n.targets[0].id: ast.literal_eval(n.value) for n in tree.body
+              if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)
+              and n.targets[0].id in ('BRAND_ACCENTS', 'LEGACY_PALETTES')}
+    brands = dict(consts['BRAND_ACCENTS'])
+
+    # бренди з каталогу artline.ua, а не абстрактні назви кольорів
+    for expected in ('ASUS ROG', 'MSI', 'GIGABYTE AORUS', 'AMD', 'NVIDIA', 'Intel', 'Samsung', 'Lenovo',
+                     'Acer', 'HP', 'Dell', 'Logitech', 'Corsair', 'be quiet!', 'Cooler Master',
+                     'Bambu Lab', 'Creality', 'DEYE', 'Xiaomi'):
+        assert expected in brands, expected
+    assert len(brands) == len(set(brands)) and len(brands) >= 18
+    assert set(consts['LEGACY_PALETTES']) == {'Ocean', 'Ember', 'Forest', 'Grape', 'Lime'}
+    assert 'palette_from_accent(accent)) for brand, accent in BRAND_ACCENTS' in main
+    assert "json.loads(stale.tokens_json or '{}') == shipped" in main, 'змінений оператором пресет не видаляється'
+    assert 'db.delete(stale)' in main
+    assert "'DEYE', '#015CBB'" in main, 'Deye - синій за офіційним брендбуком, не помаранчевий'
+
+    for brand, logo_hex in brands.items():
+        tokens = palette_from_accent(logo_hex)
+        assert set(tokens) == set(PALETTE_TOKENS), brand
+        accent, soft, dark, light = tokens['accent'], tokens['dark_soft'], tokens['dark'], tokens['light_soft']
+        assert contrast_ratio(accent, soft) >= 4.5, f'{brand}: {contrast_ratio(accent, soft):.2f} на dark_soft'
+        assert contrast_ratio(accent, dark) >= 4.5, f'{brand}: {contrast_ratio(accent, dark):.2f} на dark'
+        assert contrast_ratio('#101010', light) >= 12, f'{brand}: світле тло має лишатись світлим'
+        # відтінок бренду збережено (з точністю до кошика в 30°)
+        hue = lambda c: colorsys.rgb_to_hsv(*(int(c[i:i + 2], 16) / 255 for i in (1, 3, 5)))[0]
+        drift = abs(hue(accent) - hue(logo_hex))
+        assert min(drift, 1 - drift) < 30 / 360, f'{brand}: відтінок поплив {logo_hex} -> {accent}'
+        # похідні для світлого тла теж читабельні
+        out = apply_palette('<i style="color:#157985;background:#FFFFFF">x</i>', tokens)
+        light_text = out.split('color:')[1][:7]
+        assert contrast_ratio(light_text, '#FFFFFF') >= 4.5, brand
+
+    # одне ядро для фото і бренду: той самий hex дає ту саму палітру
+    from io import BytesIO
+    from PIL import Image
+    frame = Image.new('RGB', (64, 64), (0x01, 0x5C, 0xBB))
+    buffer = BytesIO(); frame.save(buffer, format='PNG')
+    assert palette_from_photo(buffer.getvalue()) == palette_from_accent('#015CBB')
