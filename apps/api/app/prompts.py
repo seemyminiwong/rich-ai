@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.68"
+BASE_STYLE_VERSION = "12.69"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -590,7 +590,7 @@ SHOWCASE_STYLE_PROMPT = r'''Create a premium image-led ecommerce rich page for a
 
 NON-NEGOTIABLE RULES
 - Use inline CSS only. Allowed elements: section, div, h2, h3, p, ul, li, img, strong, span, plus details and summary ONLY inside the FAQ block.
-- Never use h1, script, style, JavaScript, forms, buttons, prices, purchase links, tabs, accordions, video, SVG, base64 images, markdown or code fences.
+- Never use h1, script, style, JavaScript, forms, buttons, prices, purchase links, tabs, JavaScript accordions, video, SVG, base64 images, markdown or code fences. The ONLY interactive element on the page is the native details/summary FAQ in block 08.
 - Use only image URLs supplied in the request: hero, feature and GALLERY_IMAGES. Never invent URLs. Every fact comes from Product JSON only.
 - Every <img> carries a concise descriptive alt in the target language; loading="lazy" on every non-Hero image.
 - Do not use media queries. Desktop and mobile are separate outputs.
@@ -615,9 +615,9 @@ BLOCK COMMENTS (REQUIRED)
 
 SHOWCASE DESIGN SYSTEM
 - Dark surfaces: #101010, #1A2128, #252525; dark border #35393F. Light surfaces: #FFFFFF, #F5F7FA; light border #D0D7DE.
-- Accent is ARTLINE cyan: #19BCC9 on dark surfaces, #157985 on light. Use it ONLY for eyebrow labels, big numeric values and badge borders. Never for paragraphs.
-- Body text: #555555 on light, #d0d7de-#d8dde2 on dark. Headings: #101010 on light, #FFFFFF on dark.
-- Radii: one quiet base radius everywhere - outer sections 12px, inner cards 8-10px; chips and badges 999px (pills are part of this style). Generous padding, not big radii, carries the premium feel; a corner rounder than 12px is a defect.
+- Accent is ARTLINE cyan. For TEXT: #19BCC9 on dark surfaces, #157985 on light. For thin 1px borders and small glyphs (label borders, the FAQ toggle): #19BCC9 on any surface. Use it ONLY for eyebrow labels, big numeric values, label borders and the FAQ toggle. Never for paragraphs, never as a fill.
+- Body text: #555555 on light, #D0D7DE on dark. Headings: #101010 on light, #FFFFFF on dark.
+- Radii: one quiet base radius everywhere - outer sections 12px, inner cards 8-10px; chips and badges 999px (pills are part of this style). Generous padding, not big radii, carries the premium feel; apart from pills, a corner rounder than 12px is a defect.
 - Weights are heavy: h2 900-950, numeric values 950, chips 850-900. Section gap 18px, big-section padding 40-48px desktop / 22-26px mobile.
 - RHYTHM RULE: use this explicit full-width canvas sequence: Hero dark; Spec Strip neutral transition; Light Feature light; Dark Feature dark; Capability Trio light; Trust Split light outer canvas with one dark inner panel; Final Recap dark; FAQ light. Nested cards do not redefine the section canvas. Never improvise a different tone sequence.
 - Photography works only next to copy: every frame sits in a split or a card with text. When GALLERY_IMAGES offers fewer frames, drop photo slots instead of repeating an image.
@@ -632,17 +632,17 @@ SECTION SET, IN ORDER
 - THE FIRST CHILD of the wrapper is the hero asset as <img style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center"> - NO opacity on this img: the overlay below is the only darkening. Dimming the photo as well crushes a dark scene into a black rectangle - an IMG element, never a CSS background (background images do not survive the artline editor). A Hero without this img is an invalid page.
 - Above it one overlay div: position:absolute;inset:0;background:linear-gradient(90deg,rgba(16,16,16,.92) 0%,rgba(16,16,16,.55) 52%,rgba(16,16,16,0) 100%) - it must fade to FULLY TRANSPARENT on the side where the product stands, so the photo is plainly visible there. Mobile: same ramp at 180deg, dense at the bottom, transparent at the top over the product.
 - Content layer: position:relative;z-index:1;min-height:585px (mobile ~600px);padding:78px 46px 54px (mobile 420px 18px 26px);display:flex;align-items:center.
-- Inside, max-width:720px: a pill badge, one h2 60-64px/950 line-height .94 (mobile 34-38px), one bold subtitle 24-27px in #C9F0F4, one paragraph 16-17px #d8dde2, then a chip row of 3 white pills with the three strongest confirmed values.
+- Inside, max-width:720px: the SHARED SECTION LABEL as the badge, one h2 60-64px/950 line-height .94 (mobile 34-38px), one bold subtitle 24-27px in #C9F0F4, one paragraph 16-17px #D0D7DE of 1-2 sentences (at most 220 characters), then a chip row of 3 white pills with the three strongest confirmed values.
 - NAME APPEARS ONCE PER SECTION: the badge carries only the brand and product category (for example "DEYE · Гібридний інвертор"), the h2 carries the model exactly once. Badge text duplicating the h2 is a defect. The same rule applies to the final recap badge.
 - HERO TYPOGRAPHY: the h2 is BRAND + MODEL CODE only (for example "DEYE SUN-12K-SG05LP3-EU-SM2") - never the full commercial name with units, phase counts and connectivity suffixes: a four-line all-caps wall is a defect. Those descriptors move to the subtitle as compact specs separated by " · " (for example "12 кВт · 48 В · 2 MPPT · Wi-Fi · трифазний 220/380 В"). The paragraph below stays a fluent sentence, not a spec list.
 2. SPEC STRIP - four value cards
 - Grid repeat(4,1fr) desktop / 1fr mobile, gap 14px. Each card: radius 12px, padding 24px; value first at 34px/950 in the accent, then h3 19px, then one short line.
 - Exactly one card is dark (#1A2128, border #35393F, cyan value) - the single most decision-critical number; the rest are white with #157985 values.
-3. LIGHT FEATURE SPLIT - #F5F7FA, radius 12px, padding 44px; grid .92fr/1.08fr with align-items:stretch (mobile stacked): left - the SHARED SECTION LABEL, h2 40-42px/950, paragraph, chip row of dark pills (#1A2128) with confirmed materials/facts; right - one gallery frame in a white 12px-radius card. The image slot is height:420px desktop / 300px mobile; its img is display:block;width:100%;height:100%;object-fit:contain;object-position:center.
-4. DARK FEATURE SPLIT - grid 1fr/1fr with align-items:stretch (mobile stacked): left panel #1A2128 radius 12px padding 40px with the SHARED SECTION LABEL, white h2 36-38px, paragraph #d0d7de and a 2x2 mini-grid of stat tiles (rgba(255,255,255,.08), 24px/950 cyan value + 14px label); right - one REAL gallery frame in a WHITE neutral card, radius 12px, height:420px desktop / 300px mobile. Its img uses width:100%;height:100%;object-fit:contain;object-position:center. Never use cover for this real product frame.
-5. CAPABILITY TRIO - three equal-height white/soft cards (radius 12px;display:flex;flex-direction:column;height:100%;overflow:hidden). Each card starts with a WHITE neutral image slot of height:250px desktop / 210px mobile; the real gallery img uses width:100%;height:100%;object-fit:contain;object-position:center. Copy lives in a separate padding:22px block with h3 20px and one line. If fewer frames remain, two cards are acceptable - never a repeated photo. Never add a standalone photo-only section: every image sits next to copy that earns its place.
+3. LIGHT FEATURE SPLIT = THE PRIMARY REASON TO BUY: the one feature a buyer in this category cares about most. #F5F7FA, radius 12px, padding 44px; grid .92fr/1.08fr with align-items:stretch (mobile stacked): left - the SHARED SECTION LABEL, h2 40-42px/950, one paragraph of 2-3 sentences (at most 320 characters), chip row of dark pills (#1A2128, color:#FFFFFF) with confirmed materials/facts; right - one gallery frame in a white 12px-radius card. The image slot is height:420px desktop / 300px mobile; its img is display:block;width:100%;height:100%;object-fit:contain;object-position:center.
+4. DARK FEATURE SPLIT = THE ENGINEERING STORY: how the product performs, distinct from block 3. Its SHARED SECTION LABEL carries brand · model - this is the one mid-page mention of the exact model. Grid 1fr/1fr with align-items:stretch (mobile stacked): left panel #1A2128 radius 12px padding 40px with the label, white h2 36-38px, one paragraph #D0D7DE of 2-3 sentences (at most 320 characters) and a 2x2 mini-grid of stat tiles (rgba(255,255,255,.08), 24px/950 cyan value + 14px label); right - one REAL gallery frame in a WHITE neutral card, radius 12px, height:420px desktop / 300px mobile. Its img uses width:100%;height:100%;object-fit:contain;object-position:center. Never use cover for this real product frame.
+5. CAPABILITY TRIO = THREE SECONDARY CONVENIENCES that blocks 3 and 4 did not cover - never restate them. Three equal-height white/soft cards (radius 12px;display:flex;flex-direction:column;height:100%;overflow:hidden). Each card starts with a WHITE neutral image slot of height:250px desktop / 210px mobile; the real gallery img uses width:100%;height:100%;object-fit:contain;object-position:center. Copy lives in a separate padding:22px block with h3 20px and one line. If fewer frames remain, two cards are acceptable - never a repeated photo. Never add a standalone photo-only section: every image sits next to copy that earns its place.
 6. TRUST SPLIT - outer canvas #F5F7FA, radius 12px, padding 18px; grid .9fr/1.1fr with align-items:stretch (mobile stacked). Left: dark panel (#1A2128, radius 10px, padding 36px) with h2 34-36px and one supportive paragraph about choosing/completing the setup with artline - no invented services or warranties beyond Product JSON. Right: 2x2 grid of equal-height soft cards. Each tile answers a real buyer decision from Product JSON: what it pairs with (battery voltage/type, communication, parallel operation), an operating limit (temperature, IP rating, mounting), a capacity boundary, or a confirmed warranty term. REGISTRY DATA IS BANNED HERE: never SKU, article number, internal code, EAN/barcode or country of origin - a buyer decides nothing with those.
-7. FINAL RECAP - centered dark section, radius 12px, padding 48px 28px, background linear-gradient(135deg,#1A2128,#252525): pill badge with brand/model, h2 40-42px white, one summary paragraph #d0d7de max-width 700px, chip row of 3 white pills with exact confirmed values (dimensions, key spec, capacity).
+7. FINAL RECAP - centered dark section, radius 12px, padding 48px 28px, background linear-gradient(135deg,#1A2128,#252525): the SHARED SECTION LABEL with brand · model, one h2 40-42px white stating the main benefit in one line (no model code - the label already carries it), one summary paragraph #D0D7DE of 2-3 sentences max-width 700px, chip row of 3 white pills with exact confirmed values (dimensions, key spec, capacity).
 8. FAQ - native questions and answers, quiet light canvas
 - Container: background:#FFFFFF;border-radius:12px;padding:32px 30px 12px (mobile 24px 16px 8px). At the top one h2 30-32px/900;text-align:center;margin:0 0 14px, with the natural target-language heading for frequently asked questions.
 - Then 4-6 <details> items and nothing else. Each details: margin:0;padding:0;border-bottom:1px solid #E7EAEE.
@@ -653,17 +653,18 @@ SECTION SET, IN ORDER
 
 FACTS AND TONE
 - Numbers with units everywhere a number exists. Every chip, tile and value card states a confirmed fact from Product JSON - no marketing superlatives without a number behind them.
-- The exact brand and model appear in the Hero badge, once mid-page and in the final recap.
+- NUMBER DISTRIBUTION: the page has 14 numeric slots (3 Hero chips, 4 Spec Strip cards, 4 Dark Feature tiles, 3 Recap chips). A value may appear as a big number at most TWICE on the whole page: once early (Hero or Spec Strip) and once in the Final Recap. The four Dark Feature tiles carry values the Spec Strip did not show. When Product JSON has too few distinct values, drop tiles - never pad with a repeat.
+- The exact brand and model appear in the Hero h2, in the Dark Feature Split label (the one mid-page mention) and in the Final Recap label - three times, never more.
 - SEO: natural category wording in h2/h3; no keyword stuffing.
 
 FINAL SELF-CHECK
 - the Hero wrapper carries the hero URL as background (center/cover) AND its first child is the same URL as <img> (position:absolute;inset:0) with NO opacity; the overlay fades to transparent over the product so the photo is visible; text above the overlay;
-- the badge does not repeat the h2; the h2 is brand + model code only, commercial-name descriptors live in the subtitle as " · " specs;
+- the badge does not repeat the h2; the h2 is brand + model code only, commercial-name descriptors live in the subtitle as " · " specs; no value appears as a big number more than twice; blocks 3, 4 and 5 describe different features;
 - no photo-only sections; the trust tiles contain zero registry data (SKU, codes, EAN, country);
 - no white-background render is cropped by cover or placed bare on a dark canvas;
 - all eight direct blocks carry the exact ARTLINE BLOCK start/end comments;
 - the FAQ is block 08 and the only place with details/summary: every item closed, 4-6 questions strictly answerable from Product JSON, no prices, delivery or payment; all shared section labels have the same component CSS; desktop grid cards stretch to equal height;
-- dark and light sections strictly alternate; pills only where specified; cyan only for eyebrows, values and badge borders;
+- the canvas sequence matches the RHYTHM RULE exactly (blocks 5 and 6 are both light by design - the dark inner panel of block 6 carries the contrast); pills only where specified; cyan only for eyebrows, values, label borders and the FAQ toggle;
 - every gallery URL used at most once; no invented image URLs; alt on every img; loading="lazy" beyond the Hero;
 - desktop and mobile copy is word-for-word identical; mobile is single-column with the same section order;
 - no sentence describes the page or the images; every value traces to Product JSON;
@@ -878,7 +879,7 @@ SHOWCASE_PROMO_STYLE_PROMPT = _promo_swap_line(
 )
 SHOWCASE_PROMO_STYLE_PROMPT = _promo_swap_line(
     SHOWCASE_PROMO_STYLE_PROMPT,
-    '- The exact brand and model appear in the Hero badge',
+    '- The exact brand and model appear in the Hero h2',
     '- The product category appears in the Hero badge, once mid-page and in the final recap. The buyer\'s own logo is a placeholder, never a named company.',
 )
 SHOWCASE_PROMO_STYLE_PROMPT += """

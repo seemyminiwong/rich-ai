@@ -101,7 +101,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.68"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.69"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 3 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -382,8 +382,19 @@ checks.update({
     'faq block: native details accordion, no js': "'details', 'summary'" in pipeline and "'open'" in pipeline and '_finalize_faq' in pipeline and '.arfaq' in pipeline and 'ARTLINE BLOCK 08: FAQ' in prompts and prompts.count('exactly eight direct child blocks') == 1 and 'FAQ' in pipeline.split('_SHOWCASE_BLOCK_NAMES')[1].split(')')[0],
     # Значок стоїть ПЕРШИМ у summary (референс - блок «Питання» на artline.ua),
     # тому запасний селектор ловить :first-child, а підпірки float більше немає.
-    'faq state indicator survives a hostile editor': "('display', 'list-item')" in pipeline and 'summary.insert(0, icon)' in pipeline and 'section details[open]>summary>span:first-child' in pipeline and 'section details:open>summary>span:first-child' in pipeline and pipeline.count('rotate(45deg)!important') >= 2,
+    # Один індикатор стану. Маркер вимкнено інлайном (flex + list-style:none),
+    # селектори без класу тримаються на відбитку інлайн-стилю: при зрізаному
+    # class на artline.ua стояли і трикутник, і плюс одразу.
+    'faq state indicator survives a hostile editor': "('display', 'flex')" in pipeline and "('list-style', 'none')" in pipeline and 'summary.insert(0, icon)' in pipeline and '_FAQ_FINGERPRINT = \'summary[style*="list-style:none"]\'' in pipeline and pipeline.count('rotate(45deg)!important') >= 3,
     # Вигляд блока: тонкий бірюзовий плюс ліворуч, без кружка й без нумерації.
+    # Контракт Showcase без внутрішніх суперечностей: модель не мусить
+    # вгадувати, пігулка бейдж чи плашка, і де саме стоїть модель.
+    'showcase contract is self-consistent': (
+        'tabs, accordions' not in prompts.split('SHOWCASE_STYLE_PROMPT = ')[1].split("'''")[1]
+        and 'a pill badge' not in prompts and 'NUMBER DISTRIBUTION' in prompts
+        and 'THE PRIMARY REASON TO BUY' in prompts and 'matches the RHYTHM RULE exactly' in prompts
+    ),
+    'showcase audit is pinned by a test': 'def test_showcase_contract_has_no_internal_contradictions' in tests,
     'faq matches the block used on artline.ua': (
         'color:#19BCC9' in pipeline.split('def _finalize_faq')[1].split('def ')[0]
         and 'border-radius:999px' not in pipeline.split('def _finalize_faq')[1].split('def ')[0]

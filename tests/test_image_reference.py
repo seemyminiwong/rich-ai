@@ -978,24 +978,26 @@ def test_showcase_faq_is_native_interactive_and_idempotent():
     assert '<details' in clean and '<summary' in clean and 'open' in clean
     assert '.arfaq' in clean
 
-    # ДЕГРАДАЦІЯ (скарга artline.ua: «+» не анімується). Індикатор стану мусить
-    # лишатись у трьох сценаріях, перевірених у Chromium:
+    # ДЕГРАДАЦІЯ. Друга скарга власника (04.09): «десь видно і старі
+    # стрілочки, і нові плюсики». Редактор artline зрізає class, а <style>
+    # лишає: правило .arfaq summary::marker переставало збігатись, штатний
+    # трикутник повертався і стояв ПОРУЧ із нашим плюсом. Тому індикатор
+    # стану тепер один, у трьох сценаріях, перевірених у Chromium:
     summary_style = details[0].find('summary').get('style') or ''
-    # 1) якщо магазин зріже <style>, summary лишається list-item -> браузер сам
-    #    показує і перемикає штатний трикутник; інлайнових вбивць маркера немає
-    assert 'display:list-item' in summary_style
-    assert 'list-style' not in summary_style and 'display:flex' not in summary_style
-    # без таблиці стилів значок лишається інлайновим і стоїть перед текстом
-    # сам по собі - ліворуч його тримає порядок у DOM, а не CSS
+    # 1) інлайном flex + list-style:none: штатний маркер не зʼявляється навіть
+    #    без <style> і без class; довге питання висить з відступом, а не
+    #    переноситься під плюс (це й було «дивно переноситься»)
+    assert 'display:flex' in summary_style and 'list-style:none' in summary_style
+    assert 'display:list-item' not in summary_style
     assert 'float' not in (icon.get('style') or '')
-    # 2) якщо санітайзер зріже class - поворот тримає селектор без класів
+    # 2) зрізаний class: і поворот, і схований маркер тримаються на відбитку
+    #    інлайн-стилю - атрибут style редактор лишає завжди
     css = soup.find('style').string
-    assert 'section details[open]>summary>span:first-child' in css
-    assert 'section details:open>summary>span:first-child' in css
+    assert 'details>summary[style*="list-style:none"]::marker{content:""}' in css
+    assert 'details[open]>summary[style*="list-style:none"]>span:first-child' in css
+    assert 'details:open>summary[style*="list-style:none"]>span:first-child' in css
     # 3) власний CSS магазину не має перебивати поворот
-    assert css.count('rotate(45deg)!important') >= 2
-    # красива flex-розкладка живе в таблиці стилів, а не інлайном
-    assert 'display:flex!important' in css
+    assert css.count('rotate(45deg)!important') >= 3
     assert 'margin-left:auto' not in css, 'підпірка для значка праворуч більше не потрібна'
 
 
@@ -2416,3 +2418,46 @@ def test_default_brand_mark_is_the_real_artline_wordmark():
     plain, _ = header_with(logo, '')
     # з назвою і без назви результат однаковий: широкий напис глушить текст
     assert list(painted.getdata()) == list(plain.getdata()), 'текст поруч із лого-написом не друкується'
+
+
+def test_showcase_contract_has_no_internal_contradictions():
+    """Аудит контракту Showcase (04.09): суперечності, які модель мусила
+    розвʼязувати сама - і щоразу по-різному.
+
+    1. «Never use … accordions» - і тут же блок 08 на <details>.
+    2. Hero і Recap просили «pill badge», а SHARED SECTION LABEL, куди ці ж
+       бейджі явно входять, має радіус 8px. Пігулка чи плашка - вгадуй.
+    3. FACTS: «бренд і модель у Hero badge», а правило Hero: бейдж несе
+       бренд + КАТЕГОРІЮ, модель - у h2.
+    4. SELF-CHECK: «dark and light strictly alternate», а RHYTHM RULE ставить
+       блоки 5 і 6 обидва світлими.
+    5. Акцент «#157985 on light», а межа лейбла на світлому - #19BCC9.
+    6. «a corner rounder than 12px is a defect» у тому ж рядку, що й pills 999px.
+
+    Плюс дірки в оповіді: 14 числових слотів без правила проти повторів, три
+    блоки фіч без розмежування, абзаци без стелі довжини.
+    """
+    from app.prompts import SHOWCASE_STYLE_PROMPT as t, SHOWCASE_DARK_STYLE_PROMPT as dark, SHOWCASE_PROMO_STYLE_PROMPT as promo
+
+    # суперечності
+    assert 'tabs, accordions' not in t and 'native details/summary FAQ in block 08' in t
+    assert 'a pill badge' not in t and 'pill badge with brand/model' not in t
+    assert t.count('SHARED SECTION LABEL') >= 5
+    assert 'appear in the Hero badge' not in t and 'appear in the Hero h2' in t
+    assert 'strictly alternate' not in t and 'matches the RHYTHM RULE exactly' in t
+    assert 'For thin 1px borders and small glyphs' in t
+    assert 'apart from pills, a corner rounder than 12px' in t
+    assert '#d8dde2' not in t.lower().replace('#d0d7de', '')
+
+    # оповідь
+    assert 'NUMBER DISTRIBUTION' in t and 'at most TWICE' in t
+    for marker in ('THE PRIMARY REASON TO BUY', 'THE ENGINEERING STORY', 'THREE SECONDARY CONVENIENCES'):
+        assert marker in t, marker
+    assert 'the one mid-page mention' in t
+    assert 'at most 220 characters' in t and t.count('at most 320 characters') == 2
+
+    # деривації не розійшлись
+    assert 'A light section may never appear' in dark and 'use this explicit full-width canvas sequence' not in dark
+    assert 'The product category appears in the Hero badge' in promo and 'appear in the Hero h2' not in promo
+    for i in range(1, 9):
+        assert f'ARTLINE BLOCK 0{i}' in t
