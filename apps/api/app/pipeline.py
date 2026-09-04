@@ -2812,14 +2812,26 @@ def _finalize_showcase_layout(
 # artline.ua. Це заразом прибрало давню підпірку margin-left:auto: щоб
 # опинитись ліворуч, значку не треба нічого перебивати, він там за порядком
 # у DOM. Запасний селектор тепер :first-child - саме туди сервер його кладе.
+# Індикатор стану - ОДИН: наш «+». Штатний трикутник браузера вимикається
+# інлайном (display:flex + list-style:none), а не лише таблицею стилів, бо
+# редактор artline зрізає class і правило .arfaq summary::marker перестає
+# збігатись - на сторінці стояли і трикутник, і плюс одразу (жива скарга).
+# Плата за це: коли зрізано ще й <style>, плюс лишається статичним - зате
+# нічого не дублюється, а відповідь усе одно розгортається під питанням.
+#
+# Селектори без класу тримаються на «відбитку» інлайн-стилю: атрибут style
+# редактор лишає завжди, інакше не працювала б жодна верстка річа.
+_FAQ_FINGERPRINT = 'summary[style*="list-style:none"]'
 _FAQ_CSS = (
     '.arfaq summary::-webkit-details-marker{display:none}'
     '.arfaq summary::marker{content:""}'
-    '.arfaq summary{display:flex!important;align-items:center;list-style:none}'
+    f'details>{_FAQ_FINGERPRINT}::-webkit-details-marker{{display:none}}'
+    f'details>{_FAQ_FINGERPRINT}::marker{{content:""}}'
+    '.arfaq summary{display:flex!important;align-items:center;list-style:none!important}'
     '.arfaq .arfaq-i{float:none!important}'
     '.arfaq[open] .arfaq-i{transform:rotate(45deg)!important}'
-    'section details[open]>summary>span:first-child{transform:rotate(45deg)!important}'
-    'section details:open>summary>span:first-child{transform:rotate(45deg)!important}'
+    f'details[open]>{_FAQ_FINGERPRINT}>span:first-child{{transform:rotate(45deg)!important}}'
+    f'details:open>{_FAQ_FINGERPRINT}>span:first-child{{transform:rotate(45deg)!important}}'
 )
 
 
@@ -3043,10 +3055,11 @@ def _finalize_faq(soup, dark_edition: bool = False) -> None:
     редакторі artline живе лише інертний <style>, як у Подіум 3D); УСІ пункти
     згорнуто - покупець розгортає лише те, що його питання.
 
-    Деградація перевірена в Chromium: зі <style> - схований маркер і «+», що
-    повертається в «×»; БЕЗ <style> (редактор зрізав) - повертається штатний
-    трикутник, який перемикає сам браузер, тож стан пункту видно завжди;
-    зрізані class - поворот тримає запасний селектор без класів.
+    Деградація перевірена в Chromium: зі <style> - «+», що повертається в
+    «×»; зрізані class - і поворот, і схований маркер тримають селектори по
+    відбитку інлайн-стилю; зрізаний <style> - статичний «+» в одному рядку з
+    питанням, штатний трикутник не зʼявляється ніколи (обидва значки поруч -
+    жива скарга власника).
     """
     items = soup.find_all('details')
     if not items:
@@ -3069,12 +3082,14 @@ def _finalize_faq(soup, dark_edition: bool = False) -> None:
         if summary is None:
             continue
         sstyle = summary.get('style') or ''
-        # Ані list-style:none, ані display:flex інлайном: обидва вбивають
-        # штатний трикутник, а він - ЄДИНИЙ індикатор стану, якщо магазин
-        # зріже <style>. Інлайном лишається display:list-item; красиву
-        # flex-розкладку і схований маркер дає таблиця стилів, коли виживає.
+        # Один рядок, один індикатор. display:flex дає висячий відступ: довге
+        # питання переноситься у своїй колонці, а не під плюс. list-style:none
+        # інлайном ховає штатний трикутник навіть без <style> і без class -
+        # раніше при зрізаному class на сторінці стояли обидва значки.
+        # Той самий рядок - «відбиток» для селекторів без класу в _FAQ_CSS.
         sstyle = re.sub(r'list-style[a-z-]*\s*:[^;]+;?', '', sstyle, flags=re.I)
-        for prop, value in (('display', 'list-item'), ('cursor', 'pointer')):
+        for prop, value in (('display', 'flex'), ('align-items', 'center'),
+                            ('cursor', 'pointer'), ('list-style', 'none')):
             sstyle = _set_css(sstyle, prop, value)
         summary['style'] = sstyle.strip().strip(';')
         # Нумерація прибрана: на artline.ua її немає. Сторінки, згенеровані
