@@ -28,7 +28,7 @@ from app.tasks import bill_extra, image_rate, process_landing, process_project, 
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
 from app.raster import flatten_to_white
-from app.pipeline import _is_reasoning_model, decode_entities, fetch_bytes_capped, fetch_html, gallery_urls, image_url_rejection, image_urls_in_html, is_public_http_url, is_publishable_image_url, parse_page, plain_text_from_html, replace_image_urls, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
+from app.pipeline import _is_reasoning_model, decode_entities, fetch_bytes_capped, fetch_html, gallery_urls, image_url_rejection, image_urls_in_html, is_public_http_url, is_publishable_image_url, palette_from_accent, parse_page, plain_text_from_html, replace_image_urls, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
 from app.landing import LANDING_PROMPT, LANDING_STYLE_NAME
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.version import __version__
@@ -252,17 +252,60 @@ MANAGED_STYLES = [
 ]
 
 
+# Фірмові кольори брендів з асортименту artline.ua. Hex - колір ЛОГОТИПА
+# (підібраний під біле тло), а не готовий токен: у пресет він потрапляє через
+# palette_from_accent - ту саму математику, що й палітра з фото. Тож акцент
+# доводиться до 4.5:1 на власних темних картках, темні поверхні лише
+# підфарбовуються відтінком бренду, світле тло - блідий тон акценту.
+# Прямий перенос #1428A0 Samsung чи #015CBB Deye у токени давав би нечитабельні
+# числа на темних плитках. Значення - з відкритих брендбуків і логотипів;
+# це стартові пресети, у вкладці «Кольори» вони правляться як звичайні.
+BRAND_ACCENTS = [
+    # компоненти
+    ('AMD', '#ED1C24'),
+    ('NVIDIA', '#76B900'),
+    ('Intel', '#0071C5'),
+    ('ASUS ROG', '#E4002B'),
+    ('MSI', '#D10000'),
+    ('GIGABYTE AORUS', '#F58220'),
+    ('Corsair', '#ECE81A'),
+    ('be quiet!', '#F07E00'),
+    ('Cooler Master', '#5B2D8E'),
+    # готові системи, ноутбуки, монітори
+    ('Acer', '#83B81A'),
+    ('Lenovo', '#E2231A'),
+    ('HP', '#0096D6'),
+    ('Dell', '#007DB8'),
+    ('Samsung', '#1428A0'),
+    ('Xiaomi', '#FF6900'),
+    # периферія
+    ('Logitech', '#00B8FC'),
+    # 3D-друк
+    ('Bambu Lab', '#00AE42'),
+    ('Creality', '#005BAC'),
+    # енергетика
+    ('DEYE', '#015CBB'),
+]
+
 BUILTIN_PALETTES = [
     ('ARTLINE Cyan', {}),  # фірмова: порожні токени = канонічні кольори
-    ('Ocean', {'accent': '#3B82F6', 'dark': '#0B1D33', 'dark_soft': '#132A47', 'light_soft': '#F2F6FB'}),
-    ('Ember', {'accent': '#F97316', 'dark': '#1A120B', 'dark_soft': '#2A1D12', 'light_soft': '#FBF5EF'}),
-    ('Forest', {'accent': '#16A34A', 'dark': '#0D1A12', 'dark_soft': '#16281C', 'light_soft': '#F1F7F2'}),
-    ('Grape', {'accent': '#8B5CF6', 'dark': '#140F22', 'dark_soft': '#221A38', 'light_soft': '#F5F3FB'}),
-    ('Lime', {'accent': '#A3E635', 'dark': '#141A0B', 'dark_soft': '#202B12', 'light_soft': '#F6FAEE'}),
+    *[(brand, palette_from_accent(accent)) for brand, accent in BRAND_ACCENTS],
     # 2026-08-19: бренд-схема breloki.eu для стилю «ARTLINE Showcase Promo».
     # Орієнтовні значення (див. BRELOKI_PALETTE); точні hex правляться тут, у UI.
     ('Breloki', dict(BRELOKI_PALETTE)),
 ]
+
+# Пресети-заповнювачі першої версії: не бренди, а просто «синій/помаранчевий».
+# seed() прибирає їх з бази ЛИШЕ якщо токени досі дорівнюють засіяним -
+# змінений оператором пресет є рішенням людини і лишається. Проєкти, стилі
+# та лендінги тримають знімок токенів, тому видалення пресета їх не чіпає.
+LEGACY_PALETTES = {
+    'Ocean': {'accent': '#3B82F6', 'dark': '#0B1D33', 'dark_soft': '#132A47', 'light_soft': '#F2F6FB'},
+    'Ember': {'accent': '#F97316', 'dark': '#1A120B', 'dark_soft': '#2A1D12', 'light_soft': '#FBF5EF'},
+    'Forest': {'accent': '#16A34A', 'dark': '#0D1A12', 'dark_soft': '#16281C', 'light_soft': '#F1F7F2'},
+    'Grape': {'accent': '#8B5CF6', 'dark': '#140F22', 'dark_soft': '#221A38', 'light_soft': '#F5F3FB'},
+    'Lime': {'accent': '#A3E635', 'dark': '#141A0B', 'dark_soft': '#202B12', 'light_soft': '#F6FAEE'},
+}
 
 
 def seed():
@@ -304,6 +347,10 @@ def seed():
         for preset_name, tokens in BUILTIN_PALETTES:
             if not db.scalar(select(Palette).where(Palette.name == preset_name)):
                 db.add(Palette(name=preset_name, tokens_json=json.dumps(tokens)))
+        for preset_name, shipped in LEGACY_PALETTES.items():
+            stale = db.scalar(select(Palette).where(Palette.name == preset_name))
+            if stale is not None and json.loads(stale.tokens_json or '{}') == shipped:
+                db.delete(stale)
         # The spec default wins as long as the operator has not promoted a CUSTOM
         # style: switching between managed defaults follows the code, a manual
         # custom choice is never overridden.
@@ -2966,7 +3013,7 @@ def _clean_tokens(tokens: dict) -> dict:
 
 @app.get('/api/palettes')
 def palettes(db: Session = Depends(get_db), user=Depends(current)):
-    return [palette_dict(x) for x in db.scalars(select(Palette).order_by(Palette.created_at)).all()]
+    return [palette_dict(x) for x in db.scalars(select(Palette).order_by(Palette.created_at, Palette.name)).all()]
 
 
 @app.post('/api/palettes')

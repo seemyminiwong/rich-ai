@@ -2264,6 +2264,19 @@ def palette_from_photo(blob: bytes) -> dict | None:
     if not weight or count < len(pixels) * 0.01:
         return None
     h, sat, val = colorsys.rgb_to_hsv(rs / weight / 255, gs / weight / 255, bs / weight / 255)
+    return _palette_from_hsv(h, sat, val)
+
+
+def _palette_from_hsv(h: float, sat: float, val: float) -> dict:
+    """Повна палітра з одного відтінку: спільне ядро для фото та бренд-пресетів.
+
+    Акцент затискається у діапазон читабельності (S 0.45-0.95, V 0.55-0.80),
+    темні поверхні лише підфарбовуються, акцент доводиться до 4.5:1 на обох
+    темних токенах. Один код - одна гарантія: пресет бренду і колір з фото
+    проходять через ті самі захисти, тому «12GB» читається за будь-якого
+    вибору оператора.
+    """
+    import colorsys
     sat = min(0.95, max(0.45, sat))
     val = min(0.80, max(0.55, val))
     tone = lambda v, s2: '#%02X%02X%02X' % tuple(round(c * 255) for c in colorsys.hsv_to_rgb(h, s2, v))
@@ -2282,6 +2295,21 @@ def palette_from_photo(blob: bytes) -> dict | None:
         'dark_soft': dark_soft,
         'light_soft': _mix(accent, '#FFFFFF', 0.94),
     }
+
+
+def palette_from_accent(color: str) -> dict:
+    """Бренд-пресет з одного фірмового hex: та сама математика, що й для фото.
+
+    Навіщо: фірмові кольори брендів (Samsung #1428A0, Deye #015CBB, Corsair
+    #ECE81A) підібрані під логотип на білому, а не під текст на темній картці.
+    Прямий перенос у токени дає або нечитабельний акцент, або чорну сторінку
+    без відтінку бренду. Тут відтінок береться з логотипа, а яскравість,
+    насиченість і темні поверхні виводяться так, щоб контраст тримався.
+    """
+    import colorsys
+    r, g, b = _hex_rgb(color)
+    h, sat, val = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+    return _palette_from_hsv(h, sat, val)
 
 
 def style_palette(style) -> dict:
