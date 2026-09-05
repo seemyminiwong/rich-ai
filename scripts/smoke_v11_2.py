@@ -183,7 +183,7 @@ checks = {
     'cost presets defined': 'const PRESETS={' in web and all(k in web for k in ('eco:{', 'std:{', 'max:{')),
     'presets fall back when a provider is missing': 'const firstAvailable=' in web,
     'dialog prices a run before it starts': 'function estimateCost' in web and "id=\"advEstimate\"" in web,
-    'pricing reaches the client': "'text_pricing': settings.text_pricing" in main and "'image_pricing': settings.image_pricing" in main,
+    'pricing reaches the client': "'text_pricing': {**DEFAULT_TEXT_PRICING, **settings.text_pricing}" in main and "'image_pricing': {**DEFAULT_IMAGE_PRICING, **settings.image_pricing}" in main,
     'image models are grouped not datalisted': '<optgroup label=' in web and 'list="imageModels"' not in web,
     'native controls forced to light scheme': 'color-scheme:light' in css,
     'model list is curated not discovered': "live = {x.id for x in OpenAI" in main and 'discovered_text' not in main,
@@ -194,7 +194,7 @@ checks = {
     'browser tab carries the artline icon': 'rel="icon"' in (root / 'apps/web/index.html').read_text(encoding='utf-8') and (root / 'apps/web/favicon-32.png').exists() and (root / 'apps/web/apple-touch-icon.png').exists() and 'COPY favicon-32.png' in (root / 'apps/web/Dockerfile').read_text(encoding='utf-8') and 'png|svg|ico' in nginx,
     'index.html is never cached': 'no-store, must-revalidate' in nginx,
     'assets are immutable': 'max-age=31536000, immutable' in nginx,
-    'security headers repeated where add_header breaks inheritance': nginx.count('X-Content-Type-Options') == 4,
+    'security headers repeated where add_header breaks inheritance': nginx.count('X-Content-Type-Options') == 5,
     'media is embeddable from any context': 'Cross-Origin-Resource-Policy "cross-origin"' in nginx,
     # Статичний proxy_pass = разовий резолв імені: після пересоздання
     # контейнера api web проксіює на мертвий IP і віддає 502 на все.
@@ -354,6 +354,12 @@ checks = {
         and pipeline.count('return _palette_from_hsv(h, sat, val)') == 2
     ),
     'no third-party brand scheme is shipped': 'BRELOKI' not in main and 'BRELOKI' not in prompts and 'breloki' not in prompts.lower() and 'reloki' not in brands,
+    'cost estimate calibrates from real projects, every model priced': (
+        'def usage_profile(db) -> dict:' in main and "'usage_profile': usage_profile(db)" in main
+        and '{**DEFAULT_IMAGE_PRICING, **settings.image_pricing}' in main
+        and 'function estTokens(outputs)' in web and 'const EST_TOKENS={' not in web
+        and 'def test_cost_estimate_is_calibrated_from_real_projects_and_prices_every_model' in tests
+    ),
     'long dropdowns search, palettes sorted by name': (
         'const DD_SEARCH_MIN=8' in web and '<div class="dd-search"><input type="search"' in web
         and '.dd-opt[hidden],.dd-empty[hidden]{display:none}' in css
@@ -382,11 +388,40 @@ checks = {
         'proxy_pass http://' not in '\n'.join(
             line for line in nginx.splitlines() if not line.strip().startswith('#'))
         and 'resolver 127.0.0.11' in nginx
-        and nginx.count('proxy_pass $') == 3
+        and nginx.count('proxy_pass $') == 4
     ),
     'media outranks the static cache regex': 'location ^~ /media/' in nginx and nginx.index('location ^~ /media/') < nginx.index('location ~*'),
     # Без ^~ regex-локація кешу краде будь-яку адресу API, що кінчається на
     # .png/.svg/.js/.css: прев'ю іконок не вантажились саме через це.
+    # Статичні промо-сторінки лежать на /promo/, а НЕ на /landings/: у SPA вже
+    # є власний роут /landings/{id}, і префіксна локація з тим самим іменем
+    # віддавала б 404 замість оболонки при перезавантаженні сторінки.
+    'static promo pages never shadow the studio landings route': (
+        'location ^~ /promo/' in nginx
+        and 'location ^~ /landings/' not in nginx
+        and nginx.index('location ^~ /promo/') < nginx.index('location ~*')
+    ),
+    'public landing page is proxied and outranks the cache regex': (
+        'location ^~ /p/' in nginx
+        and nginx.index('location ^~ /p/') < nginx.index('location ~*')
+        and "@app.get('/p/{share_token}')" in main
+    ),
+    # Публічний роут - єдиний поза /api/, тому жоден Depends(current) його не
+    # прикриває: замок тут лише прапорець public і токен.
+    'a landing stays private until it is published': (
+        'if not landing or not landing.public or not (landing.html' in main
+        and 'secrets.token_urlsafe(24)' in main
+        and "'X-Robots-Tag': 'noindex, nofollow'" in main
+    ),
+    'rotating the share token revokes the old link': (
+        'rotate: bool = False' in main
+        and 'if payload.rotate or (payload.public and not landing.share_token)' in main
+        and 'function rotateLandingShare' in web
+    ),
+    'the public page carries no /media dependency': (
+        'inline_media_images(landing.html)' in main
+        and main.count('inline_media_images(landing.html)') == 2
+    ),
     'api outranks the static cache regex too': 'location ^~ /api/' in nginx and 'location /api/ {' not in nginx,
     'frontend crashes reach the alert channel': "addEventListener('error'" in web and "@app.post('/api/client-error')" in main,
     'close buttons are labelled': web.count('aria-label="Закрити"') + web.count('aria-label="Прибрати"') == web.count('>×</button>'),

@@ -104,7 +104,7 @@ services:
     # на насі, без перезбирання web. Тому ж вони лежать у корені репозиторію, а
     # не в apps/web (це контент, а не код застосунку).
     volumes:
-      - ./landings:/usr/share/nginx/html/landings:ro
+      - ./promo:/usr/share/nginx/html/promo:ro
     ports:
       # The LAN entry point. With the tls profile active, the public entry point is
       # Caddy on 80/443; this port stays for the local network and for a fallback.
@@ -137,20 +137,23 @@ services:
     depends_on:
       - web
 
-  # Публічна вітрина лендінгів окремо від студії.
+  # Публічна вітрина статичних промо-сторінок окремо від студії.
+  #
+  # Це НЕ розділ «Лендінги» студії (той генерує сторінки через AI і тримає HTML
+  # у базі). Тут лежать сторінки, зроблені руками, як файли в ./promo.
   #
   # Порт назовні НЕ публікується: контейнер видно лише всередині compose-мережі,
-  # тобто з cloudflared. У LAN лендінг і далі відкривається через web на :3000 —
-  # обидва читають ту саму папку ./landings.
+  # тобто з cloudflared. У LAN сторінка і далі відкривається через web на :3000 —
+  # обидва читають ту саму папку ./promo.
   #
-  # Public hostname тунелю: Service HTTP, URL рівно `landings:80`. Якщо вказати
-  # `web:80`, назовні поїде вся студія, а не тільки папка з лендінгами.
-  landings:
+  # Public hostname тунелю: Service HTTP, URL рівно `promo:80`. Якщо вказати
+  # `web:80`, назовні поїде вся студія, а не тільки папка з промо-сторінками.
+  promo:
     image: nginx:1.27-alpine
     restart: unless-stopped
     volumes:
-      - ./landings:/usr/share/nginx/html:ro
-      - ./config/landings.nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./promo:/usr/share/nginx/html:ro
+      - ./config/promo.nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
   caddy:
     image: caddy:2-alpine

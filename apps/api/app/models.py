@@ -284,6 +284,11 @@ class Landing(Base):
     style_id: Mapped[str | None] = mapped_column(String, nullable=True)
     # Знімок кольорової схеми, обраної при запуску ({} = схема стилю).
     palette_json: Mapped[str] = mapped_column(Text, default='{}')
+    # Публічне посилання. Доки public=False, зовнішній роут віддає 404 навіть
+    # із правильним токеном: чернетка не показується нікому, поки оператор не
+    # натисне «Опублікувати». Порожній токен = посилання ще не видавалось.
+    public: Mapped[bool] = mapped_column(Boolean, default=False)
+    share_token: Mapped[str] = mapped_column(String, default='')
     status: Mapped[Status] = mapped_column(Enum(Status), default=Status.queued)
     stage: Mapped[str] = mapped_column(String, default='queued')
     error: Mapped[str] = mapped_column(Text, default='')

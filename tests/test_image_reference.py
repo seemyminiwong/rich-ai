@@ -2815,3 +2815,39 @@ def test_long_dropdowns_get_a_search_box_and_palettes_sort_by_name():
     assert '.dd-opt[hidden],.dd-empty[hidden]{display:none}' in css
     assert '.dd-search{position:sticky;top:0' in css
     assert "sort((a,b)=>(a.name==='ARTLINE Cyan'?-1:b.name==='ARTLINE Cyan'?1:a.name.localeCompare(b.name" in web
+
+
+def test_cost_estimate_is_calibrated_from_real_projects_and_prices_every_model():
+    """Кошторис у діалозі рахується з реальної історії, а не з зашитих 30k/14k.
+
+    Скарга зі скріншота: пресети обіцяли $0.05 / $0.25 / $0.39, а живі проєкти
+    на gpt-5 коштували $0.85. Дві причини: (1) токени зашиті під 30k/14k, тоді як
+    текст = витяг + генерація + переклади + мобільна перекладка; (2) gpt-image-2
+    не мав рядка в перекритті цін з .env, і діалог падав у дефолт 0.07, тоді як
+    воркер рахував 0.20. Тепер /api/models віддає медіану токенів на один вихід
+    з останніх проєктів і ціни, злиті поверх вбудованих; діалог множить на
+    замовлені мови x формати і перемальовує картки при їх зміні. Резерв бюджету
+    на бекенді рахується з того самого профілю.
+    """
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
+    web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
+    assert 'def usage_profile(db) -> dict:' in main
+    assert "BASELINE_TOKENS_PER_OUTPUT = {'input': 7_500, 'output': 3_500}" in main
+    assert 'median = lambda xs: sorted(xs)[len(xs) // 2]' in main
+    assert "return {'projects': len(rows), 'calibrated': False, **BASELINE_TOKENS_PER_OUTPUT}" in main
+    assert "profile['input'] * output_count / 1_000_000 * input_rate" in main
+    assert '_bulk_estimated_cost(values, style, usage_profile(db))' in main
+    assert '_bulk_estimated_cost(values, resolved_style, profile)' in main and 'profile = usage_profile(db)' in main
+    assert "'text_pricing': {**DEFAULT_TEXT_PRICING, **settings.text_pricing}, 'image_pricing': {**DEFAULT_IMAGE_PRICING, **settings.image_pricing}" in main
+    assert "'usage_profile': usage_profile(db)" in main
+    assert 'def available_models(db: Session = Depends(get_db), user=Depends(current)):' in main
+    # фронт: медіана x виходи, картки живі
+    assert 'const EST_TOKENS={' not in web
+    assert 'function estTokens(outputs){const p=state.models.usage_profile;' in web
+    assert 'function dialogOutputs(form){' in web and 'return langs*variants}' in web
+    assert 'function refreshPresetCards(form){' in web
+    assert 'function updateEstimate(form){if(!form)return;refreshPresetCards(form);' in web
+    assert "cost=estimateCost(p.text_model,p.image_model,p.quality,variants,dialogOutputs(form))" in web
+    assert 'function estNote(){' in web and '${estNote()}' in web
