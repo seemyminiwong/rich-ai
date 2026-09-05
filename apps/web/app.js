@@ -101,6 +101,7 @@ function bindKeys(){if(keysBound)return;keysBound=true;document.addEventListener
 const DD_CHEVRON='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
 function ddOptionTpl(o){const dots=o.dataset.dots;const swatch=dots?`<i class="dd-dots${dots==='auto'?' auto':''}">${dots==='auto'?'<b></b>':dots.split(',').map(c=>`<b style="background:${esc(c.trim())}"></b>`).join('')}</i>`:'';return `${swatch}<span>${esc(o.textContent)}</span>${o.dataset.tag?`<em>${esc(o.dataset.tag)}</em>`:''}`}
 function closeAllDd(except){document.querySelectorAll('.dd.open').forEach(w=>{if(w!==except){w.classList.remove('open','up');w.querySelector('.dd-btn')?.setAttribute('aria-expanded','false')}})}
+const DD_SEARCH_MIN=8;   // від стількох пунктів у списку з'являється поле пошуку
 function enhanceSelect(sel){
   if(sel.dataset.dd||sel.multiple||sel.hidden)return;
   sel.dataset.dd='1';
@@ -108,19 +109,34 @@ function enhanceSelect(sel){
   const btn=document.createElement('button');btn.type='button';btn.className='dd-btn';btn.setAttribute('aria-haspopup','listbox');btn.setAttribute('aria-expanded','false');if(sel.title)btn.title=sel.title;if(sel.disabled)btn.disabled=true;
   const list=document.createElement('div');list.className='dd-list';list.setAttribute('role','listbox');
   sel.parentNode.insertBefore(wrap,sel);wrap.append(sel,btn,list);sel.classList.add('dd-native');sel.tabIndex=-1;
-  const paint=()=>{const o=sel.options[sel.selectedIndex];btn.innerHTML=`<span class="dd-val">${o?ddOptionTpl(o):'—'}</span>${DD_CHEVRON}`;list.innerHTML=[...sel.options].map((x,i)=>`<div class="dd-opt${i===sel.selectedIndex?' on':''}${x.disabled?' off':''}" role="option" aria-selected="${i===sel.selectedIndex}" data-i="${i}">${ddOptionTpl(x)}</div>`).join('')};
+  // Пошук: довгі списки (148 бренд-палітр) не прокручують, а набирають.
+  // Збіг - по назві й по тегу, без регістру; курсор ↑/↓ ходить лише по видимих.
+  let query='';
+  const searchable=()=>sel.options.length>=DD_SEARCH_MIN;
+  const visible=()=>[...list.querySelectorAll('.dd-opt:not([hidden])')];
+  const applyFilter=()=>{const q=query.trim().toLowerCase();let shown=0;list.querySelectorAll('.dd-opt').forEach(o=>{const hit=!q||o.textContent.toLowerCase().includes(q);o.hidden=!hit;if(hit)shown++});list.querySelectorAll('.dd-cur').forEach(o=>o.classList.remove('dd-cur'));const first=visible()[0];if(q&&first)first.classList.add('dd-cur');const empty=list.querySelector('.dd-empty');if(empty)empty.hidden=shown>0};
+  const paint=()=>{const o=sel.options[sel.selectedIndex];btn.innerHTML=`<span class="dd-val">${o?ddOptionTpl(o):'—'}</span>${DD_CHEVRON}`;
+    const opts=[...sel.options].map((x,i)=>`<div class="dd-opt${i===sel.selectedIndex?' on':''}${x.disabled?' off':''}" role="option" aria-selected="${i===sel.selectedIndex}" data-i="${i}">${ddOptionTpl(x)}</div>`).join('');
+    list.innerHTML=searchable()?`<div class="dd-search"><input type="search" placeholder="Пошук…" autocomplete="off" spellcheck="false" aria-label="Пошук у списку"></div><div class="dd-opts">${opts}</div><div class="dd-empty" hidden>Нічого не знайдено</div>`:opts;
+    const inp=list.querySelector('.dd-search input');if(inp){inp.value=query;inp.oninput=()=>{query=inp.value;applyFilter()};inp.onkeydown=e=>{
+      if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();const v=visible();if(!v.length)return;let k=v.findIndex(o=>o.classList.contains('dd-cur'));if(k<0)k=v.findIndex(o=>o.classList.contains('on'));k=(k+(e.key==='ArrowDown'?1:-1)+v.length)%v.length;v.forEach(o=>o.classList.remove('dd-cur'));v[k].classList.add('dd-cur');v[k].scrollIntoView({block:'nearest'})}
+      else if(e.key==='Enter'){e.preventDefault();const cur=list.querySelector('.dd-cur')||visible()[0];if(cur)pick(+cur.dataset.i)}
+      else if(e.key==='Escape'){e.preventDefault();close();btn.focus()}}}
+    applyFilter()};
   const open=()=>{if(btn.disabled)return;closeAllDd(wrap);wrap.classList.add('open');btn.setAttribute('aria-expanded','true');
     // Список біля низу вікна відкривається догори, щоб не тікати за екран.
     const r=btn.getBoundingClientRect(),need=Math.min(list.scrollHeight,340)+8;wrap.classList.toggle('up',r.bottom+need>innerHeight&&r.top>need);
-    list.querySelector('.on')?.scrollIntoView({block:'nearest'})};
-  const close=()=>{wrap.classList.remove('open','up');btn.setAttribute('aria-expanded','false')};
-  const pick=i=>{if(i<0||i>=sel.options.length||sel.options[i].disabled)return;const changed=sel.selectedIndex!==i;sel.selectedIndex=i;paint();close();if(changed)sel.dispatchEvent(new Event('change',{bubbles:true}))};
+    list.querySelector('.on')?.scrollIntoView({block:'nearest'});
+    const inp=list.querySelector('.dd-search input');if(inp)inp.focus({preventScroll:true})};
+  const close=()=>{wrap.classList.remove('open','up');btn.setAttribute('aria-expanded','false');if(query){query='';const inp=list.querySelector('.dd-search input');if(inp)inp.value='';applyFilter()}};
+  const pick=i=>{if(i<0||i>=sel.options.length||sel.options[i].disabled)return;const changed=sel.selectedIndex!==i;sel.selectedIndex=i;query='';paint();close();if(changed)sel.dispatchEvent(new Event('change',{bubbles:true}))};
   btn.onclick=e=>{e.preventDefault();wrap.classList.contains('open')?close():open()};
   list.onclick=e=>{const o=e.target.closest('.dd-opt');if(o)pick(+o.dataset.i)};
   btn.onkeydown=e=>{const n=sel.options.length;let i=sel.selectedIndex;
     if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();const d=e.key==='ArrowDown'?1:-1;do{i=(i+d+n)%n}while(sel.options[i].disabled&&i!==sel.selectedIndex);sel.selectedIndex=i;paint();if(!wrap.classList.contains('open'))sel.dispatchEvent(new Event('change',{bubbles:true}));else{list.querySelector('.on')?.scrollIntoView({block:'nearest'})}}
     else if(e.key==='Enter'||e.key===' '){e.preventDefault();wrap.classList.contains('open')?pick(sel.selectedIndex):open()}
-    else if(e.key==='Escape'&&wrap.classList.contains('open')){e.preventDefault();close()}};
+    else if(e.key==='Escape'&&wrap.classList.contains('open')){e.preventDefault();close()}
+    else if(searchable()&&e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey){e.preventDefault();open();query=e.key;const inp=list.querySelector('.dd-search input');if(inp){inp.value=query;inp.focus({preventScroll:true})}applyFilter()}};
   sel.addEventListener('change',paint);   // програмна зміна значення теж перемальовує
   paint();
 }
@@ -601,7 +617,7 @@ async function loadRealExample(styleId,projectId){try{const d=await api(`/api/st
 async function generateStylePreview(id,button){const original=button?.textContent;if(button){button.disabled=true;button.textContent='Генерація…'}try{const d=await api(`/api/styles/${id}/preview`,{method:'POST',body:JSON.stringify({sample_project_id:state.stylePreviewSample,variant:state.stylePreviewVariant})});state.stylePreviewFor=id;state.stylePreview=d.html;state.stylePreviewSource=d.source;state.styles=await api('/api/styles');if(state.styleEdit?.id===id)state.styleEdit=state.styles.find(x=>x.id===id)||state.styleEdit;toast(d.source==='generated'?'AI-приклад згенеровано та збережено':'AI недоступний — показано демо-шаблон',d.source!=='generated');render()}catch(x){toast(x.message,true)}finally{if(button){button.disabled=false;button.textContent=original}}}
 async function deleteStyle(id){if(!confirm('Видалити стиль? Проєкти, що його використовують, буде переприв’язано до базового стилю.'))return;try{const d=await api(`/api/styles/${id}`,{method:'DELETE'});state.styles=await api('/api/styles');state.styleEdit=state.styles.find(x=>x.is_default)||state.styles[0]||null;toast(d.reassigned_projects?`Стиль видалено, проєктів переприв’язано: ${d.reassigned_projects}`:'Стиль видалено');render()}catch(x){toast(x.message,true)}}
 const paletteDots=t=>{const v=k=>(t&&t[k])||PALETTE_DEFAULTS[k];return `${v('accent')},${v('dark')},${v('light_soft')}`};
-function paletteSelect(selected,withPhoto){const opts=(state.palettes||[]).map(p=>`<option value="${p.id}" data-dots="${paletteDots(p.tokens)}" ${selected===p.id?'selected':''}>${esc(p.name)}</option>`).join('');const photo=withPhoto?`<option value="__photo__" data-dots="auto" data-tag="авто" ${selected==='__photo__'?'selected':''}>З фото товару</option>`:'';return `<label><span class="lbl">Кольорова схема ${hint('Бренд-пресет кольорів. «Як у стилі» — діє схема, задана у вкладці «Кольори» стилю. «З фото товару» — акцент і відтінки знімаються з головного фото цього товару перед генерацією; якщо фото без виразного кольору, лишається фірмова схема. Сітку сторінки схема не змінює ніколи.')}</span><select name="palette_id"><option value="" data-dots="${paletteDots(null)}" data-tag="стиль">Як у стилі</option>${photo}${opts}</select></label>`}
+function paletteSelect(selected,withPhoto){const opts=[...(state.palettes||[])].sort((a,b)=>(a.name==='ARTLINE Cyan'?-1:b.name==='ARTLINE Cyan'?1:a.name.localeCompare(b.name,'en',{sensitivity:'base'}))).map(p=>`<option value="${p.id}" data-dots="${paletteDots(p.tokens)}" ${selected===p.id?'selected':''}>${esc(p.name)}</option>`).join('');const photo=withPhoto?`<option value="__photo__" data-dots="auto" data-tag="авто" ${selected==='__photo__'?'selected':''}>З фото товару</option>`:'';return `<label><span class="lbl">Кольорова схема ${hint('Бренд-пресет кольорів. «Як у стилі» — діє схема, задана у вкладці «Кольори» стилю. «З фото товару» — акцент і відтінки знімаються з головного фото цього товару перед генерацією; якщо фото без виразного кольору, лишається фірмова схема. Сітку сторінки схема не змінює ніколи.')}</span><select name="palette_id"><option value="" data-dots="${paletteDots(null)}" data-tag="стиль">Як у стилі</option>${photo}${opts}</select></label>`}
 const PALETTE_DEFAULTS={accent:'#19BCC9',dark:'#101010',dark_soft:'#1A2128',light_soft:'#F5F7FA'};
 const PALETTE_LABELS={accent:['Акцент','цифри, бейджі, кнопки; світлий і темний відтінки виводяться самі'],dark:['Темний фон','полотно Hero та фінального блоку; також колір заголовків на світлому'],dark_soft:['Темні картки','панелі й плитки показників; межі виводяться самі'],light_soft:['Світлі секції','мʼякий фон світлих блоків']};
 function collectPalette(f){const base=(state.styleEdit||{}).palette||{};if(state.styleTab!=='colors')return base;const out={};for(const key of Object.keys(PALETTE_DEFAULTS)){const value=String(f.get(`palette_${key}`)||'').trim();if(/^#[0-9a-fA-F]{6}$/.test(value)&&value.toUpperCase()!==PALETTE_DEFAULTS[key].toUpperCase())out[key]=value.toUpperCase()}const radius=parseInt(f.get('palette_radius')||'100',10);if(!isNaN(radius)&&radius!==100)out.radius=radius/100;return out}

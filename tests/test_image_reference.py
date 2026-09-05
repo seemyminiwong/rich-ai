@@ -2536,11 +2536,19 @@ def test_brand_palettes_follow_artline_assortment_and_stay_readable():
 
     root = Path(__file__).resolve().parents[1]
     main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
-    tree = ast.parse(main)
-    consts = {n.targets[0].id: ast.literal_eval(n.value) for n in tree.body
-              if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)
-              and n.targets[0].id in ('BRAND_ACCENTS', 'LEGACY_PALETTES')}
+    brands_src = (root / 'apps/api/app/brand_palettes.py').read_text(encoding='utf-8')
+    consts = {}
+    for source in (main, brands_src):
+        for n in ast.parse(source).body:
+            if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name) and n.targets[0].id in ('BRAND_ACCENTS', 'LEGACY_PALETTES'):
+                consts[n.targets[0].id] = ast.literal_eval(n.value)
     brands = dict(consts['BRAND_ACCENTS'])
+    # каталог artline.ua/uk/brands - сотні брендів; пресети покривають усі впізнавані
+    assert len(brands) >= 140, len(brands)
+    for expected in ('Thermaltake', 'Lian Li', 'NZXT', 'Razer', 'SteelSeries', 'HyperX', 'Kingston', 'TP-Link', 'MikroTik',
+                     'Ubiquiti', 'Canon', 'Epson', 'Hikvision', 'Ajax Systems', 'EcoFlow', 'Growatt', 'Vinga', '2E'):
+        assert expected in brands, expected
+    assert 'from app.brand_palettes import BRAND_ACCENTS' in main
 
     # бренди з каталогу artline.ua, а не абстрактні назви кольорів
     for expected in ('ASUS ROG', 'MSI', 'GIGABYTE AORUS', 'AMD', 'NVIDIA', 'Intel', 'Samsung', 'Lenovo',
@@ -2551,12 +2559,12 @@ def test_brand_palettes_follow_artline_assortment_and_stay_readable():
     assert set(consts['LEGACY_PALETTES']) == {'Ocean', 'Ember', 'Forest', 'Grape', 'Lime', 'Breloki'}
     # стороння бренд-схема прибрана з коду цілком: ані пресета, ані стартової схеми стилю
     prompts_src = (root / 'apps/api/app/prompts.py').read_text(encoding='utf-8')
-    assert 'BRELOKI' not in main and 'BRELOKI' not in prompts_src and "'palette': " not in main.split('MANAGED_STYLES')[1].split('BUILTIN_PALETTES')[0]
+    assert 'BRELOKI' not in main and 'BRELOKI' not in prompts_src and 'reloki' not in brands_src and "'palette': " not in main.split('MANAGED_STYLES')[1].split('BUILTIN_PALETTES')[0]
     assert "style_row.palette_json = '{}'" in main, 'стиль зі знятою схемою повертається до фірмової'
     assert 'palette_from_accent(accent)) for brand, accent in BRAND_ACCENTS' in main
     assert "json.loads(stale.tokens_json or '{}') == shipped" in main, 'змінений оператором пресет не видаляється'
     assert 'db.delete(stale)' in main
-    assert "'DEYE', '#015CBB'" in main, 'Deye - синій за офіційним брендбуком, не помаранчевий'
+    assert "'DEYE', '#015CBB'" in brands_src, 'Deye - синій за офіційним брендбуком, не помаранчевий'
 
     for brand, logo_hex in brands.items():
         tokens = palette_from_accent(logo_hex)
@@ -2778,3 +2786,28 @@ def test_operator_can_pick_the_ai_reference_frame():
     from app.pipeline import local_media_path
     assert local_media_path('/media/../../etc/passwd') is None
     assert local_media_path('https://cdn.example/x.png') is None
+
+
+def test_long_dropdowns_get_a_search_box_and_palettes_sort_by_name():
+    """148 бренд-палітр не прокручують - набирають. Короткі списки лишаються як були.
+
+    Поле пошуку з'являється від DD_SEARCH_MIN пунктів, збіг по тексту без регістру,
+    ↑/↓ ходять лише по видимих, Enter обирає підсвічене, Escape закриває і скидає
+    фільтр; літера, набрана на закритій кнопці, відкриває список уже з запитом.
+    Схований пункт має бути схований і за CSS: .dd-opt{display:flex} інакше
+    перебʼє атрибут hidden. Палітри в списку - за алфавітом, ARTLINE Cyan перша.
+    """
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
+    css = (root / 'apps/web/styles.css').read_text(encoding='utf-8')
+    assert 'const DD_SEARCH_MIN=8' in web
+    assert 'const searchable=()=>sel.options.length>=DD_SEARCH_MIN' in web
+    assert '<div class="dd-search"><input type="search"' in web and '<div class="dd-empty" hidden>' in web
+    assert "o.textContent.toLowerCase().includes(q)" in web
+    assert "if(inp)inp.focus({preventScroll:true})" in web, 'фокус у пошук при відкритті'
+    assert "else if(searchable()&&e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey){e.preventDefault();open();query=e.key;" in web
+    assert "const cur=list.querySelector('.dd-cur')||visible()[0];if(cur)pick(+cur.dataset.i)" in web
+    assert '.dd-opt[hidden],.dd-empty[hidden]{display:none}' in css
+    assert '.dd-search{position:sticky;top:0' in css
+    assert "sort((a,b)=>(a.name==='ARTLINE Cyan'?-1:b.name==='ARTLINE Cyan'?1:a.name.localeCompare(b.name" in web
