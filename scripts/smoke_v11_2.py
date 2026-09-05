@@ -349,6 +349,7 @@ checks = {
         and 'palette_from_accent(accent)) for brand, accent in BRAND_ACCENTS' in main
         and "('DEYE', '#015CBB')" in brands and "('ASUS ROG'" in brands and "('Samsung'" in brands
         and brands.count("    ('") >= 140
+        and "('Creality', '#00C651')" in brands and 'BRAND_PREVIOUS' in brands and 'in outdated:' in main
         and 'def palette_from_accent' in pipeline and 'def _palette_from_hsv' in pipeline
         and pipeline.count('return _palette_from_hsv(h, sat, val)') == 2
     ),
