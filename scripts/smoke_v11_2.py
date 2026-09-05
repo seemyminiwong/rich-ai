@@ -15,6 +15,7 @@ runtime = (root / 'apps/api/app/runtime.py').read_text(encoding='utf-8')
 config = (root / 'apps/api/app/config.py').read_text(encoding='utf-8')
 nginx = (root / 'apps/web/nginx.conf').read_text(encoding='utf-8')
 raster = (root / 'apps/api/app/raster.py').read_text(encoding='utf-8')
+brands = (root / 'apps/api/app/brand_palettes.py').read_text(encoding='utf-8')
 media = (root / 'apps/api/app/media.py').read_text(encoding='utf-8')
 infographic = (root / 'apps/api/app/infographic.py').read_text(encoding='utf-8')
 tests = (root / 'tests/test_image_reference.py').read_text(encoding='utf-8')
@@ -344,13 +345,20 @@ checks = {
         "faq_block = next((b for b in reversed(blocks) if b.find('details') is not None), None)" in pipeline
     ),
     'palette presets are artline.ua brands, derived contrast-safe': (
-        'BRAND_ACCENTS = [' in main
+        'BRAND_ACCENTS = [' in brands and 'from app.brand_palettes import BRAND_ACCENTS' in main
         and 'palette_from_accent(accent)) for brand, accent in BRAND_ACCENTS' in main
-        and "('DEYE', '#015CBB')" in main and "('ASUS ROG'" in main and "('Samsung'" in main
+        and "('DEYE', '#015CBB')" in brands and "('ASUS ROG'" in brands and "('Samsung'" in brands
+        and brands.count("    ('") >= 140
         and 'def palette_from_accent' in pipeline and 'def _palette_from_hsv' in pipeline
         and pipeline.count('return _palette_from_hsv(h, sat, val)') == 2
     ),
-    'no third-party brand scheme is shipped': 'BRELOKI' not in main and 'BRELOKI' not in prompts and 'breloki' not in prompts.lower(),
+    'no third-party brand scheme is shipped': 'BRELOKI' not in main and 'BRELOKI' not in prompts and 'breloki' not in prompts.lower() and 'reloki' not in brands,
+    'long dropdowns search, palettes sorted by name': (
+        'const DD_SEARCH_MIN=8' in web and '<div class="dd-search"><input type="search"' in web
+        and '.dd-opt[hidden],.dd-empty[hidden]{display:none}' in css
+        and "a.name==='ARTLINE Cyan'?-1" in web
+        and 'def test_long_dropdowns_get_a_search_box_and_palettes_sort_by_name' in tests
+    ),
     'untouched placeholder presets are retired, edited ones stay': (
         'LEGACY_PALETTES = {' in main
         and "json.loads(stale.tokens_json or '{}') == shipped" in main and 'db.delete(stale)' in main

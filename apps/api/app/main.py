@@ -33,6 +33,7 @@ from app.landing import LANDING_PROMPT, LANDING_STYLE_NAME
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.version import __version__
 from app.bulk_import import BulkCSVError, MAX_BULK_CSV_BYTES, parse_bulk_csv, split_bulk_values
+from app.brand_palettes import BRAND_ACCENTS
 
 logger = logging.getLogger(__name__)
 from app.prompts import (
@@ -248,41 +249,10 @@ MANAGED_STYLES = [
 ]
 
 
-# Фірмові кольори брендів з асортименту artline.ua. Hex - колір ЛОГОТИПА
-# (підібраний під біле тло), а не готовий токен: у пресет він потрапляє через
-# palette_from_accent - ту саму математику, що й палітра з фото. Тож акцент
-# доводиться до 4.5:1 на власних темних картках, темні поверхні лише
-# підфарбовуються відтінком бренду, світле тло - блідий тон акценту.
-# Прямий перенос #1428A0 Samsung чи #015CBB Deye у токени давав би нечитабельні
-# числа на темних плитках. Значення - з відкритих брендбуків і логотипів;
-# це стартові пресети, у вкладці «Кольори» вони правляться як звичайні.
-BRAND_ACCENTS = [
-    # компоненти
-    ('AMD', '#ED1C24'),
-    ('NVIDIA', '#76B900'),
-    ('Intel', '#0071C5'),
-    ('ASUS ROG', '#E4002B'),
-    ('MSI', '#D10000'),
-    ('GIGABYTE AORUS', '#F58220'),
-    ('Corsair', '#ECE81A'),
-    ('be quiet!', '#F07E00'),
-    ('Cooler Master', '#5B2D8E'),
-    # готові системи, ноутбуки, монітори
-    ('Acer', '#83B81A'),
-    ('Lenovo', '#E2231A'),
-    ('HP', '#0096D6'),
-    ('Dell', '#007DB8'),
-    ('Samsung', '#1428A0'),
-    ('Xiaomi', '#FF6900'),
-    # периферія
-    ('Logitech', '#00B8FC'),
-    # 3D-друк
-    ('Bambu Lab', '#00AE42'),
-    ('Creality', '#005BAC'),
-    # енергетика
-    ('DEYE', '#015CBB'),
-]
-
+# Фірмові кольори брендів з каталогу artline.ua живуть у brand_palettes.py
+# (148 брендів, джерело hex - brandfetch.com / брендбуки). Hex логотипа
+# проходить через palette_from_accent - ту саму математику, що й палітра з
+# фото, тож кожен пресет читабельний на власних темних картках.
 BUILTIN_PALETTES = [
     ('ARTLINE Cyan', {}),  # фірмова: порожні токени = канонічні кольори
     *[(brand, palette_from_accent(accent)) for brand, accent in BRAND_ACCENTS],
