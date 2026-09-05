@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Сервери для AI на платформах ASUS ESC8000A-E13 та RS720A-E12: до 8 GPU, до 768 ГБ VRAM. Складання, налаштування, гарантія 38 міс. Наявність на складі. Ціни в грн.">
+<link rel="canonical" href="https://artline.ua/ua/ai-serveri-asus/">
+<link rel="alternate" hreflang="uk-UA" href="https://artline.ua/ua/ai-serveri-asus/">
+<link rel="alternate" hreflang="ru-UA" href="https://artline.ua/ai-servery-asus/">
+<link rel="alternate" hreflang="x-default" href="https://artline.ua/ua/ai-serveri-asus/">
+<style>html,body{margin:0;padding:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {"@type":"Question","name":"Чим AI-сервер відрізняється від звичайного?","acceptedAnswer":{"@type":"Answer","text":"AI-сервер розрахований на кілька прискорювачів високої потужності: посилене живлення, посилене охолодження, PCIe Gen5 switch для рівномірної пропускної здатності до кожної карти. Звичайний сервер оптимізований під CPU і диски."}},
+    {"@type":"Question","name":"Скільки VRAM потрібно для моделі на 70B?","acceptedAnswer":{"@type":"Answer","text":"Для інференсу у зниженій точності орієнтовно від 96 ГБ; для повної точності та донавчання — 4-8 карт по 96 ГБ. Точну конфігурацію підбираємо під ваш профіль навантаження."}},
+    {"@type":"Question","name":"Чи можна почати з двох GPU і додати ще шість пізніше?","acceptedAnswer":{"@type":"Answer","text":"Так. Платформа ASUS ESC8000A-E13 має вісім слотів, а блоки живлення ми за замовчуванням комплектуємо під повну збірку — розширення не потребує заміни платформи."}},
+    {"@type":"Question","name":"Яка гарантія на AI-сервери ARTLINE?","acceptedAnswer":{"@type":"Answer","text":"38 місяців за пакетом Artline Premium на весь вузол, із сервісом на території України."}}
+  ]
+}
+</script>
+</head>
+<body>
+<title>AI-сервери ASUS в ARTLINE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+/* ============================================================
+   ARTLINE — AI-сервери ASUS
+   Усі стилі скоуплені під .ai-lp — блок можна вставляти в CMS.
+   Палітра — в :root, зміна бренду = зміна токенів.
+   ============================================================ */
+:root{
+  --lp-bg:          #ffffff;
+  --lp-bg-sunk:     #f4f7f8;
+  --lp-surface:     #ffffff;
+  --lp-ink:         #1a2128;
+  --lp-ink-2:       #414d59;
+  --lp-muted:       #5e6a78;
+  --lp-line:        #e2e9ec;
+  --lp-line-2:      #cfdadf;
+  --lp-accent:      #19bcc9;
+  --lp-accent-ink:  #0b6a73;
+  --lp-accent-soft: #e6f8fa;
+  --lp-deep:        #0f1a20;
+  --lp-deep-2:      #16242c;
+  --lp-deep-ink:    #dbe6ea;
+  --lp-deep-muted:  #8ba0aa;
+  --lp-ok:          #17a55c;
+  --lp-ok-soft:     #e6f6ee;
+  --lp-order:       #b4741a;
+  --lp-order-soft:  #fbf1e2;
+  --lp-slot-off:    #dfe8ec;
+  --lp-shadow:      0 1px 2px rgba(26,33,40,.05), 0 8px 24px -12px rgba(26,33,40,.18);
+  --lp-r:           4px;
+  --lp-r-lg:        8px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --lp-bg:#0d1519; --lp-bg-sunk:#111c21; --lp-surface:#152128;
+    --lp-ink:#e8f0f2; --lp-ink-2:#c2d0d6; --lp-muted:#8fa3ac;
+    --lp-line:#243239; --lp-line-2:#31434c;
+    --lp-accent:#2ed3e0; --lp-accent-ink:#8ceaf2; --lp-accent-soft:#12313a;
+    --lp-deep:#080f12; --lp-deep-2:#101c22; --lp-deep-ink:#dbe6ea; --lp-deep-muted:#8ba0aa;
+    --lp-ok:#35c47e; --lp-ok-soft:#122b21;
+    --lp-order:#dfa456; --lp-order-soft:#2c2317;
+    --lp-slot-off:#26343b;
+    --lp-shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --lp-bg:#0d1519; --lp-bg-sunk:#111c21; --lp-surface:#152128;
+  --lp-ink:#e8f0f2; --lp-ink-2:#c2d0d6; --lp-muted:#8fa3ac;
+  --lp-line:#243239; --lp-line-2:#31434c;
+  --lp-accent:#2ed3e0; --lp-accent-ink:#8ceaf2; --lp-accent-soft:#12313a;
+  --lp-deep:#080f12; --lp-deep-2:#101c22; --lp-deep-ink:#dbe6ea; --lp-deep-muted:#8ba0aa;
+  --lp-ok:#35c47e; --lp-ok-soft:#122b21;
+  --lp-order:#dfa456; --lp-order-soft:#2c2317;
+  --lp-slot-off:#26343b;
+  --lp-shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+}
+
+body{ background: var(--lp-bg); }
+
+.ai-lp{
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,-apple-system,sans-serif;
+  color:var(--lp-ink); background:var(--lp-bg);
+  font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased;
+}
+.ai-lp *,.ai-lp *::before,.ai-lp *::after{ box-sizing:border-box; }
+.ai-lp h1,.ai-lp h2,.ai-lp h3,.ai-lp h4{
+  font-family:Montserrat,"IBM Plex Sans",Arial,sans-serif;
+  margin:0; line-height:1.15; text-wrap:balance; letter-spacing:-.015em; color:var(--lp-ink);
+}
+.ai-lp p{ margin:0; }
+.ai-lp ul{ margin:0; padding:0; list-style:none; }
+.ai-lp a{ color:inherit; }
+.ai-lp :focus-visible{ outline:2px solid var(--lp-accent); outline-offset:3px; border-radius:2px; }
+
+.ai-lp .wrap{ width:min(1180px, 100% - 2.5rem); margin-inline:auto; }
+.ai-lp .sect{ padding:clamp(3rem,6vw,5.5rem) 0; }
+.ai-lp .sect--sunk{ background:var(--lp-bg-sunk); }
+
+/* --- eyebrow: технічний «партномер» секції --- */
+.ai-lp .eyebrow{
+  font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:.72rem; font-weight:500;
+  letter-spacing:.16em; text-transform:uppercase; color:var(--lp-accent-ink);
+  display:flex; align-items:center; gap:.6rem; margin-bottom:.9rem;
+}
+.ai-lp .eyebrow::before{ content:""; width:1.6rem; height:2px; background:var(--lp-accent); flex:none; }
+.ai-lp .h2{ font-size:clamp(1.55rem,3.2vw,2.35rem); font-weight:700; }
+.ai-lp .lede{ color:var(--lp-muted); max-width:62ch; margin-top:.9rem; font-size:1.02rem; }
+.ai-lp .mono{ font-family:"IBM Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums; }
+
+/* --- buttons --- */
+.ai-lp .btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:.5rem;
+  font-family:Montserrat,sans-serif; font-weight:700; font-size:.94rem;
+  padding:.85rem 1.5rem; border-radius:var(--lp-r); border:1.5px solid transparent;
+  text-decoration:none; cursor:pointer; transition:background .15s, color .15s, border-color .15s;
+}
+.ai-lp .btn--primary{ background:var(--lp-accent); color:#04262b; border-color:var(--lp-accent); }
+.ai-lp .btn--primary:hover{ background:var(--lp-accent-ink); border-color:var(--lp-accent-ink); color:#fff; }
+.ai-lp .btn--ghost{ background:transparent; color:var(--lp-ink); border-color:var(--lp-line-2); }
+.ai-lp .btn--ghost:hover{ border-color:var(--lp-accent); color:var(--lp-accent-ink); }
+.ai-lp .btn--onDeep{ background:transparent; color:var(--lp-deep-ink); border-color:rgba(219,230,234,.35); }
+.ai-lp .btn--onDeep:hover{ border-color:var(--lp-accent); color:var(--lp-accent); }
+.ai-lp .btn--sm{ padding:.55rem 1rem; font-size:.85rem; }
+
+/* ============ 01 HERO ============ */
+.ai-lp .hero{
+  background:
+    linear-gradient(180deg, var(--lp-bg-sunk) 0%, var(--lp-bg) 100%);
+  border-bottom:1px solid var(--lp-line);
+  padding:clamp(2.5rem,5vw,4.5rem) 0 clamp(2.5rem,5vw,4rem);
+  position:relative; overflow:hidden;
+}
+.ai-lp .hero__grid{ display:grid; grid-template-columns:1.15fr .85fr; gap:clamp(2rem,4vw,3.5rem); align-items:center; }
+@media (max-width:900px){ .ai-lp .hero__grid{ grid-template-columns:1fr; } }
+.ai-lp .hero h1{ font-size:clamp(2rem,4.6vw,3.35rem); font-weight:800; }
+.ai-lp .hero h1 em{ font-style:normal; color:var(--lp-accent-ink); }
+.ai-lp .hero__sub{ margin-top:1.1rem; font-size:clamp(1rem,1.6vw,1.12rem); color:var(--lp-ink-2); max-width:56ch; }
+.ai-lp .hero__cta{ display:flex; flex-wrap:wrap; gap:.75rem; margin-top:1.9rem; }
+.ai-lp .hero__kpi{ display:grid; grid-template-columns:repeat(3,1fr); gap:1px; margin-top:2.4rem; background:var(--lp-line); border:1px solid var(--lp-line); border-radius:var(--lp-r); overflow:hidden; }
+.ai-lp .hero__kpi div{ background:var(--lp-surface); padding:.95rem 1rem; }
+.ai-lp .hero__kpi b{ display:block; font-family:Montserrat,sans-serif; font-size:1.5rem; font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+.ai-lp .hero__kpi span{ font-size:.78rem; color:var(--lp-muted); line-height:1.35; display:block; margin-top:.15rem; }
+
+/* макет корпусу 4U — «фото-плейсхолдер», замінюється реальним фото платформи */
+.ai-lp .chassis{ border:1px solid var(--lp-line-2); border-radius:var(--lp-r-lg); background:var(--lp-surface); padding:1.1rem; box-shadow:var(--lp-shadow); }
+.ai-lp .chassis__cap{ display:flex; justify-content:space-between; align-items:baseline; font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--lp-muted); margin-bottom:.8rem; }
+.ai-lp .chassis__body{ background:var(--lp-bg-sunk); border:1px solid var(--lp-line); border-radius:var(--lp-r); padding:.9rem; display:grid; gap:.55rem; }
+.ai-lp .chassis__row{ display:flex; gap:.35rem; }
+.ai-lp .chassis__gpu{ flex:1; height:2.1rem; border-radius:2px; background:var(--lp-accent); opacity:.85; }
+.ai-lp .chassis__gpu:nth-child(even){ opacity:.6; }
+.ai-lp .chassis__cpu{ flex:1; height:1.5rem; border-radius:2px; background:var(--lp-line-2); }
+.ai-lp .chassis__psu{ flex:1; height:.9rem; border-radius:2px; background:var(--lp-line-2); }
+.ai-lp .chassis__psu:last-child{ background:var(--lp-accent-soft); border:1px solid var(--lp-accent); }
+.ai-lp .chassis__legend{ margin-top:.8rem; font-size:.74rem; color:var(--lp-muted); display:flex; flex-wrap:wrap; gap:.9rem; }
+.ai-lp .chassis__legend i{ font-style:normal; display:inline-flex; align-items:center; gap:.35rem; }
+.ai-lp .chassis__legend i::before{ content:""; width:.6rem; height:.6rem; border-radius:1px; background:var(--lp-line-2); }
+.ai-lp .chassis__legend i.is-gpu::before{ background:var(--lp-accent); }
+
+/* ============ 02 TRUST BAR ============ */
+.ai-lp .trust{ border-bottom:1px solid var(--lp-line); background:var(--lp-surface); }
+.ai-lp .trust__in{ display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 2rem; padding:1.1rem 0; font-size:.85rem; color:var(--lp-muted); }
+.ai-lp .trust__in b{ color:var(--lp-ink); font-weight:600; }
+.ai-lp .trust__sep{ width:1px; height:1.1rem; background:var(--lp-line); }
+@media (max-width:700px){ .ai-lp .trust__sep{ display:none; } }
+
+/* ============ 03 COMPARE 3-UP ============ */
+.ai-lp .why{ display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; margin-top:2.4rem; }
+@media (max-width:860px){ .ai-lp .why{ grid-template-columns:1fr; } }
+.ai-lp .why__col{ border:1px solid var(--lp-line); border-radius:var(--lp-r-lg); padding:1.4rem; background:var(--lp-surface); display:flex; flex-direction:column; gap:1rem; }
+.ai-lp .why__col--pick{ border-color:var(--lp-accent); box-shadow:var(--lp-shadow); position:relative; }
+.ai-lp .why__col--pick::after{
+  content:"Наш випадок"; position:absolute; top:-.65rem; left:1.2rem;
+  background:var(--lp-accent); color:#04262b; font-family:Montserrat,sans-serif; font-weight:700;
+  font-size:.68rem; letter-spacing:.06em; text-transform:uppercase; padding:.2rem .55rem; border-radius:2px;
+}
+.ai-lp .why__col h3{ font-size:1.05rem; font-weight:700; }
+.ai-lp .why__dl{ display:grid; gap:.55rem; font-size:.88rem; }
+.ai-lp .why__dl div{ display:grid; grid-template-columns:8.5rem 1fr; gap:.6rem; align-items:baseline; }
+.ai-lp .why__dl dt{ color:var(--lp-muted); font-size:.8rem; }
+.ai-lp .why__dl dd{ margin:0; color:var(--lp-ink-2); }
+
+/* ============ 04 WORKLOAD TIERS ============ */
+.ai-lp .tiers{ display:grid; grid-template-columns:repeat(4,1fr); gap:1rem; margin-top:2.4rem; }
+@media (max-width:1000px){ .ai-lp .tiers{ grid-template-columns:repeat(2,1fr); } }
+@media (max-width:560px){ .ai-lp .tiers{ grid-template-columns:1fr; } }
+.ai-lp .tier{
+  display:flex; flex-direction:column; gap:.7rem; padding:1.35rem 1.25rem;
+  border:1px solid var(--lp-line); border-radius:var(--lp-r-lg); background:var(--lp-surface);
+  text-decoration:none; transition:border-color .15s, transform .15s;
+}
+.ai-lp .tier:hover{ border-color:var(--lp-accent); transform:translateY(-2px); }
+.ai-lp .tier__load{ display:flex; gap:3px; align-items:flex-end; height:1.6rem; }
+.ai-lp .tier__load i{ width:5px; background:var(--lp-slot-off); border-radius:1px; }
+.ai-lp .tier__load i.on{ background:var(--lp-accent); }
+.ai-lp .tier h3{ font-size:1.02rem; font-weight:700; }
+.ai-lp .tier p{ font-size:.86rem; color:var(--lp-muted); }
+.ai-lp .tier ul{ display:grid; gap:.3rem; font-size:.82rem; color:var(--lp-ink-2); margin-top:auto; padding-top:.5rem; }
+.ai-lp .tier li{ padding-left:.9rem; position:relative; }
+.ai-lp .tier li::before{ content:""; position:absolute; left:0; top:.55em; width:.35rem; height:.35rem; background:var(--lp-accent); border-radius:50%; }
+
+/* ============ 05 MODELS ============ */
+.ai-lp .chips{ display:flex; flex-wrap:wrap; gap:.5rem; margin-top:1.8rem; }
+.ai-lp .chip{
+  font-family:Montserrat,sans-serif; font-size:.82rem; font-weight:600;
+  padding:.45rem .95rem; border-radius:100px; border:1px solid var(--lp-line-2);
+  background:var(--lp-surface); color:var(--lp-ink-2); cursor:pointer; transition:.15s;
+}
+.ai-lp .chip:hover{ border-color:var(--lp-accent); }
+.ai-lp .chip[aria-pressed="true"]{ background:var(--lp-accent); border-color:var(--lp-accent); color:#04262b; }
+
+.ai-lp .models{ display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:1rem; margin-top:1.5rem; }
+.ai-lp .model{
+  display:grid; grid-template-columns:2.6rem 1fr; background:var(--lp-surface);
+  border:1px solid var(--lp-line); border-radius:var(--lp-r-lg); overflow:hidden;
+}
+.ai-lp .model.is-hidden{ display:none; }
+/* лівий рейл = висота в юнітах, ticks = реальні U */
+.ai-lp .rail{
+  background:var(--lp-bg-sunk); border-right:1px solid var(--lp-line);
+  display:flex; flex-direction:column; align-items:center; padding:.7rem 0; gap:3px;
+}
+.ai-lp .rail b{ font-family:"IBM Plex Mono",monospace; font-size:.72rem; color:var(--lp-accent-ink); font-weight:500; margin-bottom:.25rem; }
+.ai-lp .rail i{ width:1.1rem; height:.55rem; border:1px solid var(--lp-line-2); border-radius:1px; background:var(--lp-surface); }
+.ai-lp .model__body{ padding:1.15rem 1.25rem 1.25rem; display:flex; flex-direction:column; gap:.75rem; }
+.ai-lp .model__top{ display:flex; justify-content:space-between; align-items:flex-start; gap:.6rem; }
+.ai-lp .model__name{ font-family:Montserrat,sans-serif; font-weight:700; font-size:1.06rem; line-height:1.25; }
+.ai-lp .model__plat{ font-family:"IBM Plex Mono",monospace; font-size:.76rem; color:var(--lp-accent-ink); margin-top:.25rem; }
+.ai-lp .badge{ font-size:.68rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase; padding:.22rem .5rem; border-radius:2px; white-space:nowrap; flex:none; }
+.ai-lp .badge--ok{ background:var(--lp-ok-soft); color:var(--lp-ok); }
+.ai-lp .badge--order{ background:var(--lp-order-soft); color:var(--lp-order); }
+
+/* смуга зайнятості GPU-слотів — головний інформаційний елемент картки */
+.ai-lp .slots{ display:flex; flex-direction:column; gap:.35rem; }
+.ai-lp .slots__bar{ display:flex; gap:3px; }
+.ai-lp .slots__bar i{ flex:1; height:1.15rem; border-radius:2px; background:var(--lp-slot-off); }
+.ai-lp .slots__bar i.on{ background:var(--lp-accent); }
+.ai-lp .slots__cap{ font-family:"IBM Plex Mono",monospace; font-size:.73rem; color:var(--lp-muted); display:flex; justify-content:space-between; gap:1rem; }
+.ai-lp .slots__cap b{ color:var(--lp-ink); font-weight:500; }
+
+.ai-lp .spec{ display:grid; gap:.3rem; font-size:.85rem; border-top:1px solid var(--lp-line); padding-top:.75rem; }
+.ai-lp .spec div{ display:grid; grid-template-columns:4.4rem 1fr; gap:.7rem; }
+.ai-lp .spec dt{ color:var(--lp-muted); font-size:.78rem; font-family:"IBM Plex Mono",monospace; }
+.ai-lp .spec dd{ margin:0; color:var(--lp-ink-2); }
+.ai-lp .model__foot{ display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-top:auto; padding-top:.85rem; border-top:1px solid var(--lp-line); flex-wrap:wrap; }
+.ai-lp .price{ font-family:Montserrat,sans-serif; font-weight:800; font-size:1.15rem; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+.ai-lp .price small{ display:block; font-family:"IBM Plex Sans",sans-serif; font-weight:400; font-size:.7rem; color:var(--lp-muted); letter-spacing:0; }
+.ai-lp .note{
+  margin-top:1.2rem; font-size:.8rem; color:var(--lp-muted);
+  border-left:2px solid var(--lp-accent); padding:.5rem 0 .5rem .85rem;
+}
+
+/* ============ 06 TABLE ============ */
+.ai-lp .tableWrap{ margin-top:2rem; overflow-x:auto; border:1px solid var(--lp-line); border-radius:var(--lp-r-lg); background:var(--lp-surface); }
+.ai-lp table{ border-collapse:collapse; width:100%; min-width:760px; font-size:.87rem; }
+.ai-lp th,.ai-lp td{ text-align:left; padding:.7rem .95rem; border-bottom:1px solid var(--lp-line); vertical-align:top; }
+.ai-lp thead th{ font-family:Montserrat,sans-serif; font-size:.82rem; font-weight:700; background:var(--lp-bg-sunk); position:sticky; top:0; }
+.ai-lp tbody th{ font-weight:500; color:var(--lp-muted); font-size:.8rem; width:11rem; }
+.ai-lp td{ font-variant-numeric:tabular-nums; color:var(--lp-ink-2); }
+.ai-lp tr:last-child th,.ai-lp tr:last-child td{ border-bottom:0; }
+.ai-lp .col-hl{ background:var(--lp-accent-soft); }
+
+/* ============ 07 INSIDE ============ */
+.ai-lp .accs{ margin-top:2rem; border:1px solid var(--lp-line); border-radius:var(--lp-r-lg); overflow:hidden; background:var(--lp-surface); }
+.ai-lp details{ border-bottom:1px solid var(--lp-line); }
+.ai-lp details:last-child{ border-bottom:0; }
+.ai-lp summary{
+  cursor:pointer; padding:1rem 1.25rem; font-family:Montserrat,sans-serif; font-weight:600; font-size:.98rem;
+  display:flex; align-items:center; gap:.85rem; list-style:none;
+}
+.ai-lp summary::-webkit-details-marker{ display:none; }
+.ai-lp summary::after{ content:"+"; margin-left:auto; font-family:"IBM Plex Mono",monospace; color:var(--lp-accent); font-size:1.15rem; }
+.ai-lp details[open] summary::after{ content:"−"; }
+.ai-lp summary span.k{ font-family:"IBM Plex Mono",monospace; font-size:.74rem; color:var(--lp-muted); font-weight:400; }
+.ai-lp details > div{ padding:0 1.25rem 1.15rem 1.25rem; color:var(--lp-ink-2); font-size:.9rem; max-width:78ch; }
+
+/* ============ 08 SERVICE ============ */
+.ai-lp .svc{ display:grid; grid-template-columns:repeat(3,1fr); gap:1px; margin-top:2.4rem; background:var(--lp-line); border:1px solid var(--lp-line); border-radius:var(--lp-r-lg); overflow:hidden; }
+@media (max-width:900px){ .ai-lp .svc{ grid-template-columns:repeat(2,1fr); } }
+@media (max-width:560px){ .ai-lp .svc{ grid-template-columns:1fr; } }
+.ai-lp .svc__i{ background:var(--lp-surface); padding:1.5rem 1.4rem; display:flex; flex-direction:column; gap:.5rem; }
+.ai-lp .svc__i b{ font-family:Montserrat,sans-serif; font-size:.98rem; }
+.ai-lp .svc__i span{ font-size:.86rem; color:var(--lp-muted); }
+.ai-lp .svc__i em{ font-style:normal; font-family:"IBM Plex Mono",monospace; font-size:1.7rem; font-weight:500; color:var(--lp-accent-ink); line-height:1; }
+
+/* ============ 09 USE CASES ============ */
+.ai-lp .cases{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin-top:2.4rem; }
+.ai-lp .case{ border-top:2px solid var(--lp-accent); padding-top:1rem; display:flex; flex-direction:column; gap:.45rem; }
+.ai-lp .case b{ font-family:Montserrat,sans-serif; font-size:.98rem; }
+.ai-lp .case span{ font-size:.86rem; color:var(--lp-muted); }
+.ai-lp .case code{ font-family:"IBM Plex Mono",monospace; font-size:.76rem; color:var(--lp-accent-ink); }
+
+/* ============ 10 ON ORDER (deep) ============ */
+.ai-lp .deep{ background:var(--lp-deep); color:var(--lp-deep-ink); }
+.ai-lp .deep .h2{ color:#fff; }
+.ai-lp .deep .lede{ color:var(--lp-deep-muted); }
+.ai-lp .deep .eyebrow{ color:var(--lp-accent); }
+.ai-lp .order{ display:grid; grid-template-columns:repeat(3,1fr); gap:1px; margin-top:2.2rem; background:rgba(219,230,234,.14); border:1px solid rgba(219,230,234,.14); border-radius:var(--lp-r-lg); overflow:hidden; }
+@media (max-width:900px){ .ai-lp .order{ grid-template-columns:repeat(2,1fr); } }
+@media (max-width:600px){ .ai-lp .order{ grid-template-columns:1fr; } }
+.ai-lp .order__i{ background:var(--lp-deep-2); padding:1.35rem 1.3rem; display:flex; flex-direction:column; gap:.5rem; }
+.ai-lp .order__i b{ font-family:"IBM Plex Mono",monospace; font-size:1rem; font-weight:500; color:#fff; }
+.ai-lp .order__i .t{ font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--lp-accent); }
+.ai-lp .order__i span{ font-size:.85rem; color:var(--lp-deep-muted); }
+.ai-lp .deep__foot{ margin-top:1.6rem; display:flex; flex-wrap:wrap; align-items:center; gap:1rem; font-size:.85rem; color:var(--lp-deep-muted); }
+
+/* ============ 11 QUIZ ============ */
+.ai-lp .quiz{ margin-top:2.2rem; border:1px solid var(--lp-line-2); border-radius:var(--lp-r-lg); background:var(--lp-surface); box-shadow:var(--lp-shadow); overflow:hidden; }
+.ai-lp .quiz__head{ display:flex; gap:1px; background:var(--lp-line); border-bottom:1px solid var(--lp-line); }
+.ai-lp .quiz__head div{ flex:1; background:var(--lp-bg-sunk); padding:.6rem .9rem; font-family:"IBM Plex Mono",monospace; font-size:.73rem; color:var(--lp-muted); }
+.ai-lp .quiz__head div.on{ background:var(--lp-accent-soft); color:var(--lp-accent-ink); }
+.ai-lp .quiz__head div.done{ background:var(--lp-surface); color:var(--lp-ink); }
+.ai-lp .quiz__body{ padding:1.6rem 1.5rem; }
+.ai-lp .quiz__q{ font-family:Montserrat,sans-serif; font-weight:700; font-size:1.15rem; }
+.ai-lp .quiz__opts{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:.6rem; margin-top:1.2rem; }
+.ai-lp .opt{
+  text-align:left; padding:.9rem 1rem; border:1px solid var(--lp-line-2); border-radius:var(--lp-r);
+  background:var(--lp-bg); cursor:pointer; font-family:inherit; font-size:.9rem; color:var(--lp-ink); transition:.15s;
+}
+.ai-lp .opt:hover{ border-color:var(--lp-accent); background:var(--lp-accent-soft); }
+.ai-lp .opt small{ display:block; color:var(--lp-muted); font-size:.76rem; margin-top:.15rem; }
+.ai-lp .quiz__form{ display:grid; grid-template-columns:repeat(2,1fr); gap:.7rem; margin-top:1.2rem; }
+@media (max-width:600px){ .ai-lp .quiz__form{ grid-template-columns:1fr; } }
+.ai-lp .quiz__form input{
+  font-family:inherit; font-size:.92rem; padding:.75rem .9rem; border:1px solid var(--lp-line-2);
+  border-radius:var(--lp-r); background:var(--lp-bg); color:var(--lp-ink); width:100%;
+}
+.ai-lp .quiz__form input::placeholder{ color:var(--lp-muted); }
+.ai-lp .quiz__res{ border:1px solid var(--lp-accent); background:var(--lp-accent-soft); border-radius:var(--lp-r); padding:1rem 1.1rem; margin-top:1.2rem; }
+.ai-lp .quiz__res b{ font-family:Montserrat,sans-serif; }
+.ai-lp .quiz__back{ background:none; border:0; color:var(--lp-muted); font-family:inherit; font-size:.82rem; cursor:pointer; padding:0; margin-top:1.1rem; text-decoration:underline; }
+
+/* ============ 13 FINAL CTA ============ */
+.ai-lp .final{ background:var(--lp-accent-soft); border-top:1px solid var(--lp-line); border-bottom:1px solid var(--lp-line); }
+.ai-lp .final__in{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:1.5rem; padding:clamp(2rem,4vw,3rem) 0; }
+.ai-lp .final h2{ font-size:clamp(1.4rem,2.8vw,2rem); }
+.ai-lp .final p{ color:var(--lp-ink-2); margin-top:.5rem; font-size:.95rem; }
+.ai-lp .final__contacts{ display:flex; flex-direction:column; gap:.3rem; align-items:flex-start; }
+.ai-lp .final__contacts a{ font-family:Montserrat,sans-serif; font-weight:700; font-size:1.15rem; text-decoration:none; }
+.ai-lp .final__contacts a:hover{ color:var(--lp-accent-ink); }
+
+/* ============ 14 LINKS ============ */
+.ai-lp .links{ padding:2.2rem 0 3rem; }
+.ai-lp .links ul{ display:flex; flex-wrap:wrap; gap:.5rem 1.6rem; font-size:.88rem; }
+.ai-lp .links a{ color:var(--lp-accent-ink); text-decoration:none; border-bottom:1px solid transparent; }
+.ai-lp .links a:hover{ border-color:currentColor; }
+
+/* ============ 15 STICKY ============ */
+.ai-lp .sticky{
+  position:sticky; bottom:0; z-index:20; display:none; gap:.5rem; padding:.65rem;
+  background:var(--lp-surface); border-top:1px solid var(--lp-line-2);
+}
+@media (max-width:760px){ .ai-lp .sticky{ display:flex; } .ai-lp .sticky .btn{ flex:1; } }
+
+@media (prefers-reduced-motion: reduce){
+  .ai-lp *{ transition:none !important; animation:none !important; }
+}
+</style>
+
+<div class="ai-lp">
+
+<!-- ============ 01 HERO ============ -->
+<header class="hero">
+  <div class="wrap hero__grid">
+    <div>
+      <p class="eyebrow">ASUS ESC8000 · RS720A · ARTLINE Integration</p>
+      <h1>AI-сервери на платформах ASUS — <em>від інференсу до навчання LLM</em></h1>
+      <p class="hero__sub">Платформи ASUS ESC8000A-E13 та RS720A-E12. Конфігурація, складання, стрес-тест і <strong>38 місяців гарантії</strong> від ARTLINE. У наявності на складі — з цінами в гривні, без «зверніться до партнера».</p>
+      <div class="hero__cta">
+        <a class="btn btn--primary" href="#modeli">Обрати конфігурацію</a>
+        <a class="btn btn--ghost" href="#pidbir">Отримати КП за 24 год</a>
+      </div>
+      <div class="hero__kpi">
+        <div><b>8</b><span>GPU по 600 Вт в одному вузлі</span></div>
+        <div><b>768<small style="font-size:.8rem"> ГБ</small></b><span>VRAM у максимальній збірці</span></div>
+        <div><b>38</b><span>місяців гарантії Artline Premium</span></div>
+      </div>
+    </div>
+
+    <!-- Замінюється реальним фото платформи. Правило: невірне фото = хард-еррор. -->
+    <figure class="chassis" aria-label="Схема компонування 4U-вузла ASUS ESC8000A-E13">
+      <figcaption class="chassis__cap"><span>ESC8000A-E13</span><span>4U · 8× GPU</span></figcaption>
+      <div class="chassis__body">
+        <div class="chassis__row" aria-hidden="true">
+          <i class="chassis__gpu"></i><i class="chassis__gpu"></i><i class="chassis__gpu"></i><i class="chassis__gpu"></i>
+        </div>
+        <div class="chassis__row" aria-hidden="true">
+          <i class="chassis__gpu"></i><i class="chassis__gpu"></i><i class="chassis__gpu"></i><i class="chassis__gpu"></i>
+        </div>
+        <div class="chassis__row" aria-hidden="true">
+          <i class="chassis__cpu"></i><i class="chassis__cpu"></i>
+        </div>
+        <div class="chassis__row" aria-hidden="true">
+          <i class="chassis__psu"></i><i class="chassis__psu"></i><i class="chassis__psu"></i><i class="chassis__psu"></i>
+        </div>
+      </div>
+      <div class="chassis__legend">
+        <i class="is-gpu">8× dual-slot GPU</i>
+        <i>2× AMD EPYC 9555</i>
+        <i>3+1 БЖ 3200 Вт Titanium</i>
+      </div>
+    </figure>
+  </div>
+</header>
+
+<!-- ============ 02 TRUST ============ -->
+<div class="trust">
+  <div class="wrap trust__in">
+    <span><b>ASUS</b> — платформа</span><span class="trust__sep"></span>
+    <span><b>понад 500</b> серверів у наявності</span><span class="trust__sep"></span>
+    <span><b>6+ років</b> складання серверів</span><span class="trust__sep"></span>
+    <span><b>38 міс.</b> гарантії</span><span class="trust__sep"></span>
+    <span>Сервіс по Україні</span><span class="trust__sep"></span>
+    <span>Безготівковий розрахунок, ПДВ</span>
+  </div>
+</div>
+
+<!-- ============ 03 WHY ============ -->
+<section class="sect">
+  <div class="wrap">
+    <p class="eyebrow">Навіщо власний вузол</p>
+    <h2 class="h2">Хмара, робоча станція чи власний AI-сервер</h2>
+    <p class="lede">Три сценарії, які реально розглядають перед закупівлею. Різниця не в піковій продуктивності, а в тому, де лежать ваші дані і скільки коштує година GPU через рік.</p>
+
+    <div class="why">
+      <div class="why__col">
+        <h3>Оренда в хмарі</h3>
+        <dl class="why__dl">
+          <div><dt>Старт</dt><dd>Години</dd></div>
+          <div><dt>Дані</dt><dd>На чужій інфраструктурі, часто поза ЄС</dd></div>
+          <div><dt>Доступність GPU</dt><dd>Черга на H100/H200 у пікові періоди</dd></div>
+          <div><dt>Вартість 3 роки</dt><dd>Зростає лінійно, стелі немає</dd></div>
+          <div><dt>Підходить</dt><dd>Разові експерименти, пікові навантаження</dd></div>
+        </dl>
+      </div>
+      <div class="why__col">
+        <h3>Робоча станція</h3>
+        <dl class="why__dl">
+          <div><dt>Старт</dt><dd>Одразу після постачання</dd></div>
+          <div><dt>Дані</dt><dd>У вас, але без резервування</dd></div>
+          <div><dt>Доступність GPU</dt><dd>1–7 карт, без гарячої заміни</dd></div>
+          <div><dt>Вартість 3 роки</dt><dd>Низька, але масштабування = нова машина</dd></div>
+          <div><dt>Підходить</dt><dd>R&amp;D, один дослідник, прототипи</dd></div>
+        </dl>
+      </div>
+      <div class="why__col why__col--pick">
+        <h3>Власний AI-сервер у стійці</h3>
+        <dl class="why__dl">
+          <div><dt>Старт</dt><dd>Зі складу, з налаштуванням від нас</dd></div>
+          <div><dt>Дані</dt><dd>Повністю у вашому контурі</dd></div>
+          <div><dt>Доступність GPU</dt><dd>До 8 карт 24/7, резервоване живлення</dd></div>
+          <div><dt>Вартість 3 роки</dt><dd>Фіксована, окупність при завантаженні від ~40 %</dd></div>
+          <div><dt>Підходить</dt><dd>Продакшн-інференс, донавчання, приватні LLM</dd></div>
+        </dl>
+      </div>
+    </div>
+    <p class="note">Точку окупності рахуємо під ваш профіль навантаження — надішліть поточні витрати на хмару, повернемо розрахунок у той самий день.</p>
+  </div>
+</section>
+
+<!-- ============ 04 TIERS ============ -->
+<section class="sect sect--sunk" id="scenarii">
+  <div class="wrap">
+    <p class="eyebrow">Крок 1 — оберіть завдання</p>
+    <h2 class="h2">Ви знаєте задачу, а не модель сервера</h2>
+    <p class="lede">Чотири профілі навантаження. Смуга під заголовком показує, наскільки щільно завдання завантажує GPU-підсистему.</p>
+
+    <div class="tiers">
+      <a class="tier" href="#modeli">
+        <span class="tier__load" aria-hidden="true"><i class="on" style="height:35%"></i><i class="on" style="height:45%"></i><i style="height:60%"></i><i style="height:75%"></i><i style="height:100%"></i></span>
+        <h3>Інференс</h3>
+        <p>Запуск готових моделей у продакшн: чат-боти, класифікація, пошук по документах.</p>
+        <ul><li>1–3 GPU достатньо</li><li>2U, поруч з іншими вузлами</li><li>RTX 4500 / 5000 Ada</li></ul>
+      </a>
+      <a class="tier" href="#modeli">
+        <span class="tier__load" aria-hidden="true"><i class="on" style="height:35%"></i><i class="on" style="height:45%"></i><i class="on" style="height:60%"></i><i style="height:75%"></i><i style="height:100%"></i></span>
+        <h3>Fine-tuning</h3>
+        <p>Донавчання відкритої моделі на ваших даних — юридичних, медичних, виробничих.</p>
+        <ul><li>2–4 GPU з великою VRAM</li><li>4U, запас на розширення</li><li>RTX PRO 6000 96 ГБ</li></ul>
+      </a>
+      <a class="tier" href="#modeli">
+        <span class="tier__load" aria-hidden="true"><i class="on" style="height:35%"></i><i class="on" style="height:45%"></i><i class="on" style="height:60%"></i><i class="on" style="height:75%"></i><i class="on" style="height:100%"></i></span>
+        <h3>Навчання</h3>
+        <p>Тренування моделей з нуля та робота з моделями 70B+ у повній точності.</p>
+        <ul><li>8 GPU, до 768 ГБ VRAM</li><li>Резервоване живлення 3200 Вт</li><li>100 GbE для кластера</li></ul>
+      </a>
+      <a class="tier" href="#pid-zamovlennya">
+        <span class="tier__load" aria-hidden="true"><i class="on" style="height:35%"></i><i style="height:45%"></i><i style="height:60%"></i><i style="height:75%"></i><i style="height:100%"></i></span>
+        <h3>Edge / на об'єкті</h3>
+        <p>AI там, де дані народжуються: відеоаналітика, контроль якості, ритейл.</p>
+        <ul><li>Короткий корпус, 1–2 GPU</li><li>Робота поза серверною</li><li>Під замовлення</li></ul>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 05 MODELS ============ -->
+<section class="sect" id="modeli">
+  <div class="wrap">
+    <p class="eyebrow">Крок 2 — конфігурації в наявності</p>
+    <h2 class="h2">Готові вузли на платформах ASUS</h2>
+    <p class="lede">Смуга слотів на кожній картці показує, скільки GPU встановлено і скільки місця лишається під розширення. Ліворуч — реальна висота корпусу в юнітах.</p>
+
+    <div class="chips" role="group" aria-label="Фільтр за завданням">
+      <button class="chip" data-f="all" aria-pressed="true">Усі</button>
+      <button class="chip" data-f="inf" aria-pressed="false">Інференс</button>
+      <button class="chip" data-f="ft" aria-pressed="false">Fine-tuning</button>
+      <button class="chip" data-f="train" aria-pressed="false">Навчання</button>
+      <button class="chip" data-f="base" aria-pressed="false">Без GPU</button>
+    </div>
+
+    <div class="models" id="modelGrid">
+
+      <article class="model" data-cat="ft" data-sku="AIv01">
+        <div class="rail" aria-hidden="true"><b>4U</b><i></i><i></i><i></i><i></i></div>
+        <div class="model__body">
+          <div class="model__top">
+            <div>
+              <div class="model__name">ARTLINE PRO AI (AIv01)</div>
+              <div class="model__plat">ASUS ESC8000A-E13</div>
+            </div>
+            <span class="badge badge--ok">У наявності</span>
+          </div>
+          <div class="slots">
+            <div class="slots__bar" aria-hidden="true"><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="slots__cap"><span><b>2</b> / 8 слотів зайнято</span><span>192 ГБ VRAM</span></div>
+          </div>
+          <dl class="spec">
+            <div><dt>CPU</dt><dd>2× AMD EPYC 9555, 64 ядра, 3.2–4.4 ГГц</dd></div>
+            <div><dt>GPU</dt><dd>2× RTX PRO 6000 SE 96 ГБ</dd></div>
+            <div><dt>RAM</dt><dd>512 ГБ DDR5-5600 ECC REG (24 слоти, до 3 ТБ)</dd></div>
+            <div><dt>Мережа</dt><dd>100 GbE Intel E810 QSFP28</dd></div>
+          </dl>
+          <div class="model__foot">
+            <div class="price">₴4 765 200<small>ціна з каталогу, 05.09.2026</small></div>
+            <a class="btn btn--primary btn--sm" href="https://artline.ua/uk/product/server-artline-pro-ai-aiv01">До картки</a>
+          </div>
+        </div>
+      </article>
+
+      <article class="model" data-cat="ft" data-sku="AIv02">
+        <div class="rail" aria-hidden="true"><b>4U</b><i></i><i></i><i></i><i></i></div>
+        <div class="model__body">
+          <div class="model__top">
+            <div>
+              <div class="model__name">ARTLINE PRO AI (AIv02)</div>
+              <div class="model__plat">ASUS ESC8000A-E13</div>
+            </div>
+            <span class="badge badge--ok">У наявності</span>
+          </div>
+          <div class="slots">
+            <div class="slots__bar" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i></div>
+            <div class="slots__cap"><span><b>4</b> / 8 слотів зайнято</span><span>384 ГБ VRAM</span></div>
+          </div>
+          <dl class="spec">
+            <div><dt>CPU</dt><dd>2× AMD EPYC 9555, 64 ядра, 3.2–4.4 ГГц</dd></div>
+            <div><dt>GPU</dt><dd>4× RTX PRO 6000 SE 96 ГБ</dd></div>
+            <div><dt>RAM</dt><dd>512 ГБ DDR5-5600 ECC REG</dd></div>
+            <div><dt>Диски</dt><dd>2× 3.84 ТБ U.2 NVMe</dd></div>
+          </dl>
+          <div class="model__foot">
+            <div class="price">₴5 287 041<small>ціна з каталогу, 05.09.2026</small></div>
+            <a class="btn btn--primary btn--sm" href="https://artline.ua/uk/product/server-artline-pro-ai-aiv02">До картки</a>
+          </div>
+        </div>
+      </article>
+
+      <article class="model" data-cat="train" data-sku="AIv03">
+        <div class="rail" aria-hidden="true"><b>4U</b><i></i><i></i><i></i><i></i></div>
+        <div class="model__body">
+          <div class="model__top">
+            <div>
+              <div class="model__name">ARTLINE PRO AI (AIv03)</div>
+              <div class="model__plat">ASUS ESC8000A-E13</div>
+            </div>
+            <span class="badge badge--ok">У наявності</span>
+          </div>
+          <div class="slots">
+            <div class="slots__bar" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div>
+            <div class="slots__cap"><span><b>8</b> / 8 слотів зайнято</span><span>768 ГБ VRAM</span></div>
+          </div>
+          <dl class="spec">
+            <div><dt>CPU</dt><dd>2× AMD EPYC 9555, 64 ядра</dd></div>
+            <div><dt>GPU</dt><dd>8× RTX PRO 6000 SE 96 ГБ</dd></div>
+            <div><dt>RAM</dt><dd>512 ГБ DDR5-5600 ECC REG</dd></div>
+            <div><dt>БЖ</dt><dd>3+1 резервовані 3200 Вт 80+ Titanium</dd></div>
+          </dl>
+          <div class="model__foot">
+            <div class="price">Ціна в каталозі<small>оновлюється з фіда</small></div>
+            <a class="btn btn--primary btn--sm" href="https://artline.ua/uk/product/server-artline-pro-ai-aiv03">До картки</a>
+          </div>
+        </div>
+      </article>
+
+      <article class="model" data-cat="train" data-sku="AIv05">
+        <div class="rail" aria-hidden="true"><b>4U</b><i></i><i></i><i></i><i></i></div>
+        <div class="model__body">
+          <div class="model__top">
+            <div>
+              <div class="model__name">ARTLINE PRO AI (AIv05)</div>
+              <div class="model__plat">ASUS ESC8000A-E13 · HBM</div>
+            </div>
+            <span class="badge badge--ok">У наявності</span>
+          </div>
+          <div class="slots">
+            <div class="slots__bar" aria-hidden="true"><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="slots__cap"><span><b>2</b> / 8 слотів зайнято</span><span>282 ГБ HBM3e</span></div>
+          </div>
+          <dl class="spec">
+            <div><dt>CPU</dt><dd>2× AMD EPYC 9555, 64 ядра</dd></div>
+            <div><dt>GPU</dt><dd>2× NVIDIA H200 SE 141 ГБ</dd></div>
+            <div><dt>RAM</dt><dd>768 ГБ DDR5-5600 ECC REG</dd></div>
+            <div><dt>Профіль</dt><dd>Пропускна здатність пам'яті, моделі 70B+</dd></div>
+          </dl>
+          <div class="model__foot">
+            <div class="price">₴7 959 600<small>ціна з каталогу, 05.09.2026</small></div>
+            <a class="btn btn--primary btn--sm" href="https://artline.ua/uk/product/server-artline-pro-ai-aiv05">До картки</a>
+          </div>
+        </div>
+      </article>
+
+      <article class="model" data-cat="inf" data-sku="R84v01">
+        <div class="rail" aria-hidden="true"><b>2U</b><i></i><i></i></div>
+        <div class="model__body">
+          <div class="model__top">
+            <div>
+              <div class="model__name">ARTLINE Business R84 (R84v01)</div>
+              <div class="model__plat">ASUS RS720A-E12-RS12U</div>
+            </div>
+            <span class="badge badge--ok">У наявності</span>
+          </div>
+          <div class="slots">
+            <div class="slots__bar" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
+            <div class="slots__cap"><span><b>1</b> / 3 слоти зайнято</span><span>24 ГБ VRAM</span></div>
+          </div>
+          <dl class="spec">
+            <div><dt>CPU</dt><dd>2× AMD EPYC 9554, 64 ядра, 3.1–3.75 ГГц</dd></div>
+            <div><dt>GPU</dt><dd>RTX 4500 Ada 24 ГБ</dd></div>
+            <div><dt>RAM</dt><dd>256 ГБ DDR5-4800 ECC REG (до 6.14 ТБ)</dd></div>
+            <div><dt>Диски</dt><dd>2× 960 ГБ NVMe + 4× 12 ТБ HDD, MegaRAID 9560-16i</dd></div>
+          </dl>
+          <div class="model__foot">
+            <div class="price">₴1 669 359<small>ціна з каталогу, 05.09.2026</small></div>
+            <a class="btn btn--primary btn--sm" href="https://artline.ua/uk/product/server-artline-business-r84-r84v01">До картки</a>
+          </div>
+        </div>
+      </article>
+
+      <article class="model" data-cat="base" data-sku="R83v30">
+        <div class="rail" aria-hidden="true"><b>2U</b><i></i><i></i></div>
+        <div class="model__body">
+          <div class="model__top">
+            <div>
+              <div class="model__name">ARTLINE Business R83 (R83v30)</div>
+              <div class="model__plat">ASUS RS720A-E12-RS12U</div>
+            </div>
+            <span class="badge badge--ok">У наявності</span>
+          </div>
+          <div class="slots">
+            <div class="slots__bar" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="slots__cap"><span><b>0</b> / 3 слоти зайнято</span><span>вузол зберігання й БД</span></div>
+          </div>
+          <dl class="spec">
+            <div><dt>CPU</dt><dd>2× AMD EPYC 9554, 64 ядра</dd></div>
+            <div><dt>RAM</dt><dd>256 ГБ DDR5-4800 ECC REG</dd></div>
+            <div><dt>Диски</dt><dd>2× 960 ГБ NVMe + 4× 10 ТБ RE HDD</dd></div>
+            <div><dt>Роль</dt><dd>База даних і сховище поруч з AI-вузлом</dd></div>
+          </dl>
+          <div class="model__foot">
+            <div class="price">₴1 480 380<small>ціна з каталогу, 05.09.2026</small></div>
+            <a class="btn btn--primary btn--sm" href="https://artline.ua/uk/product/server-artline-business-r83-r83v30">До картки</a>
+          </div>
+        </div>
+      </article>
+
+    </div>
+    <p class="note" id="emptyNote" hidden>За цим фільтром зараз немає конфігурацій у наявності — подивіться розділ «Під замовлення» або залиште запит на підбір.</p>
+    <p class="note">Ціни й наявність підтягуються з каталогу за атрибутом <code class="mono">data-sku</code> і не редагуються в тексті сторінки. Повний перелік — у розділі <a href="https://artline.ua/catalog/servery-artline/naznachenie-servera=ai">GPU/AI-сервери</a>.</p>
+  </div>
+</section>
+
+<!-- ============ 06 TABLE ============ -->
+<section class="sect sect--sunk">
+  <div class="wrap">
+    <p class="eyebrow">Порівняння платформ</p>
+    <h2 class="h2">Що обрати як базу</h2>
+    <p class="lede">Дві платформи закривають більшість завдань. Верхні два стовпці — під замовлення, для проєктів рівня дата-центру.</p>
+
+    <div class="tableWrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Параметр</th>
+            <th scope="col">RS720A-E12</th>
+            <th scope="col" class="col-hl">ESC8000A-E13</th>
+            <th scope="col">ESC N8-E11</th>
+            <th scope="col">AI POD GB200</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Наявність</th><td>Зі складу</td><td class="col-hl">Зі складу</td><td>Під замовлення</td><td>Проєктне постачання</td></tr>
+          <tr><th scope="row">Форм-фактор</th><td>2U</td><td class="col-hl">4U</td><td>8U</td><td>Стійка</td></tr>
+          <tr><th scope="row">CPU</th><td>2× EPYC 9004</td><td class="col-hl">2× EPYC 9005</td><td>2× Xeon</td><td>36× Grace</td></tr>
+          <tr><th scope="row">Максимум GPU</th><td>3 dual-slot</td><td class="col-hl">8 dual-slot</td><td>8× HGX H100/H200</td><td>72× Blackwell</td></tr>
+          <tr><th scope="row">TDP на GPU</th><td>до 300 Вт</td><td class="col-hl">до 600 Вт</td><td>до 700 Вт</td><td>рідинне охолодження</td></tr>
+          <tr><th scope="row">RAM</th><td>24 слоти, до 6.14 ТБ</td><td class="col-hl">24 слоти, до 3 ТБ</td><td>32 слоти</td><td>NVLink-домен</td></tr>
+          <tr><th scope="row">Живлення</th><td>1+1 · 2600 Вт Titanium</td><td class="col-hl">3+1 · 3200 Вт Titanium</td><td>6× 3000 Вт</td><td>стійкове</td></tr>
+          <tr><th scope="row">Керування</th><td>ASMB11-iKVM</td><td class="col-hl">ASMB11-iKVM</td><td>ASMB11-iKVM</td><td>ASUS Control Center</td></tr>
+          <tr><th scope="row">Типовий сценарій</th><td>Інференс, БД, віртуалізація</td><td class="col-hl">Fine-tuning, навчання</td><td>Навчання LLM з нуля</td><td>Дата-центр, держпроєкт</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 07 INSIDE ============ -->
+<section class="sect">
+  <div class="wrap">
+    <p class="eyebrow">Технічні деталі</p>
+    <h2 class="h2">Що всередині платформи</h2>
+    <p class="lede">Шість інженерних питань, які виникають до підписання специфікації.</p>
+
+    <div class="accs">
+      <details open>
+        <summary>Топологія GPU <span class="k">PCIe Gen5</span></summary>
+        <div>Вісім слотів подвійної ширини підключені через PCIe Gen5 switch — це дає рівномірну пропускну здатність до кожної карти, а не залежність від того, до якого процесора карта фізично ближче. Для RTX PRO 6000 доступні NVLink-містки на суміжних парах; для розподіленого навчання між вузлами використовується мережа, а не міжкартковий зв'язок.</div>
+      </details>
+      <details>
+        <summary>Живлення <span class="k">3+1 · 3200 Вт</span></summary>
+        <div>Вісім карт по 600 Вт плюс два EPYC 9555 — це стеля близько 6 кВт на вузол. Конфігурація 3+1 означає, що вузол продовжує працювати при відмові одного блока, а не просто має чотири БЖ. Практичний наслідок для вас: на стійку з двома такими вузлами потрібен окремий ввід і ДБЖ відповідної потужності — це ми рахуємо разом зі специфікацією.</div>
+      </details>
+      <details>
+        <summary>Охолодження <span class="k">повітряне</span></summary>
+        <div>Стандартна збірка — повітряна, з передньо-заднім потоком. Вимоги до приміщення: холодний коридор від 18 °C, вільний прохід повітря спереду й ззаду, шумове навантаження серверного рівня. Якщо вузол ставиться не в серверну, це потрібно обговорити до замовлення — ми або міняємо форм-фактор, або пропонуємо шумоізольовану шафу.</div>
+      </details>
+      <details>
+        <summary>Мережа <span class="k">100 GbE E810</span></summary>
+        <div>Базово — Intel E810 QSFP28 на 100 GbE, чого вистачає для завантаження даних і для інференсу. Якщо планується кластер з двох і більше вузлів для розподіленого навчання, закладаємо InfiniBand або 200/400 GbE — інакше мережа стає вузьким місцем швидше, ніж GPU.</div>
+      </details>
+      <details>
+        <summary>Віддалене керування <span class="k">ASMB11-iKVM</span></summary>
+        <div>Власний BMC-модуль ASUS з IPMI 2.0 та Redfish: віддалена консоль, монтування образів, керування живленням, моніторинг температур і швидкості вентиляторів. Для парку машин — ASUS Control Center з інвентаризацією й масовим оновленням прошивок. Це те, що дозволяє не їздити в серверну заради перевстановлення ОС.</div>
+      </details>
+      <details>
+        <summary>Розширення <span class="k">24 DIMM · U.2</span></summary>
+        <div>24 слоти пам'яті до 3 ТБ DDR5-5600 ECC REG і відсіки U.2 NVMe з гарячою заміною. Практично це означає, що вузол, куплений з двома GPU, доростає до восьми без заміни платформи — за умови, що живлення й охолодження закладені одразу під максимум. Ми за замовчуванням комплектуємо БЖ під повну збірку.</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 08 SERVICE ============ -->
+<section class="sect sect--sunk">
+  <div class="wrap">
+    <p class="eyebrow">Чому ARTLINE, а не привезти самому</p>
+    <h2 class="h2">Що ви отримуєте разом з залізом</h2>
+
+    <div class="svc">
+      <div class="svc__i"><em>38</em><b>місяців гарантії</b><span>Пакет Artline Premium на весь вузол, а не окремо на компоненти. Умови по GPU фіксуються в договорі.</span></div>
+      <div class="svc__i"><em>72</em><b>години burn-in</b><span>Стрес-тест GPU і пам'яті під повним навантаженням до відвантаження — щоб відмова сталася у нас, а не у вас.</span></div>
+      <div class="svc__i"><em>24</em><b>години на КП</b><span>Специфікація з цінами й строками в робочий день після запиту.</span></div>
+      <div class="svc__i"><em>ОС</em><b>Передналаштування</b><span>Установка ОС, драйверів NVIDIA/CUDA, Docker і базового оточення — за узгодженим переліком.</span></div>
+      <div class="svc__i"><em>UA</em><b>Сервіс по Україні</b><span>Виїзд, підмінний фонд, монтаж у стійку та підключення на майданчику замовника.</span></div>
+      <div class="svc__i"><em>B2B</em><b>Робота з юрособами</b><span>Безготівковий розрахунок, ПДВ, тендерна документація, лізинг і розстрочка.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 09 CASES ============ -->
+<section class="sect">
+  <div class="wrap">
+    <p class="eyebrow">Типові впровадження</p>
+    <h2 class="h2">Під що беруть такі вузли</h2>
+    <p class="lede">Сценарії, з якими до нас приходять найчастіше, і конфігурація, з якої зазвичай стартують.</p>
+
+    <div class="cases">
+      <div class="case"><b>Приватний LLM для компанії</b><span>Модель на внутрішніх документах, без виходу даних назовні. Юридичні й фінансові відділи.</span><code>старт: AIv02</code></div>
+      <div class="case"><b>Відеоаналітика</b><span>Розпізнавання на десятках потоків у реальному часі: периметр, виробнича лінія, ритейл.</span><code>старт: R84v01</code></div>
+      <div class="case"><b>Медична візуалізація</b><span>Обробка знімків та сегментація. Дані не залишають лікарню — вимога регулятора.</span><code>старт: AIv01</code></div>
+      <div class="case"><b>R&amp;D та наукові розрахунки</b><span>Навчання власних моделей, симуляції, обробка датасетів в університетах і лабораторіях.</span><code>старт: AIv03</code></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 10 ON ORDER ============ -->
+<section class="sect deep" id="pid-zamovlennya">
+  <div class="wrap">
+    <p class="eyebrow">Верхній сегмент</p>
+    <h2 class="h2">Платформи ASUS під замовлення</h2>
+    <p class="lede">Якщо завдання не закривається вузлом зі складу — постачаємо повну лінійку ASUS AI Server Solutions. Ціна й строк формуються під проєкт.</p>
+
+    <div class="order">
+      <div class="order__i"><span class="t">Generative AI</span><b>ESC N8-E11 / N8-E11V</b><span>8× NVIDIA HGX H100 або H200. Навчання LLM з нуля, вузол для кластера.</span></div>
+      <div class="order__i"><span class="t">Generative AI · AMD</span><b>ESC A8A-E12U</b><span>8× AMD Instinct MI325X. Альтернатива NVIDIA там, де важлива вартість за ГБ HBM.</span></div>
+      <div class="order__i"><span class="t">Generative AI · Intel</span><b>ESC I8-E11</b><span>8× Intel Gaudi 3. Оптимізація вартості інференсу на великих обсягах.</span></div>
+      <div class="order__i"><span class="t">MGX</span><b>ESC NM2-E1</b><span>NVIDIA GB200 NVL2. Grace-Blackwell у щільному вузлі нового покоління.</span></div>
+      <div class="order__i"><span class="t">Edge AI</span><b>EG500-E11-RS4-R</b><span>Короткий корпус для роботи поза серверною: цех, магазин, об'єкт.</span></div>
+      <div class="order__i"><span class="t">Rack-scale</span><b>ASUS AI POD · GB200 NVL72</b><span>72 Blackwell і 36 Grace у стійці з рідинним охолодженням. Проєктне впровадження.</span></div>
+    </div>
+
+    <div class="deep__foot">
+      <a class="btn btn--onDeep" href="#pidbir">Запросити прорахунок проєкту</a>
+      <span>Строк постачання узгоджується під конкретну конфігурацію.</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 11 QUIZ ============ -->
+<section class="sect" id="pidbir">
+  <div class="wrap">
+    <p class="eyebrow">Крок 3 — підбір</p>
+    <h2 class="h2">Підберемо конфігурацію за чотири кроки</h2>
+    <p class="lede">Відповідайте як є — «не знаю» теж робоча відповідь, далі розбереться інженер.</p>
+
+    <div class="quiz">
+      <div class="quiz__head" id="quizHead">
+        <div class="on">01 · Завдання</div>
+        <div>02 · Модель</div>
+        <div>03 · Масштаб</div>
+        <div>04 · Контакти</div>
+      </div>
+      <div class="quiz__body" id="quizBody"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 13 FINAL ============ -->
+<section class="final">
+  <div class="wrap final__in">
+    <div>
+      <h2>Готові порахувати ваш AI-вузол?</h2>
+      <p>Надішліть завдання — повернемо специфікацію з цінами й строками протягом робочого дня.</p>
+    </div>
+    <div class="final__contacts">
+      <a href="tel:+380800000000">0 800 00 00 00</a>
+      <a href="mailto:b2b@artline.ua">b2b@artline.ua</a>
+      <span style="font-size:.8rem;color:var(--lp-muted)">Пн–Пт, 9:00–18:00 · відділ корпоративних продажів</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 14 LINKS ============ -->
+<nav class="links" aria-label="Пов'язані розділи">
+  <div class="wrap">
+    <ul>
+      <li><a href="https://artline.ua/catalog/servery-artline/naznachenie-servera=ai">Усі GPU/AI-сервери</a></li>
+      <li><a href="https://artline.ua/catalog/servery-artline">Сервери ARTLINE</a></li>
+      <li><a href="https://artline.ua/catalog/servery-artline/naznachenie-servera=sql">Сервери під бази даних</a></li>
+      <li><a href="https://artline.ua/catalog/kompyutery-artline">Робочі станції</a></li>
+      <li><a href="https://artline.ua/catalog/elektrogeneratsiya">ДБЖ та живлення для серверної</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- ============ 15 STICKY ============ -->
+<div class="sticky">
+  <a class="btn btn--primary" href="#pidbir">Підібрати конфігурацію</a>
+  <a class="btn btn--ghost" href="tel:+380800000000">Подзвонити</a>
+</div>
+
+</div>
+
+<script>
+(function(){
+  var root = document.querySelector('.ai-lp');
+  if(!root) return;
+
+  /* ---------- 05: фільтр каталогу (in-memory, без localStorage) ---------- */
+  var chips = root.querySelectorAll('.chip');
+  var cards = root.querySelectorAll('#modelGrid .model');
+  var emptyNote = root.querySelector('#emptyNote');
+  chips.forEach(function(chip){
+    chip.addEventListener('click', function(){
+      var f = chip.dataset.f;
+      chips.forEach(function(c){ c.setAttribute('aria-pressed', String(c === chip)); });
+      var shown = 0;
+      cards.forEach(function(card){
+        var vis = (f === 'all') || (card.dataset.cat === f);
+        card.classList.toggle('is-hidden', !vis);
+        if(vis) shown++;
+      });
+      emptyNote.hidden = shown > 0;
+    });
+  });
+
+  /* ---------- 11: квіз підбору ---------- */
+  var steps = [
+    { q:'Яке завдання ви вирішуєте?', key:'task', opts:[
+      {v:'inf',  t:'Інференс',    d:'Запуск готових моделей'},
+      {v:'ft',   t:'Fine-tuning', d:'Донавчання на своїх даних'},
+      {v:'train',t:'Навчання',    d:'Тренування з нуля'},
+      {v:'idk',  t:'Ще не визначились', d:'Розберемось разом'}
+    ]},
+    { q:'З моделями якого розміру працюєте?', key:'size', opts:[
+      {v:'s', t:'До 13B',   d:'Легкий інференс'},
+      {v:'m', t:'13–70B',   d:'Потрібно 96+ ГБ VRAM'},
+      {v:'l', t:'70B і більше', d:'Максимальна щільність'},
+      {v:'idk', t:'Не знаю', d:'Опишемо в КП варіанти'}
+    ]},
+    { q:'Скільки вузлів плануєте?', key:'scale', opts:[
+      {v:'one', t:'Один',   d:'Стартовий вузол'},
+      {v:'few', t:'2–4',    d:'Невеликий кластер'},
+      {v:'many',t:'Кластер',d:'Проєктне впровадження'}
+    ]}
+  ];
+
+  var state = {}, step = 0;
+  var body = root.querySelector('#quizBody');
+  var headCells = root.querySelectorAll('#quizHead div');
+
+  function recommend(){
+    if(state.scale === 'many') return { sku:'ESC N8-E11 або AI POD', why:'Для кластера підбираємо платформу під мережеву топологію — це проєктне рішення.', href:'#pid-zamovlennya', label:'Дивитись платформи під замовлення' };
+    if(state.size === 'l' || state.task === 'train') return { sku:'ARTLINE PRO AI (AIv03)', why:'8× RTX PRO 6000 SE, 768 ГБ VRAM — повна щільність для навчання й моделей 70B+.', href:'https://artline.ua/uk/product/server-artline-pro-ai-aiv03', label:'Відкрити картку AIv03' };
+    if(state.task === 'ft' || state.size === 'm') return { sku:'ARTLINE PRO AI (AIv02)', why:'4× RTX PRO 6000 SE, 384 ГБ VRAM і запас на ще чотири карти без заміни платформи.', href:'https://artline.ua/uk/product/server-artline-pro-ai-aiv02', label:'Відкрити картку AIv02' };
+    if(state.task === 'inf') return { sku:'ARTLINE Business R84 (R84v01)', why:'2U на ASUS RS720A-E12 — достатньо для продакшн-інференсу, компактно в стійці.', href:'https://artline.ua/uk/product/server-artline-business-r84-r84v01', label:'Відкрити картку R84v01' };
+    return { sku:'ARTLINE PRO AI (AIv01)', why:'Збалансований старт: 2 GPU по 96 ГБ і місце під розширення до восьми.', href:'https://artline.ua/uk/product/server-artline-pro-ai-aiv01', label:'Відкрити картку AIv01' };
+  }
+
+  function paintHead(){
+    headCells.forEach(function(c,i){
+      c.classList.toggle('on', i === step);
+      c.classList.toggle('done', i < step);
+    });
+  }
+
+  function esc(s){ return String(s).replace(/[&<>"]/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]; }); }
+
+  function render(){
+    paintHead();
+
+    if(step < steps.length){
+      var s = steps[step];
+      body.innerHTML =
+        '<p class="quiz__q">' + esc(s.q) + '</p><div class="quiz__opts">' +
+        s.opts.map(function(o){
+          return '<button class="opt" data-v="' + o.v + '">' + esc(o.t) + '<small>' + esc(o.d) + '</small></button>';
+        }).join('') + '</div>' +
+        (step > 0 ? '<button class="quiz__back" data-back="1">← Назад</button>' : '');
+
+      body.querySelectorAll('.opt').forEach(function(b){
+        b.addEventListener('click', function(){ state[s.key] = b.dataset.v; step++; render(); });
+      });
+    } else {
+      var r = recommend();
+      body.innerHTML =
+        '<p class="quiz__q">Куди надіслати специфікацію?</p>' +
+        '<div class="quiz__res"><b>Попередня рекомендація: ' + esc(r.sku) + '</b><br><span style="font-size:.88rem">' + esc(r.why) + '</span><br>' +
+        '<a class="btn btn--ghost btn--sm" style="margin-top:.7rem" href="' + r.href + '">' + esc(r.label) + '</a></div>' +
+        '<form class="quiz__form" id="leadForm">' +
+        '<input name="name" placeholder="Ім\'я" required>' +
+        '<input name="company" placeholder="Компанія" required>' +
+        '<input name="phone" placeholder="Телефон" required>' +
+        '<input name="email" type="email" placeholder="E-mail" required>' +
+        '</form>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:.8rem;align-items:center;margin-top:1rem">' +
+        '<button class="btn btn--primary" type="submit" form="leadForm">Надіслати запит</button>' +
+        '<span style="font-size:.82rem;color:var(--lp-muted)">КП протягом 24 годин у робочі дні</span></div>' +
+        '<button class="quiz__back" data-back="1">← Назад</button>';
+
+      body.querySelector('#leadForm').addEventListener('submit', function(e){
+        e.preventDefault();
+        body.innerHTML =
+          '<p class="quiz__q">Запит прийнято</p>' +
+          '<p style="margin-top:.7rem;color:var(--lp-ink-2)">Інженер зв\'яжеться протягом робочого дня зі специфікацією під <b>' + esc(r.sku) + '</b>. ' +
+          'Якщо потрібно швидше — <a href="tel:+380800000000" style="color:var(--lp-accent-ink)">0 800 00 00 00</a>.</p>' +
+          '<p style="margin-top:1rem;font-size:.8rem;color:var(--lp-muted)">Демонстраційна форма: у бойовій версії підключається до CRM.</p>';
+        headCells.forEach(function(c){ c.classList.remove('on'); c.classList.add('done'); });
+      });
+    }
+
+    var back = body.querySelector('[data-back]');
+    if(back) back.addEventListener('click', function(){ step = Math.max(0, step - 1); render(); });
+  }
+
+  render();
+})();
+</script>
+
+</body>
+</html>
