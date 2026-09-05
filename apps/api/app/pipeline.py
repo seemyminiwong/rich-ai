@@ -17,7 +17,7 @@ from openai import OpenAI
 from PIL import Image, ImageOps
 from app.config import settings
 from app.media import media_url
-from app.raster import contrast_ratio, flatten_to_white, readable_on
+from app.raster import compose_hero_canvas, contrast_ratio, cutout_product, flatten_to_white, paste_product_back, readable_on
 from app.runtime import GEMINI_BASE_URL, OPENROUTER_BASE_URL, runtime_config
 
 logger = logging.getLogger("richstudio.pipeline")
@@ -1597,6 +1597,45 @@ def materialize_product_reference(url: str, project_id: str, filename: str = 'pr
         temporary.unlink(missing_ok=True)
 
 
+def local_media_path(url: str):
+    """Файл у медіатеці за /media/<project>/<file> (підписаний чи ні), або None.
+
+    Лише для власних шляхів студії: будь-що поза settings.media_dir - None.
+    """
+    from app.media import strip_media_query
+    clean = strip_media_query(url or '')
+    if not clean.startswith('/media/'):
+        return None
+    root = Path(settings.media_dir).resolve()
+    candidate = (root / clean[len('/media/'):]).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() else None
+
+
+def materialize_local_reference(source: Path, project_id: str, filename: str = 'product-reference.png'):
+    """Те саме, що materialize_product_reference, але з файлу медіатеки (uploads)."""
+    try:
+        image = ImageOps.exif_transpose(Image.open(source)).convert('RGBA')
+        image.load()  # джерело може бути тим самим product-reference.png - читаємо до запису
+        image.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+        folder = Path(settings.media_dir) / project_id
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / filename
+        image.save(path, format='PNG', optimize=True)
+        width, height = image.size
+        return (
+            media_url(project_id, filename),
+            path,
+            {'source_url': str(source.name), 'width': width, 'height': height, 'format': 'PNG', 'is_reference': True, 'manual': True},
+        )
+    except Exception as exc:
+        logger.warning('Local reference failed (%s): %s', type(exc).__name__, source)
+        return '', None, {}
+
+
 def select_key_feature(product: dict) -> str:
     """Pick the single confirmed feature the Feature image must communicate.
 
@@ -1793,6 +1832,38 @@ def hero_environment(product: dict) -> str:
     return 'a clean professional space that matches this exact product category, neutral and uncluttered'
 
 
+def _locked_composition(reference_path: Path, size: str, variant: str) -> dict | None:
+    """Виріз товару на полотні Hero + маска, або None, якщо фото не ключується.
+
+    Полотно - PNG у байтах (для images.edit і Gemini), маска - PNG з альфою:
+    прозоре = малювати, непрозоре = товар. 'scaled' і 'box' потрібні, щоб після
+    генерації вклеїти оригінальні пікселі назад точно на те саме місце.
+    """
+    try:
+        width, height = (int(v) for v in str(size).lower().split('x'))
+    except Exception:
+        return None
+    try:
+        source = ImageOps.exif_transpose(Image.open(reference_path))
+        cutout = cutout_product(source)
+    except Exception as exc:
+        logger.warning('Product cutout failed (%s), falling back to reference edit', type(exc).__name__)
+        return None
+    if cutout is None:
+        return None
+    canvas, mask, box, scaled = compose_hero_canvas(cutout, (width, height), variant)
+    canvas_png, mask_png = BytesIO(), BytesIO()
+    canvas.save(canvas_png, format='PNG')
+    mask.save(mask_png, format='PNG')
+    return {
+        'canvas_png': canvas_png.getvalue(),
+        'mask_png': mask_png.getvalue(),
+        'box': box,
+        'scaled': scaled,
+        'size': (width, height),
+    }
+
+
 def generate_image(
     prompt: str,
     project_id: str,
@@ -1803,7 +1874,19 @@ def generate_image(
     reference_url: str = '',
     reference_path: Path | None = None,
     size: str = '1536x1024',
+    composition: str = '',
+    notes: dict | None = None,
 ):
+    """Згенерувати кадр із реального фото товару; (url, generated, error).
+
+    composition='desktop'|'mobile' вмикає ЗАФІКСОВАНУ КОМПОЗИЦІЮ для Hero: товар
+    вирізається з пакшота, кладеться на полотно в зону з промпта, модель отримує
+    маску і малює лише середовище, а після генерації оригінальні пікселі товару
+    вклеюються назад. Ідентичність, ракурс і місце товару гарантовані байтами.
+    Якщо фото не пакшот (строкате тло, сріблястий корпус, що зливається з білим),
+    виріз не вдається і працює звичайне редагування за референсом. notes (якщо
+    передано) отримує 'composition': 'locked'|'reference' і рамку товару.
+    """
     provider = image_provider(model)
     if not image_ready(model):
         return fallback, False, f'{provider.title()} API key is not configured'
@@ -1819,44 +1902,78 @@ def generate_image(
         # If no usable reference exists, keep the source photo instead of inventing a new product.
         if not reference_path:
             return fallback, False, 'No verified product reference image is available'
-        edit_prompt = (
-            'STRICT REFERENCE-IMAGE EDIT. The uploaded image contains the exact real product. '
-            'Preserve its identity, geometry, proportions, materials, controls, openings, labels and logo placement. '
-            'Do not redesign, substitute or hallucinate the product. Build the requested scene around this exact product. ' + prompt
-        )
+        locked = _locked_composition(reference_path, size, composition) if composition else None
+        if notes is not None:
+            notes['composition'] = 'locked' if locked else 'reference'
+            if locked:
+                notes['product_box'] = list(locked['box'])
+        if locked:
+            edit_prompt = (
+                'LOCKED PRODUCT COMPOSITE. The real product is already cut out and placed at its final position in '
+                'the canvas; the opaque part of the mask marks it and it must not be painted over, moved, scaled, '
+                'duplicated or redrawn. Paint ONLY the surrounding area: one realistic environment, surfaces and a '
+                'natural contact shadow consistent with the product position and its lighting. No second product, '
+                'no text. ' + prompt
+            )
+        else:
+            edit_prompt = (
+                'STRICT REFERENCE-IMAGE EDIT. The uploaded image contains the exact real product. '
+                'Preserve its identity, geometry, proportions, materials, controls, openings, labels and logo placement. '
+                'Do not redesign, substitute or hallucinate the product. Build the requested scene around this exact product. ' + prompt
+            )
         folder = Path(settings.media_dir) / project_id
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / f'{label}.webp'
         if provider == 'gemini':
+            if locked:
+                # У Gemini маски немає: віддаємо вже скомпоноване полотно і
+                # просимо домалювати лише тло; товар усе одно вклеюється назад.
+                raw = _gemini_edit(model, edit_prompt, locked['canvas_png'], 'image/png', size)
+                frame = paste_product_back(Image.open(BytesIO(raw)), locked['scaled'], locked['box'], locked['size'])
+                frame.save(path, 'WEBP', quality=90)
+                return media_url(project_id, f'{label}.webp'), True, ''
             raw = _gemini_edit(model, edit_prompt, reference_path.read_bytes(), _mime_for(reference_path), size)
             # Gemini answers in PNG/JPEG; the page expects webp like the OpenAI path.
             # WEBP пишемо без альфи, тому прозоре тло треба ЧИМОСЬ підкласти;
             # convert('RGB') підклав би чорне і запік би його назавжди.
             flatten_to_white(Image.open(BytesIO(raw))).save(path, 'WEBP', quality=90)
             return media_url(project_id, f'{label}.webp'), True, ''
-        with reference_path.open('rb') as image_file:
-            edit_options = dict(
-                model=model,
-                image=image_file,
-                prompt=edit_prompt,
-                size=size,
-                quality=quality,
-                output_format='webp',
-            )
-            # High input fidelity asks supported GPT Image models to preserve small
-            # product details, labels and geometry. GPT Image 2 always uses it and
-            # rejects an explicit parameter, so omit it there.
-            if not model.startswith('gpt-image-2'):
-                edit_options['extra_body'] = {'input_fidelity': 'high'}
+        edit_options = dict(
+            model=model,
+            prompt=edit_prompt,
+            size=size,
+            quality=quality,
+            output_format='webp',
+        )
+        # High input fidelity asks supported GPT Image models to preserve small
+        # product details, labels and geometry. GPT Image 2 always uses it and
+        # rejects an explicit parameter, so omit it there.
+        if not model.startswith('gpt-image-2'):
+            edit_options['extra_body'] = {'input_fidelity': 'high'}
+        if locked:
+            # Полотно й маска однакового розміру, обидва PNG - вимога images.edit.
+            edit_options['image'] = ('canvas.png', locked['canvas_png'], 'image/png')
+            edit_options['mask'] = ('mask.png', locked['mask_png'], 'image/png')
             response = _with_retry(lambda: image_client().images.edit(**edit_options))
+        else:
+            with reference_path.open('rb') as image_file:
+                edit_options['image'] = image_file
+                response = _with_retry(lambda: image_client().images.edit(**edit_options))
         item = response.data[0]
         if getattr(item, 'b64_json', None):
-            path.write_bytes(base64.b64decode(item.b64_json))
+            raw = base64.b64decode(item.b64_json)
         elif getattr(item, 'url', None):
             with safe_client(timeout=120) as http:
-                path.write_bytes(fetch_bytes_capped(http, item.url))
+                raw = fetch_bytes_capped(http, item.url)
         else:
             return fallback, False, 'OpenAI returned no image data'
+        if locked:
+            # Маска у gpt-image - «м'яка»: модель може трохи перемалювати й товар.
+            # Остаточна гарантія - оригінальні пікселі поверх результату.
+            frame = paste_product_back(Image.open(BytesIO(raw)), locked['scaled'], locked['box'], locked['size'])
+            frame.save(path, 'WEBP', quality=90)
+        else:
+            path.write_bytes(raw)
         return media_url(project_id, f'{label}.webp'), True, ''
     except Exception as exc:
         return fallback, False, str(exc)
@@ -2817,7 +2934,19 @@ def _finalize_showcase_layout(
     ))):
         comment.extract()
     blocks = _showcase_blocks(soup)
-    for index, (block, name) in enumerate(zip(blocks, _SHOWCASE_BLOCK_NAMES), start=1):
+    # FAQ впізнається за <details>, а не за позицією: сторінка з меншою кількістю
+    # блоків (редактор зрізав секцію, стиль без якогось блоку) інакше давала
+    # FAQ чуже імʼя, і inject_video_block більше не знаходив, куди вставляти відео.
+    faq_block = next((b for b in reversed(blocks) if b.find('details') is not None), None)
+    positional = iter(name for name in _SHOWCASE_BLOCK_NAMES if name != 'FAQ')
+    for block in blocks:
+        if block is faq_block:
+            index, name = len(_SHOWCASE_BLOCK_NAMES), 'FAQ'
+        else:
+            name = next(positional, None)
+            if name is None:
+                break
+            index = _SHOWCASE_BLOCK_NAMES.index(name) + 1
         block.insert_before(Comment(f' ARTLINE BLOCK {index:02d}: {name} START '))
         block.insert_after(Comment(f' ARTLINE BLOCK {index:02d}: {name} END '))
     for video in soup.find_all(class_=SHOWCASE_VIDEO_CLASS):

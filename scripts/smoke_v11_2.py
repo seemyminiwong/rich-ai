@@ -14,6 +14,7 @@ prompts = (root / 'apps/api/app/prompts.py').read_text(encoding='utf-8')
 runtime = (root / 'apps/api/app/runtime.py').read_text(encoding='utf-8')
 config = (root / 'apps/api/app/config.py').read_text(encoding='utf-8')
 nginx = (root / 'apps/web/nginx.conf').read_text(encoding='utf-8')
+raster = (root / 'apps/api/app/raster.py').read_text(encoding='utf-8')
 media = (root / 'apps/api/app/media.py').read_text(encoding='utf-8')
 infographic = (root / 'apps/api/app/infographic.py').read_text(encoding='utf-8')
 tests = (root / 'tests/test_image_reference.py').read_text(encoding='utf-8')
@@ -33,7 +34,7 @@ checks = {
     # --- retained pipeline guarantees ---
     'reference image edit': 'image_client().images.edit' in pipeline,
     'no unconstrained image generate in generate_image': 'client.images.generate' not in pipeline[pipeline.index('def generate_image'):pipeline.index('def _html_only')],
-    'reference selector': 'inspect_product_references(images, raw_primary)' in tasks,
+    'reference selector': 'inspect_product_references(pool, manual_reference or raw_primary)' in tasks,
     'no fragile 20KB cutoff': '20_000' not in pipeline,
     'local verified reference': 'materialize_product_reference' in tasks and 'product-reference.png' in pipeline,
     'reference passed to image edit': 'reference_path=reference_path' in tasks,
@@ -252,7 +253,7 @@ checks = {
     ),
     'contrast helpers are shared, not duplicated': (
         'def readable_on' in (root / 'apps/api/app/raster.py').read_text(encoding='utf-8')
-        and 'from app.raster import contrast_ratio, flatten_to_white, readable_on' in pipeline
+        and 'from app.raster import compose_hero_canvas, contrast_ratio, cutout_product, flatten_to_white, paste_product_back, readable_on' in pipeline
         and 'from app.raster import alpha_bbox, flatten_to_white, hex_rgb, readable_on' in infographic
     ),
     'icon library changes are pinned by tests': (
@@ -319,6 +320,29 @@ checks = {
     ),
     'landing dialog has no photo palette option': 'paletteSelect()' in web,
     'photo palette is pinned by a test': 'def test_photo_palette_extracts_the_product_accent' in tests,
+    'hero: product cut out, locked on the canvas, pasted back byte-exact': (
+        'def cutout_product' in raster and 'def compose_hero_canvas' in raster and 'def paste_product_back' in raster
+        and 'def _locked_composition' in pipeline and "edit_options['mask'] = ('mask.png', locked['mask_png'], 'image/png')" in pipeline
+        and pipeline.count('paste_product_back(Image.open(BytesIO(raw)), locked') == 2
+        and 'composition=variant, notes=hero_notes' in tasks
+        and 'def test_locked_hero_composition_guarantees_the_product_pixels' in tests
+    ),
+    'hero: lifestyle photos and silver products fall back to the reference edit': (
+        '_SOFT_ZONE_MAX_SHARE' in raster and 'return None' in raster
+        and 'def test_locked_composition_falls_back_to_reference_edit_for_lifestyle_photos' in tests
+        and 'def test_packshot_cutout_keeps_the_product_and_drops_the_white' in tests
+    ),
+    'operator picks the ai reference frame (migration 0020)': (
+        (root / 'apps/api/alembic/versions/0020_project_reference_url.py').is_file()
+        and "reference_url: Mapped[str] = mapped_column(Text, default='')" in (root / 'apps/api/app/models.py').read_text(encoding='utf-8')
+        and 'reuse = bool(payload and payload.reuse_images) and not reference_changed' in main
+        and 'materialize_local_reference(manual_local, project.id)' in tasks
+        and web.count("'reference')\">AI</button>") == 2 and 'function referencePickerField' in web
+        and 'def test_operator_can_pick_the_ai_reference_frame' in tests
+    ),
+    'faq block is named by its details, not by its position': (
+        "faq_block = next((b for b in reversed(blocks) if b.find('details') is not None), None)" in pipeline
+    ),
     'palette presets are artline.ua brands, derived contrast-safe': (
         'BRAND_ACCENTS = [' in main
         and 'palette_from_accent(accent)) for brand, accent in BRAND_ACCENTS' in main
@@ -554,7 +578,7 @@ checks.update({
     # нормалізують або міряють, тому пінимо саме відсутність такого виклику.
     'raster helper ships and is used everywhere a frame is flattened': (
         (root / 'apps/api/app/raster.py').exists()
-        and 'from app.raster import contrast_ratio, flatten_to_white, readable_on' in pipeline
+        and 'from app.raster import compose_hero_canvas, contrast_ratio, cutout_product, flatten_to_white, paste_product_back, readable_on' in pipeline
         and 'from app.raster import flatten_to_white' in main
         and 'from app.raster import alpha_bbox, flatten_to_white, hex_rgb, readable_on' in infographic
     ),

@@ -2576,3 +2576,201 @@ def test_brand_palettes_follow_artline_assortment_and_stay_readable():
     frame = Image.new('RGB', (64, 64), (0x01, 0x5C, 0xBB))
     buffer = BytesIO(); frame.save(buffer, format='PNG')
     assert palette_from_photo(buffer.getvalue()) == palette_from_accent('#015CBB')
+
+
+def _packshot_bytes(body=(48, 50, 54), shadow=True, size=900):
+    """Синтетичний пакшот: біле тло, темний корпус з білим екраном, м'яка тінь."""
+    from PIL import ImageDraw
+    frame = Image.new('RGB', (size, size), (250, 250, 250))
+    draw = ImageDraw.Draw(frame)
+    if shadow:
+        for i in range(24, 0, -1):
+            c = 250 - int(i * 1.5)
+            draw.ellipse((200 - i * 2, 690 - i, 700 + i * 2, 740 + i), fill=(c, c, c))
+    draw.rounded_rectangle((230, 200, 670, 700), radius=30, fill=body)
+    draw.rectangle((330, 280, 570, 450), fill=(255, 255, 255))
+    draw.ellipse((420, 540, 480, 600), fill=(25, 188, 201))
+    buffer = BytesIO(); frame.save(buffer, format='PNG')
+    return buffer.getvalue()
+
+
+def test_packshot_cutout_keeps_the_product_and_drops_the_white():
+    """Виріз пакшота: тло геть, білий екран усередині лишається, тінь м'якшає.
+
+    Ключування по кольору небезпечне саме там, де товар білий: сріблястий
+    корпус зливається з тлом і «тече» у м'яку зону. Для таких фото функція
+    чесно повертає None - і генерація іде старим шляхом без маски, замість
+    дірявого вирізу.
+    """
+    from app.raster import cutout_product
+    cut = cutout_product(Image.open(BytesIO(_packshot_bytes())))
+    assert cut is not None and cut.mode == 'RGBA'
+    alpha = cut.getchannel('A')
+    # кути вирізу (за межами корпуса) прозорі, корпус і білий екран - непрозорі
+    assert alpha.getpixel((0, 0)) == 0
+    cx, cy = cut.width // 2, cut.height // 2
+    assert alpha.getpixel((cx, cy)) == 255
+    screen = alpha.getpixel((cx, max(0, cy - int(cut.height * 0.3))))
+    assert screen == 255, 'білий екран усередині корпуса - частина товару, а не тло'
+    # тінь під корпусом: напівпрозора і ТЕМНА після зняття білого (не світла пляма)
+    shadow_row = cut.height - 6
+    shadow_pixels = [cut.getpixel((x, shadow_row)) for x in range(cut.width // 3, cut.width * 2 // 3)]
+    soft = [p for p in shadow_pixels if 0 < p[3] < 255]
+    assert soft, 'краплю тіні очікуємо напівпрозорою, а не вирізаною/непрозорою'
+    assert max(max(p[:3]) for p in soft) < 200, 'білий знято з краю - тінь не світить ореолом'
+
+    assert cutout_product(Image.open(BytesIO(_packshot_bytes(body=(214, 216, 220))))) is None, 'сріблястий корпус не ключується'
+    assert cutout_product(Image.effect_noise((400, 300), 64).convert('RGB')) is None, 'строкате тло - не пакшот'
+    # готова прозорість береться як є
+    ready = Image.new('RGBA', (400, 400), (0, 0, 0, 0))
+    from PIL import ImageDraw
+    ImageDraw.Draw(ready).rectangle((100, 100, 300, 300), fill=(20, 20, 20, 255))
+    assert cutout_product(ready).size == (201, 201)
+
+
+def test_locked_hero_composition_guarantees_the_product_pixels(tmp_path):
+    """Hero з маскою: модель малює середовище, товар вклеюється назад байт у байт.
+
+    Доти ідентичність товару трималась на промпті («не перемальовуй логотип») -
+    і модель усе одно перемальовувала. Тепер товар вирізається, кладеться в
+    зону з промпта (десктоп - праворуч), редактор отримує маску, а результат
+    накривається оригінальними пікселями. Feature (без composition) не чіпаємо:
+    там потрібен зум у фото, а не фіксація.
+    """
+    calls = []
+
+    class FakeImages:
+        def edit(self, **kwargs):
+            calls.append(kwargs)
+            size = tuple(int(v) for v in kwargs['size'].split('x'))
+            scene = Image.new('RGB', size, (90, 20, 20))  # «намальоване середовище»
+            out = BytesIO(); scene.save(out, format='WEBP', quality=95)
+            return SimpleNamespace(data=[SimpleNamespace(b64_json=base64.b64encode(out.getvalue()).decode(), url=None)])
+
+    reference = tmp_path / 'reference.png'
+    reference.write_bytes(_packshot_bytes())
+    notes = {}
+    with patch('app.pipeline.image_client', lambda: SimpleNamespace(images=FakeImages())), patch('app.pipeline.settings.media_dir', str(tmp_path)):
+        url, generated, error = generate_image(
+            'Scene', 'project', 'hero-desktop', 'gpt-image-1', 'medium', '/media/reference.png',
+            reference_path=reference, size='1536x1024', composition='desktop', notes=notes,
+        )
+    assert generated is True, error
+    assert notes['composition'] == 'locked' and notes['product_box']
+    call = calls[0]
+    assert 'mask' in call and call['mask'][2] == 'image/png'
+    assert call['image'][2] == 'image/png'
+    assert 'LOCKED PRODUCT COMPOSITE' in call['prompt'] and 'STRICT REFERENCE-IMAGE EDIT' not in call['prompt']
+    assert call['extra_body'] == {'input_fidelity': 'high'}
+    # маска: полотно того ж розміру, товар непрозорий, решта прозора
+    mask = Image.open(BytesIO(call['mask'][1]))
+    assert mask.size == (1536, 1024)
+    x, y, w, h = notes['product_box']
+    assert x > 1536 * 0.5, 'десктоп: товар праворуч, ліворуч місце під текст'
+    assert mask.getchannel('A').getpixel((x + w // 2, y + h // 2)) == 255
+    assert mask.getchannel('A').getpixel((100, 100)) == 0
+    # результат: середовище моделі ліворуч, ОРИГІНАЛЬНІ пікселі товару праворуч
+    written = Image.open(tmp_path / 'project' / 'hero-desktop.webp').convert('RGB')
+    assert written.size == (1536, 1024)
+    assert written.getpixel((100, 100))[0] > 70, 'фон - те, що намалювала модель'
+    body = written.getpixel((x + w // 2, y + h // 2))
+    assert max(abs(body[i] - (48, 50, 54)[i]) for i in range(3)) <= 6, f'корпус - оригінал, а не перемальовка: {body}'
+
+    # Feature без composition іде старим шляхом - без маски
+    calls.clear()
+    with patch('app.pipeline.image_client', lambda: SimpleNamespace(images=FakeImages())), patch('app.pipeline.settings.media_dir', str(tmp_path)):
+        _, generated, error = generate_image('Scene', 'project', 'feature', 'gpt-image-1', 'medium', '/media/reference.png',
+                                             reference_path=reference, size='1024x1024')
+    assert generated is True, error
+    assert 'mask' not in calls[0] and 'STRICT REFERENCE-IMAGE EDIT' in calls[0]['prompt']
+
+
+def test_locked_composition_falls_back_to_reference_edit_for_lifestyle_photos(tmp_path):
+    """Не пакшот (строкате тло) - маски немає, працює звичайне редагування."""
+    calls = []
+
+    class FakeImages:
+        def edit(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(data=[SimpleNamespace(b64_json=base64.b64encode(b'webp').decode(), url=None)])
+
+    reference = tmp_path / 'reference.png'
+    Image.effect_noise((640, 480), 64).convert('RGB').save(reference)
+    notes = {}
+    with patch('app.pipeline.image_client', lambda: SimpleNamespace(images=FakeImages())), patch('app.pipeline.settings.media_dir', str(tmp_path)):
+        _, generated, error = generate_image('Scene', 'project', 'hero-mobile', 'gpt-image-1', 'medium', '/media/reference.png',
+                                             reference_path=reference, size='1024x1536', composition='mobile', notes=notes)
+    assert generated is True, error
+    assert notes['composition'] == 'reference'
+    assert 'mask' not in calls[0] and 'STRICT REFERENCE-IMAGE EDIT' in calls[0]['prompt']
+
+
+def test_gemini_locked_composition_pastes_the_product_back(tmp_path):
+    """Gemini без маски: отримує скомпоноване полотно, товар усе одно вклеюється назад."""
+    calls = []
+
+    def fake_edit(model, prompt, reference, mime, size):
+        calls.append({'prompt': prompt, 'mime': mime, 'size': size, 'canvas': Image.open(BytesIO(reference)).size})
+        out = BytesIO(); Image.new('RGB', (1024, 1536), (90, 20, 20)).save(out, format='PNG')
+        return out.getvalue()
+
+    reference = tmp_path / 'reference.png'
+    reference.write_bytes(_packshot_bytes())
+    notes = {}
+    with patch('app.pipeline._gemini_edit', fake_edit), patch('app.pipeline.image_client', lambda: None), \
+         patch('app.pipeline.runtime_config', lambda force=False: {'gemini_api_key': 'k'}), patch('app.pipeline.settings.media_dir', str(tmp_path)):
+        _, generated, error = generate_image('Scene', 'project', 'hero-mobile', 'gemini-2.5-flash-image', 'medium', '/media/reference.png',
+                                             reference_path=reference, size='1024x1536', composition='mobile', notes=notes)
+    assert generated is True, error
+    assert notes['composition'] == 'locked'
+    assert calls[0]['mime'] == 'image/png' and calls[0]['canvas'] == (1024, 1536)
+    assert 'LOCKED PRODUCT COMPOSITE' in calls[0]['prompt']
+    x, y, w, h = notes['product_box']
+    assert y + h < 1536 * 0.55, 'мобайл: товар у верхній половині'
+    written = Image.open(tmp_path / 'project' / 'hero-mobile.webp').convert('RGB')
+    body = written.getpixel((x + w // 2, y + h // 2))
+    assert max(abs(body[i] - (48, 50, 54)[i]) for i in range(3)) <= 6, body
+    assert written.getpixel((20, 1500))[0] > 70
+
+
+def test_operator_can_pick_the_ai_reference_frame():
+    """Референс для AI обирає оператор: кадр галереї, власне фото, або автопідбір.
+
+    Автопідбір бере перший придатний кадр; оператор бачить, що третій без
+    водяного знака. Роль «AI» на кадрі/фото в діалозі запуску, пікер у
+    повторній генерації (новий референс вимикає копіювання старих зображень),
+    у воркера ручний кадр іде першим і має пріоритет, власне фото береться з
+    медіатеки без CDN. Колонка нова - міграція 0020.
+    """
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
+    tasks = (root / 'apps/api/app/tasks.py').read_text(encoding='utf-8')
+    models = (root / 'apps/api/app/models.py').read_text(encoding='utf-8')
+    web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
+    migration = (root / 'apps/api/alembic/versions/0020_project_reference_url.py').read_text(encoding='utf-8')
+
+    assert 'down_revision = "0019_project_image_map"' in migration and 'ADD COLUMN IF NOT EXISTS reference_url' in migration
+    assert "reference_url: Mapped[str] = mapped_column(Text, default='')" in models
+    assert "reference_url: str = Field(default='', max_length=4096)" in main and "upload_reference: str = ''" in main
+    assert "'reference_url': reference_url," in main
+    assert 'if raw == payload.upload_reference:' in main and 'p.reference_url = url' in main
+    assert 'reference_url: str | None = Field(default=None, max_length=4096)' in main
+    assert 'reuse = bool(payload and payload.reuse_images) and not reference_changed' in main
+    # воркер: ручний кадр першим у пулі і бажаним; власне фото - з медіатеки
+    assert 'pool = ([manual_reference] + [u for u in images if u != manual_reference]) if manual_reference else images' in tasks
+    assert 'inspect_product_references(pool, manual_reference or raw_primary)' in tasks
+    assert 'materialize_local_reference(manual_local, project.id)' in tasks
+    assert 'працює автопідбір кадру' in tasks
+    # UI: роль на кадрах і фото, пікер у повторі, новий референс знімає reuse
+    assert web.count("'reference')\">AI</button>") == 2
+    assert "reference_url:(state.probe?.frames||[]).find(x=>x.role==='reference'" in web
+    assert "upload_reference:(state.uploads||[]).find(u=>u.role==='reference'" in web
+    assert 'function referencePickerField' in web and '${referencePickerField(p)}${reuseImagesField()}' in web
+    assert 'reuse.checked=false' in web
+    assert "if(refField&&refField.dataset.touched==='1')payload.reference_url=refField.value" in web
+
+    # local_media_path не виходить за межі медіатеки
+    from app.pipeline import local_media_path
+    assert local_media_path('/media/../../etc/passwd') is None
+    assert local_media_path('https://cdn.example/x.png') is None

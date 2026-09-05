@@ -34,6 +34,8 @@ from app.pipeline import (
     apply_palette,
     PALETTE_TOKENS,
     palette_from_photo,
+    local_media_path,
+    materialize_local_reference,
     fetch_bytes_capped,
     safe_client,
     translate_html,
@@ -405,12 +407,30 @@ def process_project(self, project_id, reuse_images=False):
                 db.commit()
             else:
                 raw_primary = images[0] if images else ''
-                ranked_references = inspect_product_references(images, raw_primary)
-                selected_reference = ranked_references[0] if ranked_references else None
-                original_reference_url = selected_reference['url'] if selected_reference else ''
-                source_url, reference_path, reference_metadata = materialize_product_reference(
-                    original_reference_url, project.id
-                ) if original_reference_url else ('', None, {})
+                # Референс, обраний оператором: власне фото з медіатеки або кадр
+                # галереї. Автопідбір бере перший придатний кадр, а оператор бачить,
+                # який з них без водяного знака й під кращим кутом.
+                manual_reference = (getattr(project, 'reference_url', '') or '').strip()
+                manual_local = local_media_path(manual_reference) if manual_reference else None
+                if manual_reference and manual_local is not None:
+                    ranked_references = []
+                    selected_reference = {'url': manual_reference, 'manual': True}
+                    original_reference_url = manual_reference
+                    source_url, reference_path, reference_metadata = materialize_local_reference(manual_local, project.id)
+                    log(db, project, 'images', 'Референс для AI-зображень: власне фото, обране вручну', 19)
+                else:
+                    pool = ([manual_reference] + [u for u in images if u != manual_reference]) if manual_reference else images
+                    ranked_references = inspect_product_references(pool, manual_reference or raw_primary)
+                    selected_reference = ranked_references[0] if ranked_references else None
+                    original_reference_url = selected_reference['url'] if selected_reference else ''
+                    if manual_reference:
+                        if selected_reference and selected_reference.get('matches_primary'):
+                            log(db, project, 'images', 'Референс для AI-зображень: кадр галереї, обраний вручну', 19)
+                        else:
+                            log(db, project, 'images', 'Обраний вручну референс недоступний або непридатний - працює автопідбір кадру', 19, 'warning')
+                    source_url, reference_path, reference_metadata = materialize_product_reference(
+                        original_reference_url, project.id
+                    ) if original_reference_url else ('', None, {})
                 fallback = source_url or original_reference_url
                 if original_reference_url and not source_url:
                     # Копію зробити не вдалось - ассет лишиться з чужим CDN-URL,
@@ -495,21 +515,26 @@ def process_project(self, project_id, reuse_images=False):
                             f"Render specifically at {size}; do not crop important product parts.\n"
                             f"Negative requirements: {negative}\nProduct: {product_name}. Verified product facts: {facts}"
                         )
+                        hero_notes: dict = {}
                         hero, hero_generated, hero_error = generate_image(
                             hero_prompt, project.id, f'hero-{variant}', project.image_model,
                             project.image_quality, fallback, reference_url=original_reference_url,
-                            reference_path=reference_path, size=size,
+                            reference_path=reference_path, size=size, composition=variant, notes=hero_notes,
                         )
                         hero_by_variant[variant] = hero
                         if reference_path:
                             project.image_request_count += 1
                         if hero_generated:
                             project.image_count += 1
+                            if hero_notes.get('composition') == 'locked':
+                                log(db, project, 'images', f'Hero {variant}: товар вирізано з пакшота й зафіксовано на полотні - модель домальовувала лише середовище', 26 + offset * 5)
+                            else:
+                                log(db, project, 'images', f'Hero {variant}: фото не ключується як пакшот - звичайне редагування за референсом', 26 + offset * 5)
                             db.add(Asset(
                                 project_id=project.id, kind='image', label=f'hero-{variant}-generated',
                                 url=hero, prompt=hero_prompt, model=project.image_model, width=width,
                                 height=height, cost=image_rate(project.image_model,project.image_quality),
-                                metadata_json=json.dumps({'source':'generated','variant':variant,'reference_url':original_reference_url,'reference_asset_url':fallback},ensure_ascii=False),
+                                metadata_json=json.dumps({'source':'generated','variant':variant,'reference_url':original_reference_url,'reference_asset_url':fallback,**hero_notes},ensure_ascii=False),
                             ))
                         elif hero_error:
                             log(db, project, 'images', f'Hero {variant} не згенеровано; використовується реальне фото товару. Причина: {hero_error}', 30 + offset * 5, 'warning')

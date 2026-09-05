@@ -366,6 +366,9 @@ optgroup[disabled]{color:var(--gray-3)}
 .role-row{display:flex;gap:4px}
 .role-chip{flex:1;border:1px solid var(--border);background:#fff;border-radius:8px;padding:3px 0;font-size:10px;font-weight:900;color:var(--muted)}
 .role-chip.active{background:var(--cyan);border-color:var(--cyan);color:#101010}
+.role-chip.ref.active{background:#101010;border-color:#101010;color:var(--cyan)}
+.ref-grid .frame.picked{border-color:var(--cyan);box-shadow:0 0 0 2px var(--cyan) inset}
+.ref-grid .frame.picked::after{content:'AI';position:absolute;right:4px;bottom:4px;background:#101010;color:var(--cyan);font-size:9px;font-weight:900;border-radius:5px;padding:1px 4px}
 .uchart{display:flex;gap:10px}
 .uaxis{position:relative;width:46px;height:170px;flex:0 0 46px}
 .uaxis small{position:absolute;right:0;color:var(--muted);font-size:10px;line-height:1}
