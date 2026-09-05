@@ -100,6 +100,11 @@ services:
   web:
     build: ./apps/web
     restart: unless-stopped
+    # Лендінги роздаються з диска, а не з образу: правка сторінки — це git pull
+    # на насі, без перезбирання web. Тому ж вони лежать у корені репозиторію, а
+    # не в apps/web (це контент, а не код застосунку).
+    volumes:
+      - ./landings:/usr/share/nginx/html/landings:ro
     ports:
       # The LAN entry point. With the tls profile active, the public entry point is
       # Caddy on 80/443; this port stays for the local network and for a fallback.
