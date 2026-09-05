@@ -870,7 +870,7 @@ SHOWCASE_PROMO_STYLE_PROMPT = SHOWCASE_STYLE_PROMPT
 SHOWCASE_PROMO_STYLE_PROMPT = _promo_swap_line(
     SHOWCASE_PROMO_STYLE_PROMPT,
     '- NAME APPEARS ONCE PER SECTION:',
-    '- NAME APPEARS ONCE PER SECTION: the badge carries only the shop or brand and the product category (for example "BRELOKI.EU · OPASKI SILIKONOWE"), the h2 names the product exactly once. Badge text duplicating the h2 is a defect. The same rule applies to the final recap badge.',
+    '- NAME APPEARS ONCE PER SECTION: the badge carries only the shop or brand and the product category (for example "PROMO-SHOP · SILICONE WRISTBANDS"), the h2 names the product exactly once. Badge text duplicating the h2 is a defect. The same rule applies to the final recap badge.',
 )
 SHOWCASE_PROMO_STYLE_PROMPT = _promo_swap_line(
     SHOWCASE_PROMO_STYLE_PROMPT,
@@ -1011,21 +1011,6 @@ SHOWCASE_PROMO_FEATURE_PROMPT = SHOWCASE_PROMO_FEATURE_PROMPT + _PROMO_MACRO_BRI
 
 if 'SHOOTING BRIEF' not in SHOWCASE_PROMO_HERO_PROMPT or 'MACRO BRIEF' not in SHOWCASE_PROMO_FEATURE_PROMPT:
     raise RuntimeError('PROMO photographic briefs were not appended')
-
-# Бренд-схема breloki.eu. У промпті лишаються канонічні токени ARTLINE, а кольори
-# накладає apply_palette() ПІСЛЯ генерації - тому зміна схеми не може зламати
-# верстку, і правка hex не потребує релізу.
-#
-# Увага: сайт віддає CSS лише через Elementor/WP Rocket, у розмітці hex немає -
-# значення нижче зняті на око з вигляду сайту і є ОРІЄНТИРОМ. Точні кольори
-# правляться у розділі «Палітри»: сид не переписує наявний пресет.
-BRELOKI_PALETTE = {
-    'accent': '#F26A21',       # теплий акцент кнопок
-    'dark': '#1B1F24',         # графіт замість чорного ARTLINE
-    'dark_soft': '#2A3038',    # мʼякий графіт панелей
-    'light_soft': '#F6F4F0',   # тепле світле тло секцій
-}
-
 
 # --- ARTLINE Bento -----------------------------------------------------------
 # Бенто-мозаїка (референс власника: сторінка ARZOPA Z1RC): один суцільний

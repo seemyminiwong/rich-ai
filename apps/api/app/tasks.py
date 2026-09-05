@@ -355,7 +355,7 @@ def process_project(self, project_id, reuse_images=False):
                 # 2026-08-19: без palette_json тут style_palette(style) завжди
                 # повертав {} - схема стилю (вкладка «Кольори») ніколи не
                 # доходила до сторінки, працював лише пресет, обраний при
-                # запуску проєкту. Живий випадок: Promo (Breloki) виходив ціановим.
+                # запуску проєкту. Живий випадок: стиль зі своєю схемою виходив ціановим.
                 palette_json=getattr(style_row, 'palette_json', '') or '{}',
                 # Do not inject unrelated global knowledge documents. Product facts
                 # come only from this page until documents have an explicit product link.
@@ -483,7 +483,7 @@ def process_project(self, project_id, reuse_images=False):
                 negative = getattr(style, 'negative_prompt', '').strip()
                 # 2026-08-19: акцент бренду потрапляє і в сцену, а не лише в HTML.
                 # Доти Hero жив у «холодних нейтралях ARTLINE» незалежно від
-                # обраної палітри - для сторінки breloki.eu це чужий колір.
+                # обраної палітри - для сторінки з бренд-схемою це чужий колір.
                 # Промпти дозволяють акцент лише як дрібний елемент боке/краю
                 # поверхні, тому підказка безпечна для будь-якого стилю.
                 _accent = (_project_palette(project) or style_palette(style) or {}).get('accent')
