@@ -137,6 +137,21 @@ services:
     depends_on:
       - web
 
+  # Публічна вітрина лендінгів окремо від студії.
+  #
+  # Порт назовні НЕ публікується: контейнер видно лише всередині compose-мережі,
+  # тобто з cloudflared. У LAN лендінг і далі відкривається через web на :3000 —
+  # обидва читають ту саму папку ./landings.
+  #
+  # Public hostname тунелю: Service HTTP, URL рівно `landings:80`. Якщо вказати
+  # `web:80`, назовні поїде вся студія, а не тільки папка з лендінгами.
+  landings:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+      - ./landings:/usr/share/nginx/html:ro
+      - ./config/landings.nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
