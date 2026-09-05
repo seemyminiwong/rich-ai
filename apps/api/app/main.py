@@ -489,6 +489,11 @@ class ProjectIn(BaseModel):
     # URL із uploads, призначений головним Hero / Feature (порожньо = генерувати AI).
     upload_hero: str = ''
     upload_feature: str = ''
+    # Референс для AI-зображень: кадр галереї (CDN-URL) або одне з uploads.
+    # Порожньо = автопідбір. Не плутати з custom_hero_url: референс НЕ стає
+    # Hero сам по собі - з нього генерується сцена.
+    reference_url: str = Field(default='', max_length=4096)
+    upload_reference: str = ''
     # 360-серія: усі uploads стають кадрами обертання (за порядком), а не галереєю.
     uploads_360: bool = False
     # Блок FAQ: стилі, що його описують, за замовчуванням генерують; можна вимкнути.
@@ -560,6 +565,10 @@ class RerunIn(BaseModel):
     faq: bool | None = None
     # None = лишити як було; '' = прибрати відео.
     video_url: str | None = Field(default=None, max_length=500)
+    # None = лишити як було; '' = повернути автопідбір; URL = цей кадр.
+    # Інший референс робить наявні AI-зображення недійсними - reuse_images
+    # ігнорується, зображення створюються заново.
+    reference_url: str | None = Field(default=None, max_length=4096)
 class CriticIn(BaseModel):
     auto_fix: bool = False
     # Платний AI-рецензент: вартість токенів додається до вартості проєкту.
@@ -666,7 +675,7 @@ def project_dict(p, full=False, style_name=''):
     r = {'id': p.id, 'name': decode_entities(p.name), 'source_url': p.source_url, 'style_id': p.style_id, 'style_name': style_name, 'owner_id': p.owner_id, 'status': p.status.value, 'stage': p.stage, 'progress': p.progress,
          'lifetime_cost': float(getattr(p, 'lifetime_cost', 0) or 0), 'run_index': getattr(p, 'run_index', 1) or 1, 'runs': runs,
          'languages': [x for x in p.languages.split(',') if x], 'variants': [x for x in p.variants.split(',') if x], 'text_model': p.text_model, 'image_model': p.image_model, 'image_quality': p.image_quality, 'faq': bool(getattr(p, 'faq_enabled', True)), 'image_map': _safe_map(getattr(p, 'image_map_json', '')), 'video_url': getattr(p, 'video_url', '') or '',
-         'custom_hero_url': p.custom_hero_url, 'custom_feature_url': p.custom_feature_url, 'product_category': decode_entities(p.product_category), 'sku': str(product.get('sku') or ''), 'cost_breakdown': breakdown, 'error': p.error, 'duration_seconds': p.duration_seconds, 'input_tokens': p.input_tokens, 'output_tokens': p.output_tokens,
+         'custom_hero_url': p.custom_hero_url, 'custom_feature_url': p.custom_feature_url, 'reference_url': getattr(p, 'reference_url', '') or '', 'product_category': decode_entities(p.product_category), 'sku': str(product.get('sku') or ''), 'cost_breakdown': breakdown, 'error': p.error, 'duration_seconds': p.duration_seconds, 'input_tokens': p.input_tokens, 'output_tokens': p.output_tokens,
          'image_count': p.image_count, 'text_request_count': p.text_request_count, 'image_request_count': p.image_request_count, 'text_cost': p.text_cost, 'image_cost': p.image_cost, 'estimated_cost': p.estimated_cost,
          'created_at': p.created_at, 'started_at': p.started_at, 'finished_at': p.finished_at,
          'photo_palette': _palette_raw(p).get('source') == 'photo',
@@ -1403,6 +1412,9 @@ def _project_values(payload: ProjectIn, db: Session) -> tuple[dict, Style]:
     video_url = payload.video_url.strip()
     if video_url and not youtube_video_id(video_url):
         raise HTTPException(400, 'Посилання на відео має вести на ролик YouTube (watch, youtu.be, shorts або embed)')
+    reference_url = payload.reference_url.strip()
+    if reference_url and not is_public_http_url(reference_url):
+        raise HTTPException(400, 'Референс для AI-зображень має бути публічним http(s)-посиланням на кадр')
     return {
         'name': payload.name.strip() or 'Визначення товару…',
         'source_url': source_url,
@@ -1414,6 +1426,7 @@ def _project_values(payload: ProjectIn, db: Session) -> tuple[dict, Style]:
         'image_quality': payload.image_quality if payload.image_quality in {'low', 'medium', 'high'} else 'medium',
         'custom_hero_url': payload.custom_hero_url.strip(),
         'custom_feature_url': payload.custom_feature_url.strip(),
+        'reference_url': reference_url,
         'gallery_json': json.dumps([u.strip() for u in payload.gallery if is_public_http_url(u.strip())][:10]),
         'faq_enabled': bool(payload.faq),
         'video_url': video_url,
@@ -1921,6 +1934,10 @@ def create_project(payload: ProjectIn, db: Session = Depends(get_db), user=Depen
             continue
         role_hero = raw == payload.upload_hero
         role_feature = raw == payload.upload_feature
+        if raw == payload.upload_reference:
+            # Власне фото як референс для AI: лишається і в галереї, і стає
+            # кадром, з якого генеруються Hero/Feature.
+            p.reference_url = url
         if role_hero:
             # Обране фото СТАЄ Hero: та сама гілка, що й custom_hero_url -
             # генерація зображення для цього слота не запускається.
@@ -2136,10 +2153,18 @@ def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends
         if candidate and not youtube_video_id(candidate):
             raise HTTPException(400, 'Посилання на відео має вести на ролик YouTube')
         p.video_url = candidate
+    reference_changed = False
+    if payload and payload.reference_url is not None:
+        candidate = payload.reference_url.strip()
+        if candidate and not (is_public_http_url(candidate) or strip_media_query(candidate).startswith('/media/')):
+            raise HTTPException(400, 'Референс для AI-зображень має бути кадром галереї або власним фото')
+        reference_changed = strip_media_query(candidate) != strip_media_query(p.reference_url or '')
+        p.reference_url = candidate
     p.run_index = (getattr(p, 'run_index', 1) or 1) + 1
     p.status = Status.queued; p.stage = 'dispatch_pending'; p.progress = 0; p.error = ''; p.input_tokens = 0; p.output_tokens = 0; p.image_count = 0; p.text_request_count = 0; p.image_request_count = 0; p.text_cost = 0; p.image_cost = 0; p.estimated_cost = 0; p.reserved_cost = 0
     _reserve_project_run(db, user, p, style)
-    reuse = bool(payload and payload.reuse_images)
+    # Новий референс = нові Hero/Feature: копіювати старі зображення безглуздо.
+    reuse = bool(payload and payload.reuse_images) and not reference_changed
     audit(db, user, 'project.rerun', 'project', p.id, {'style_id': p.style_id, 'languages': p.languages, 'variants': p.variants, 'reuse_images': reuse}); db.commit()
     _dispatch_project_once(db, p, reuse_images=reuse)
     return {'queued': True, 'style_id': p.style_id, 'languages': p.languages.split(','), 'variants': p.variants.split(','), 'reuse_images': reuse}

@@ -117,6 +117,10 @@ class Project(Base):
     source_images: Mapped[str] = mapped_column(Text, default='[]')
     # Operator-curated gallery frames from the probe dialog; empty = auto-pick.
     gallery_json: Mapped[str] = mapped_column(Text, default='[]')
+    # Кадр, з якого генеруються AI Hero/Feature (CDN-URL або власний /media/...);
+    # порожньо = автопідбір першого придатного кадру галереї. Оператор бачить
+    # кадри до запуску і знає, який з них без водяного знака й під кращим кутом.
+    reference_url: Mapped[str] = mapped_column(Text, default='')
     # Кадри 360°-серії (Podium 3D 360): підписані /media-URL по колу, за порядком.
     rotation_json: Mapped[str] = mapped_column(Text, default='[]')
     # Знімок кольорової схеми, обраної при запуску ({} = схема стилю).
