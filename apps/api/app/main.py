@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, HttpUrl, ValidationError
 from sqlalchemy import delete as sa_delete, func, select, text
 from sqlalchemy.orm import Session
-from app.config import settings
+from app.config import DEFAULT_IMAGE_PRICING, DEFAULT_TEXT_PRICING, settings
 from app.db import Base, SessionLocal, engine, ensure_schema, get_db, run_migrations
 from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Landing, Palette, Project, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
@@ -1439,22 +1439,58 @@ def _bulk_validation_message(exc: ValidationError) -> str:
     return '; '.join(messages) or 'Некоректні дані рядка'
 
 
-def _bulk_estimated_cost(values: dict, style: Style) -> float:
-    """Conservative pre-flight cost, scaled by requested output pages.
+# Стартова калібровка, доки історії ще немає: 30k/14k токенів на звичайний
+# проєкт з чотирма виходами (2 мови x 2 формати), тобто на один вихід.
+BASELINE_TOKENS_PER_OUTPUT = {'input': 7_500, 'output': 3_500}
+USAGE_PROFILE_MIN_PROJECTS = 5
+USAGE_PROFILE_WINDOW = 40
 
-    The 30k/14k baseline is calibrated for the normal two-language,
-    desktop+mobile project (four outputs). Larger language matrices add
-    translations for every layout, so reserve proportionally above that base.
+
+def usage_profile(db) -> dict:
+    """Скільки токенів РЕАЛЬНО іде на один вихід (мова x формат) - медіана
+    останніх завершених проєктів.
+
+    Навіщо: кошторис у діалозі рахувався з зашитих 30k/14k, а живі проєкти на
+    gpt-5 коштували вдвічі-втричі більше (текст = витяг + генерація + переклади
+    + мобільна перекладка + рецензент). Естімейт, який бреше в менший бік,
+    гірший за його відсутність. Медіана з історії самокалібрується: змінився
+    стиль чи промпт - за кілька проєктів підтягнеться і кошторис.
+    Порожня історія (нова інсталяція) - стартові значення.
+    """
+    rows = db.scalars(
+        select(Project)
+        .where(Project.status.in_([Status.done, Status.review, Status.approved, Status.changes_requested]))
+        .where(Project.input_tokens > 0)
+        .order_by(Project.created_at.desc())
+        .limit(USAGE_PROFILE_WINDOW)
+    ).all()
+    per_input, per_output = [], []
+    for row in rows:
+        outputs = max(1, len([x for x in (row.languages or '').split(',') if x]) * len([x for x in (row.variants or '').split(',') if x]))
+        per_input.append(row.input_tokens / outputs)
+        per_output.append(row.output_tokens / outputs)
+    if len(rows) < USAGE_PROFILE_MIN_PROJECTS:
+        return {'projects': len(rows), 'calibrated': False, **BASELINE_TOKENS_PER_OUTPUT}
+    median = lambda xs: sorted(xs)[len(xs) // 2]
+    return {'projects': len(rows), 'calibrated': True,
+            'input': int(median(per_input)), 'output': int(median(per_output))}
+
+
+def _bulk_estimated_cost(values: dict, style: Style, profile: dict | None = None) -> float:
+    """Pre-flight cost from the real token profile, scaled by requested outputs.
+
+    Text tokens grow with the number of outputs (each language x layout is one
+    more model pass), so the per-output medians are multiplied by the matrix.
     """
     input_rate, output_rate = text_rate(values['text_model'])
     languages = [value for value in values['languages'].split(',') if value]
     variants = [value for value in values['variants'].split(',') if value]
     output_count = max(1, len(languages) * len(variants))
-    output_factor = max(1.0, output_count / 4.0)
+    profile = profile or BASELINE_TOKENS_PER_OUTPUT
     text_cost = (
-        30_000 / 1_000_000 * input_rate
-        + 14_000 / 1_000_000 * output_rate
-    ) * output_factor
+        profile['input'] * output_count / 1_000_000 * input_rate
+        + profile['output'] * output_count / 1_000_000 * output_rate
+    )
     hero_enabled = bool(style_image_prompt(style.prompt or '', 'HERO_IMAGE') or (style.hero_prompt or '').strip())
     feature_enabled = bool(style_image_prompt(style.prompt or '', 'FEATURE_IMAGE') or (style.feature_prompt or '').strip())
     image_count = len(variants) if hero_enabled and not values['custom_hero_url'] else 0
@@ -1474,7 +1510,7 @@ def _reserve_project_run(db: Session, user, project: Project, style: Style) -> f
         'custom_hero_url': project.custom_hero_url,
         'custom_feature_url': project.custom_feature_url,
     }
-    estimate = _bulk_estimated_cost(values, style)
+    estimate = _bulk_estimated_cost(values, style, usage_profile(db))
     _check_bulk_estimated_budget(db, user, estimate)
     queued_at = datetime.utcnow()
     project.reserved_cost = estimate
@@ -1683,6 +1719,7 @@ def bulk_import_projects(payload: BulkProjectImportIn, db: Session = Depends(get
     errors = []
     skipped = []
     prepared = []
+    profile = usage_profile(db)
     seen_sources: set[str] = set()
     for row in rows:
         row_number = int(row.get('_row') or 0)
@@ -1742,7 +1779,7 @@ def bulk_import_projects(payload: BulkProjectImportIn, db: Session = Depends(get
                             'reason': 'Дублікат URL у цьому CSV'})
             continue
         seen_sources.add(normalized_source)
-        estimated_cost = _bulk_estimated_cost(values, resolved_style)
+        estimated_cost = _bulk_estimated_cost(values, resolved_style, profile)
         prepared.append({'row': row_number, 'values': values, 'style': resolved_style,
                          'estimated_cost': estimated_cost})
 
@@ -3093,7 +3130,9 @@ def landing_dict(x, full=False):
          'text_model': x.text_model, 'owner_id': x.owner_id,
          'created_at': x.created_at, 'finished_at': x.finished_at,
          'product_count': len(json.loads(x.products_json or '[]')),
-         'category_count': len(json.loads(getattr(x, 'categories_json', None) or '[]'))}
+         'category_count': len(json.loads(getattr(x, 'categories_json', None) or '[]')),
+         'public': bool(getattr(x, 'public', False)),
+         'share_token': getattr(x, 'share_token', '') or ''}
     if full:
         d['html'] = x.html
         d['products'] = json.loads(x.products_json or '[]')
@@ -3212,6 +3251,62 @@ def landing_download(landing_id: str, db: Session = Depends(get_db), user=Depend
                     headers={'Content-Disposition': f'attachment; filename="landing-{name}.html"'})
 
 
+class LandingShareIn(BaseModel):
+    public: bool
+    rotate: bool = False
+
+
+@app.post('/api/landings/{landing_id}/share')
+def landing_share(landing_id: str, payload: LandingShareIn, db: Session = Depends(get_db),
+                  user=Depends(require_perm('project.edit_html'))):
+    """Увімкнути/вимкнути публічне посилання і, за потреби, перевипустити токен.
+
+    Перевипуск токена - це відкликання: стара адреса миттєво перестає
+    відкриватись у всіх, кому її вже надіслали.
+    """
+    landing = _landing_or_404(db, landing_id)
+    if payload.public and not (landing.html or '').strip():
+        raise HTTPException(409, 'Сторінка ще не згенерована')
+    if payload.rotate or (payload.public and not landing.share_token):
+        # token_urlsafe(24) - 192 біти: перебирати адресу немає сенсу.
+        landing.share_token = secrets.token_urlsafe(24)
+    landing.public = bool(payload.public)
+    audit(db, user, 'landing.share', 'landing', landing.id,
+          {'public': landing.public, 'rotated': bool(payload.rotate)})
+    db.commit(); db.refresh(landing)
+    return landing_dict(landing, full=True)
+
+
+@app.get('/p/{share_token}')
+def landing_public(share_token: str, db: Session = Depends(get_db)):
+    """Сторінка для тих, у кого немає доступу до студії. Без авторизації.
+
+    Поза /api/ навмисно: усе під /api/ проходить через Depends(current), а сюди
+    приходить людина за посиланням з месенджера. Єдиний ключ - токен.
+
+    404 на будь-яку невдачу (немає такого токена, публікацію скасовано, сторінка
+    ще не згенерована): різні коди відповіді дозволяли б перевіряти, чи існує
+    лендінг із таким токеном узагалі.
+    """
+    if not share_token or len(share_token) < 16:
+        raise HTTPException(404, 'Сторінку не знайдено')
+    landing = db.scalar(select(Landing).where(Landing.share_token == share_token))
+    if not landing or not landing.public or not (landing.html or '').strip():
+        raise HTTPException(404, 'Сторінку не знайдено')
+    from app.landing import inline_media_images
+    # Ті самі data:URI, що й у «Скачати HTML»: сторінка не тягне /media, тож
+    # публічний доступ не відкриває медіа-сховище студії.
+    page = inline_media_images(landing.html)
+    return Response(page, media_type='text/html; charset=utf-8', headers={
+        # Розісланий чернетковий лендінг не має спливати в пошуку.
+        'X-Robots-Tag': 'noindex, nofollow',
+        'Cache-Control': 'no-store, must-revalidate',
+        'X-Content-Type-Options': 'nosniff',
+        # X-Frame-Options свідомо немає: посилання відкривають у прев'ю
+        # месенджерів і вставляють в iframe на боці замовника.
+    })
+
+
 @app.put('/api/artifacts/{artifact_id}')
 def save_artifact(artifact_id: str, payload: HtmlIn, db: Session = Depends(get_db), user=Depends(require_perm('project.edit_html'))):
     source = db.get(Artifact, artifact_id)
@@ -3236,7 +3331,7 @@ def save_artifact(artifact_id: str, payload: HtmlIn, db: Session = Depends(get_d
 
 
 @app.get('/api/models')
-def available_models(user=Depends(current)):
+def available_models(db: Session = Depends(get_db), user=Depends(current)):
     """The models this studio can actually run, not OpenAI's catalogue.
 
     Listing every discovered model was noise: codex, search-preview, instruct,
@@ -3283,7 +3378,11 @@ def available_models(user=Depends(current)):
     reasoning_models = [x for x in text_models if _is_reasoning_model(x)]
     # Pricing travels with the model list so the New Project dialog can price a run
     # before it starts, using the same figures the worker bills against.
-    return {'text_models': text_models, 'image_models': image_models, 'reasoning_models': reasoning_models, 'source': source, 'gemini_available': bool(cfg['gemini_api_key']), 'gemini_models': list(settings.gemini_models), 'unavailable': unavailable, 'unpriced': sorted({x for x in text_models if x not in settings.text_pricing} | {x for x in image_models if x not in settings.image_pricing}), 'default_text_model': settings.openai_text_model, 'default_image_model': settings.openai_image_model, 'text_pricing': settings.text_pricing, 'image_pricing': settings.image_pricing}
+    return {'text_models': text_models, 'image_models': image_models, 'reasoning_models': reasoning_models, 'source': source, 'gemini_available': bool(cfg['gemini_api_key']), 'gemini_models': list(settings.gemini_models), 'unavailable': unavailable, 'unpriced': sorted({x for x in text_models if x not in settings.text_pricing} | {x for x in image_models if x not in settings.image_pricing}), 'default_text_model': settings.openai_text_model, 'default_image_model': settings.openai_image_model,
+            # Ціни: перекриття з .env поверх вбудованих - модель без рядка в .env (gpt-image-2)
+            # інакше падала в дефолт 0.07 у діалозі, а воркер рахував їй 0.20.
+            'text_pricing': {**DEFAULT_TEXT_PRICING, **settings.text_pricing}, 'image_pricing': {**DEFAULT_IMAGE_PRICING, **settings.image_pricing},
+            'usage_profile': usage_profile(db)}
 
 
 @app.get('/api/assets')
