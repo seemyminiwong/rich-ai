@@ -54,7 +54,6 @@ from app.prompts import (
     SHOWCASE_DARK_STYLE_PROMPT,
     PODIUM360DARK_STYLE_NAME,
     PODIUM360DARK_STYLE_PROMPT,
-    BRELOKI_PALETTE,
     LICENSE_COMMENT,
     SHOWCASE_FEATURE_PROMPT,
     SHOWCASE_HERO_PROMPT,
@@ -173,9 +172,6 @@ MANAGED_STYLES = [
         # контракт змісту: промо-товар із логотипом продають техніка нанесення,
         # кольори, розміри й строк, а не модельний код і ват.
         'name': SHOWCASE_PROMO_STYLE_NAME,
-        # 2026-08-19: бренд-схема breloki.eu як СТАРТОВА схема стилю. Далі вона
-        # належить оператору (вкладка «Кольори») і сидом не переписується.
-        'palette': BRELOKI_PALETTE,
         'default': False,
         'values': {
             'description': 'Showcase для промо-продукції з логотипом (браслети, брелоки, ручки, кружки): техніки нанесення, Pantone, розміри, тираж і строк замість модельних кодів. Без цін.',
@@ -290,9 +286,6 @@ BRAND_ACCENTS = [
 BUILTIN_PALETTES = [
     ('ARTLINE Cyan', {}),  # фірмова: порожні токени = канонічні кольори
     *[(brand, palette_from_accent(accent)) for brand, accent in BRAND_ACCENTS],
-    # 2026-08-19: бренд-схема breloki.eu для стилю «ARTLINE Showcase Promo».
-    # Орієнтовні значення (див. BRELOKI_PALETTE); точні hex правляться тут, у UI.
-    ('Breloki', dict(BRELOKI_PALETTE)),
 ]
 
 # Пресети-заповнювачі першої версії: не бренди, а просто «синій/помаранчевий».
@@ -300,6 +293,8 @@ BUILTIN_PALETTES = [
 # змінений оператором пресет є рішенням людини і лишається. Проєкти, стилі
 # та лендінги тримають знімок токенів, тому видалення пресета їх не чіпає.
 LEGACY_PALETTES = {
+    # Стороння бренд-схема, що жила тут як стартова палітра стилю Promo; прибрана.
+    'Breloki': {'accent': '#F26A21', 'dark': '#1B1F24', 'dark_soft': '#2A3038', 'light_soft': '#F6F4F0'},
     'Ocean': {'accent': '#3B82F6', 'dark': '#0B1D33', 'dark_soft': '#132A47', 'light_soft': '#F2F6FB'},
     'Ember': {'accent': '#F97316', 'dark': '#1A120B', 'dark_soft': '#2A1D12', 'light_soft': '#FBF5EF'},
     'Forest': {'accent': '#16A34A', 'dark': '#0D1A12', 'dark_soft': '#16281C', 'light_soft': '#F1F7F2'},
@@ -351,6 +346,15 @@ def seed():
             stale = db.scalar(select(Palette).where(Palette.name == preset_name))
             if stale is not None and json.loads(stale.tokens_json or '{}') == shipped:
                 db.delete(stale)
+        # Стиль, що стартував з прибраної сторонньої схеми, повертається до
+        # фірмової - лише якщо оператор схему не правив (токени = засіяним).
+        for style_row in db.scalars(select(Style)).all():
+            try:
+                current_palette = json.loads(getattr(style_row, 'palette_json', None) or '{}')
+            except Exception:
+                continue
+            if current_palette and current_palette in LEGACY_PALETTES.values():
+                style_row.palette_json = '{}'
         # The spec default wins as long as the operator has not promoted a CUSTOM
         # style: switching between managed defaults follows the code, a manual
         # custom choice is never overridden.

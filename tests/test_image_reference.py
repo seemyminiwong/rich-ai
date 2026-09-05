@@ -2548,7 +2548,11 @@ def test_brand_palettes_follow_artline_assortment_and_stay_readable():
                      'Bambu Lab', 'Creality', 'DEYE', 'Xiaomi'):
         assert expected in brands, expected
     assert len(brands) == len(set(brands)) and len(brands) >= 18
-    assert set(consts['LEGACY_PALETTES']) == {'Ocean', 'Ember', 'Forest', 'Grape', 'Lime'}
+    assert set(consts['LEGACY_PALETTES']) == {'Ocean', 'Ember', 'Forest', 'Grape', 'Lime', 'Breloki'}
+    # стороння бренд-схема прибрана з коду цілком: ані пресета, ані стартової схеми стилю
+    prompts_src = (root / 'apps/api/app/prompts.py').read_text(encoding='utf-8')
+    assert 'BRELOKI' not in main and 'BRELOKI' not in prompts_src and "'palette': " not in main.split('MANAGED_STYLES')[1].split('BUILTIN_PALETTES')[0]
+    assert "style_row.palette_json = '{}'" in main, 'стиль зі знятою схемою повертається до фірмової'
     assert 'palette_from_accent(accent)) for brand, accent in BRAND_ACCENTS' in main
     assert "json.loads(stale.tokens_json or '{}') == shipped" in main, 'змінений оператором пресет не видаляється'
     assert 'db.delete(stale)' in main

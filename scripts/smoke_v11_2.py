@@ -350,6 +350,7 @@ checks = {
         and 'def palette_from_accent' in pipeline and 'def _palette_from_hsv' in pipeline
         and pipeline.count('return _palette_from_hsv(h, sat, val)') == 2
     ),
+    'no third-party brand scheme is shipped': 'BRELOKI' not in main and 'BRELOKI' not in prompts and 'breloki' not in prompts.lower(),
     'untouched placeholder presets are retired, edited ones stay': (
         'LEGACY_PALETTES = {' in main
         and "json.loads(stale.tokens_json or '{}') == shipped" in main and 'db.delete(stale)' in main
