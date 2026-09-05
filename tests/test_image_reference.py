@@ -2540,7 +2540,7 @@ def test_brand_palettes_follow_artline_assortment_and_stay_readable():
     consts = {}
     for source in (main, brands_src):
         for n in ast.parse(source).body:
-            if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name) and n.targets[0].id in ('BRAND_ACCENTS', 'LEGACY_PALETTES'):
+            if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name) and n.targets[0].id in ('BRAND_ACCENTS', 'LEGACY_PALETTES', 'BRAND_PREVIOUS'):
                 consts[n.targets[0].id] = ast.literal_eval(n.value)
     brands = dict(consts['BRAND_ACCENTS'])
     # каталог artline.ua/uk/brands - сотні брендів; пресети покривають усі впізнавані
@@ -2565,6 +2565,10 @@ def test_brand_palettes_follow_artline_assortment_and_stay_readable():
     assert "json.loads(stale.tokens_json or '{}') == shipped" in main, 'змінений оператором пресет не видаляється'
     assert 'db.delete(stale)' in main
     assert "'DEYE', '#015CBB'" in brands_src, 'Deye - синій за офіційним брендбуком, не помаранчевий'
+    # ребрендинг: Creality 2024 - зелений; неправлений старий пресет оновлюється сидом
+    assert brands['Creality'] == '#00C651' and consts['BRAND_PREVIOUS'] == {'Creality': ['#005BAC']}
+    assert 'if json.loads(row.tokens_json or \'{}\') in outdated:' in main
+    assert 'row.tokens_json = json.dumps(palette_from_accent(current_accents[preset_name]))' in main
 
     for brand, logo_hex in brands.items():
         tokens = palette_from_accent(logo_hex)

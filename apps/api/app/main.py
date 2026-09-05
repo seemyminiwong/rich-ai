@@ -33,7 +33,7 @@ from app.landing import LANDING_PROMPT, LANDING_STYLE_NAME
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.version import __version__
 from app.bulk_import import BulkCSVError, MAX_BULK_CSV_BYTES, parse_bulk_csv, split_bulk_values
-from app.brand_palettes import BRAND_ACCENTS
+from app.brand_palettes import BRAND_ACCENTS, BRAND_PREVIOUS
 
 logger = logging.getLogger(__name__)
 from app.prompts import (
@@ -316,6 +316,16 @@ def seed():
             stale = db.scalar(select(Palette).where(Palette.name == preset_name))
             if stale is not None and json.loads(stale.tokens_json or '{}') == shipped:
                 db.delete(stale)
+        # Бренд змінив айдентику (Creality 2024): неправлений пресет зі старого hex
+        # переводиться на новий; правлений оператором лишається.
+        current_accents = dict(BRAND_ACCENTS)
+        for preset_name, old_hexes in BRAND_PREVIOUS.items():
+            row = db.scalar(select(Palette).where(Palette.name == preset_name))
+            if row is None or preset_name not in current_accents:
+                continue
+            outdated = [palette_from_accent(h) for h in old_hexes]
+            if json.loads(row.tokens_json or '{}') in outdated:
+                row.tokens_json = json.dumps(palette_from_accent(current_accents[preset_name]))
         # Стиль, що стартував з прибраної сторонньої схеми, повертається до
         # фірмової - лише якщо оператор схему не правив (токени = засіяним).
         for style_row in db.scalars(select(Style)).all():
