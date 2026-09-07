@@ -396,6 +396,13 @@ checks = {
     # Статичні промо-сторінки лежать на /promo/, а НЕ на /landings/: у SPA вже
     # є власний роут /landings/{id}, і префіксна локація з тим самим іменем
     # віддавала б 404 замість оболонки при перезавантаженні сторінки.
+    # Чернетка лендінгу лежить на домені студії, а бойова версія поїде на
+    # artline.ua — індексація тут зробила б дубль проти власного сайту.
+    'promo drafts are kept out of the index': (
+        'X-Robots-Tag "noindex, nofollow"' in nginx
+        and nginx.index('X-Robots-Tag') > nginx.index('location ^~ /promo/')
+        and nginx.index('X-Robots-Tag') < nginx.index('location = /health')
+    ),
     'static promo pages never shadow the studio landings route': (
         'location ^~ /promo/' in nginx
         and 'location ^~ /landings/' not in nginx
