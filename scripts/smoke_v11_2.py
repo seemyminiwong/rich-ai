@@ -16,6 +16,8 @@ config = (root / 'apps/api/app/config.py').read_text(encoding='utf-8')
 nginx = (root / 'apps/web/nginx.conf').read_text(encoding='utf-8')
 raster = (root / 'apps/api/app/raster.py').read_text(encoding='utf-8')
 brands = (root / 'apps/api/app/brand_palettes.py').read_text(encoding='utf-8')
+shots = (root / 'apps/shots/server.py').read_text(encoding='utf-8')
+compose = (root / 'docker-compose.yml').read_text(encoding='utf-8')
 media = (root / 'apps/api/app/media.py').read_text(encoding='utf-8')
 infographic = (root / 'apps/api/app/infographic.py').read_text(encoding='utf-8')
 tests = (root / 'tests/test_image_reference.py').read_text(encoding='utf-8')
@@ -354,6 +356,18 @@ checks = {
         and pipeline.count('return _palette_from_hsv(h, sat, val)') == 2
     ),
     'no third-party brand scheme is shipped': 'BRELOKI' not in main and 'BRELOKI' not in prompts and 'breloki' not in prompts.lower() and 'reloki' not in brands,
+    'render gate measures the laid-out page, not the markup': (
+        "@app.post('/audit')" in shots and 'def _audit(payload: AuditIn)' in shots
+        and 'def render_gate(' in pipeline and 'def render_audit(' in pipeline
+        and 'render_gate(latest)' in tasks and "critic_type='render'" in tasks
+        and "render:'Верстка у браузері'" in web
+        and 'def test_render_gate_measures_the_laid_out_page_not_the_markup' in tests
+    ),
+    'render gate is soft: a disabled service warns, never fails the run': (
+        'Верстку не перевірено' in tasks and 'Верстку у браузері не перевірено' in web
+        and 'checkVisibility' in shots and "el.closest('details:not([open])')" in shots
+        and 'def test_render_gate_is_wired_as_a_free_critic_and_never_fails_the_run' in tests
+    ),
     'cost estimate calibrates from real projects, every model priced': (
         'def usage_profile(db) -> dict:' in main and "'usage_profile': usage_profile(db)" in main
         and '{**DEFAULT_IMAGE_PRICING, **settings.image_pricing}' in main

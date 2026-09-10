@@ -2302,6 +2302,15 @@ def run_critic(project_id: str, payload: CriticIn, db: Session = Depends(get_db)
         score, summary, issues, suggestions = critic_html(list(latest.values()), kind, json.loads(p.product_json or '{}'))
         row = CriticReport(project_id=p.id, critic_type=kind, score=score, summary=summary, issues_json=json.dumps(issues, ensure_ascii=False), suggestions_json=json.dumps(suggestions, ensure_ascii=False), auto_fixed=False)
         db.add(row); reports.append({'type': kind, 'score': score, 'summary': summary, 'issues': issues, 'suggestions': suggestions})
+    # Аудит верстки безкоштовний (свій Chromium, нуль токенів), тому ходить у
+    # тій самій кнопці. Сервіс вимкнено - решта перевірок усе одно віддаються.
+    from app.pipeline import render_gate
+    score, summary, issues, suggestions, checked = render_gate(list(latest.values()))
+    if checked:
+        row = CriticReport(project_id=p.id, critic_type='render', score=score, summary=summary,
+                           issues_json=json.dumps(issues, ensure_ascii=False),
+                           suggestions_json=json.dumps(suggestions, ensure_ascii=False), auto_fixed=False)
+        db.add(row); reports.append({'type': 'render', 'score': score, 'summary': summary, 'issues': issues, 'suggestions': suggestions})
     db.add(Event(project_id=p.id, stage='critic', message=f'{user.email}: перевірку якості перезапущено')); audit(db, user, 'critic.run', 'project', p.id); db.commit(); return reports
 
 

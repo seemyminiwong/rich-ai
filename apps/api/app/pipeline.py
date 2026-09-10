@@ -4083,6 +4083,90 @@ def llm_critic(artifacts, product: dict, model: str):
     return score, summary, issues, suggestions, input_tokens, output_tokens
 
 
+# Ширина полотна для аудиту: та сама, у якій сторінку бачить покупець.
+RENDER_WIDTHS = {'desktop': 1240, 'mobile': 390}
+# Скільки сторінок міряємо за прогон. Верстка в межах мови не змінюється, тому
+# беремо кожен формат один раз - решта перекладів ділять ту саму сітку.
+RENDER_AUDIT_LIMIT = 4
+
+
+def render_audit(html: str, width: int, label: str = '', timeout: float = 120.0) -> dict | None:
+    """Виміряти верстку в справжньому Chromium (сервіс shots). None = недоступний.
+
+    Свідомо м'яко: аудит - це контроль якості, а не етап генерації. Якщо сервіс
+    вимкнено профілем або він не відповів, проєкт має завершитись як завершувався,
+    а оператор - побачити в журналі, що перевірки не було.
+    """
+    base = (getattr(settings, 'shots_url', '') or '').rstrip('/')
+    if not base:
+        return None
+    try:
+        with httpx.Client(timeout=timeout) as http:
+            reply = http.post(f'{base}/audit', json={'html': html, 'width': width, 'label': label})
+            if reply.status_code >= 400:
+                logger.warning('Render audit %s failed: %s %s', label, reply.status_code, reply.text[:200])
+                return None
+            return reply.json()
+    except Exception as exc:
+        logger.warning('Render audit %s unavailable (%s): %s', label, type(exc).__name__, exc)
+        return None
+
+
+def render_gate(artifacts) -> tuple:
+    """Рецензент, який ДИВИТЬСЯ на сторінку: (score, summary, issues, suggestions, checked).
+
+    Решта рецензентів читають розмітку й текст - і структурно не бачать того, що
+    бачить покупець. Обрізаний заголовок, цифра, що злилася з плиткою, сторінка,
+    яка їде вбік на телефоні, - усе це існує тільки після укладання. Тут кожна
+    сторінка укладається по-справжньому і міряється; знахідка несе фрагмент
+    тексту, щоб її було де шукати.
+
+    checked - скільки сторінок реально виміряно; 0 означає «перевірки не було»
+    (сервіс вимкнено), і це НЕ те саме, що «дефектів немає».
+    """
+    # Спершу по одній сторінці кожного формату, потім решта мов. Довший переклад
+    # ламає сітку не гірше за помилку в стилі (німецьке слово в плитці), тому
+    # мови теж міряємо - але формати мають бути покриті першими.
+    by_variant: dict = {}
+    for artifact in artifacts:
+        by_variant.setdefault(getattr(artifact, 'variant', 'desktop'), []).append(artifact)
+    targets = []
+    while len(targets) < RENDER_AUDIT_LIMIT and any(by_variant.values()):
+        for rows in by_variant.values():
+            if rows and len(targets) < RENDER_AUDIT_LIMIT:
+                targets.append(rows.pop(0))
+
+    issues: list = []
+    suggestions: list = []
+    scores: list = []
+    checked = 0
+    for artifact in targets:
+        variant = getattr(artifact, 'variant', 'desktop')
+        language = getattr(artifact, 'language', '?')
+        label = f'{language}/{variant}'
+        report = render_audit(getattr(artifact, 'html', ''), RENDER_WIDTHS.get(variant, 1240), label)
+        if not report:
+            continue
+        checked += 1
+        scores.append(float(report.get('score') or 0))
+        for finding in (report.get('findings') or [])[:12]:
+            where = (finding.get('examples') or [finding.get('text') or ''])[0]
+            count = int(finding.get('count') or 1)
+            issues.append(
+                f'[{label}] {finding.get("message") or finding.get("code")}'
+                + (f' - «{where[:60]}»' if where else '')
+                + (f' (ще {count - 1})' if count > 1 else ''))
+    if not checked:
+        return 0.0, 'Сторінки не перевірялись: сервіс рендера вимкнено', [], [], 0
+    if issues:
+        suggestions = ['Виправляти згори вниз: обрізаний і перекритий текст важливіші за контраст',
+                       'Кожна знахідка має фрагмент тексту - шукайте по ньому у прев\'ю']
+    score = min(scores) if scores else 100.0
+    summary = ('Дефектів верстки не знайдено' if not issues
+               else '; '.join(x.split('] ', 1)[-1] for x in issues[:3]))
+    return score, summary, issues[:24], suggestions, checked
+
+
 def critic_html(artifacts, critic_type: str, product: dict):
     html = '\n'.join(getattr(a, 'html', '') for a in artifacts)
     issues = []

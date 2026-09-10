@@ -34,6 +34,7 @@ from app.pipeline import (
     apply_palette,
     PALETTE_TOKENS,
     palette_from_photo,
+    render_gate,
     local_media_path,
     materialize_local_reference,
     fetch_bytes_capped,
@@ -814,6 +815,27 @@ def process_project(self, project_id, reuse_images=False):
             for critic_type in ('html','facts','accessibility','marketing'):
                 score, summary, issues, suggestions = critic_html(latest, critic_type, product)
                 db.add(CriticReport(project_id=project.id, critic_type=critic_type, score=score, summary=summary, issues_json=json.dumps(issues, ensure_ascii=False), suggestions_json=json.dumps(suggestions, ensure_ascii=False)))
+            # Рецензент, який ДИВИТЬСЯ: сторінка укладається у справжньому браузері
+            # і міряється. Решта перевірок читають розмітку й тому не бачать ані
+            # обрізаного заголовка, ані цифри, що злилася з плиткою. Сервіс
+            # необовʼязковий (профіль shots) - без нього прогон іде як раніше,
+            # але в журналі про це сказано прямо.
+            log(db, project, 'review', 'Перевірка верстки у браузері', 96)
+            db.commit()
+            render_score, render_summary, render_issues, render_tips, render_checked = render_gate(latest)
+            if render_checked:
+                db.add(CriticReport(project_id=project.id, critic_type='render', score=render_score,
+                                    summary=render_summary, issues_json=json.dumps(render_issues, ensure_ascii=False),
+                                    suggestions_json=json.dumps(render_tips, ensure_ascii=False)))
+                level = 'warning' if render_issues else 'info'
+                log(db, project, 'review',
+                    (f'Верстка: знайдено дефектів - {len(render_issues)} (оцінка {render_score:.0f}/100)'
+                     if render_issues else f'Верстка: дефектів не знайдено, перевірено сторінок - {render_checked}'),
+                    97, level)
+            else:
+                log(db, project, 'review',
+                    'Верстку не перевірено: сервіс рендера вимкнено (docker compose --profile shots up -d shots)',
+                    97, 'warning')
             known_urls = {a.url for a in db.scalars(select(Asset).where(Asset.project_id == project.id, Asset.kind == 'image')).all()}
             page_extra = [u for u in sorted(used_page_images) if u and u not in known_urls]
             for index, url in enumerate(page_extra, start=1):
