@@ -2851,3 +2851,134 @@ def test_cost_estimate_is_calibrated_from_real_projects_and_prices_every_model()
     assert 'function updateEstimate(form){if(!form)return;refreshPresetCards(form);' in web
     assert "cost=estimateCost(p.text_model,p.image_model,p.quality,variants,dialogOutputs(form))" in web
     assert 'function estNote(){' in web and '${estNote()}' in web
+
+
+def _audit_probe():
+    """JS-зонд гейта верстки, витягнутий із сервісу shots (він же їде в браузер)."""
+    import re as _re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    source = (root / 'apps/shots/server.py').read_text(encoding='utf-8')
+    return _re.search(r'_PROBE = r"""(.*?)"""', source, _re.S).group(1)
+
+
+def test_render_gate_measures_the_laid_out_page_not_the_markup():
+    """Гейт верстки бачить те, чого рецензент по розмітці не бачить у принципі.
+
+    Кожна скарга власника цього місяця - «12GB через колір погано читається»,
+    «FAQ занадто вузький», «у мобільному загубились кольори» - це дефект, який
+    існує ЛИШЕ після укладання сторінки. critic_html і llm_critic читають
+    розмітку й видимий текст, тому структурно не могли їх знайти. Тут сторінка
+    відкривається у справжньому Chromium і міряється.
+
+    Тест перевіряє і зворотний бік: реальна сторінка без дефектів має давати
+    ПОРОЖНІЙ звіт. Гейт, який кричить на кожну сторінку, гірший за його
+    відсутність - тому згорнутий <details> (штатний FAQ), схована мобільна
+    панель і капслок-лейбл на 11px не є знахідками.
+    """
+    import shutil
+    from pathlib import Path
+    probe = _audit_probe()
+    chrome = next((p for p in (
+        '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+        shutil.which('chromium'), shutil.which('chromium-browser')) if p and Path(p).exists()), None)
+    if not chrome:
+        return  # без браузера перевіряємо лише контракт (див. тест нижче)
+    from playwright.sync_api import sync_playwright
+
+    defects = {
+        'low-contrast': '<section style="background:#FFFFFF;padding:20px"><p style="color:#9AA3AB;font-size:15px">Сірий підпис</p></section>',
+        'low-contrast-large': '<section style="background:#1A2128;padding:20px"><b style="color:#C45618;font-size:34px">12GB</b></section>',
+        'text-clipped': '<section style="padding:20px"><div style="height:24px;overflow:hidden;width:200px"><p style="font-size:16px;color:#111;margin:0">Рядок, який не вміщається у двадцять чотири пікселі висоти блока</p></div></section>',
+        'page-overflow': '<section style="padding:20px"><div style="width:1600px;background:#eee;color:#111">Широкий блок</div></section>',
+        'text-covered': '<section style="padding:20px;position:relative;height:200px"><p style="position:absolute;top:20px;left:20px;color:#111;font-size:18px">Текст під плашкою</p><div style="position:absolute;top:0;left:0;width:400px;height:120px;background:#19BCC9"></div></section>',
+        'image-broken': '<section style="padding:20px"><img src="http://web/nope.png" alt="x" style="width:200px;height:120px"><p style="color:#111">Текст</p></section>',
+        'placeholder-copy': '<section style="padding:20px"><h2 style="color:#111;font-size:28px">Lorem ipsum dolor</h2></section>',
+        'tiny-text': '<section style="padding:20px"><p style="color:#111;font-size:9px">Дрібний дисклеймер</p></section>',
+    }
+    # Чиста сторінка: акцент на темному, згорнутий FAQ, схована мобільна панель,
+    # напівпрозора плитка і капслок-лейбл - усе це НЕ дефекти.
+    clean = (
+        '<section style="background:#FFFFFF;padding:24px">'
+        '<div style="background:#1A2128;padding:20px">'
+        '<span style="color:#19BCC9;font-size:12px;letter-spacing:.08em;text-transform:uppercase">СЕРІЯ</span>'
+        '<h2 style="color:#FFFFFF;font-size:30px;margin:8px 0">Заголовок блока</h2>'
+        '<div style="background:rgba(255,255,255,.06);padding:14px"><b style="color:#19BCC9;font-size:34px">12 ГБ</b></div></div>'
+        '<details><summary style="color:#101010;font-size:17px">Питання покупця</summary>'
+        '<p style="color:#333;font-size:15px">Відповідь, яка живе у згорнутому блоці.</p></details>'
+        '<div class="sticky" style="display:none"><a style="color:#101010;font-size:16px">Подзвонити</a></div>'
+        '<p style="color:#333;font-size:16px">Звичайний абзац опису товару.</p></section>'
+    )
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(executable_path=chrome, args=['--no-sandbox'])
+        try:
+            def audit(html, width):
+                page = browser.new_page(viewport={'width': width, 'height': 1400})
+                page.set_content(f'<!doctype html><html><head><meta charset="utf-8">'
+                                 f'<style>html,body{{margin:0;padding:0;background:#fff;font-family:Arial}}</style>'
+                                 f'</head><body>{html}</body></html>', wait_until='domcontentloaded')
+                try:
+                    page.wait_for_function("() => Array.from(document.images).every(i => i.complete)", timeout=4000)
+                except Exception:
+                    pass
+                page.wait_for_timeout(150)
+                height = min(16000, max(1400, int(page.evaluate('() => document.documentElement.scrollHeight'))))
+                page.set_viewport_size({'width': width, 'height': height})
+                page.wait_for_timeout(150)
+                found = page.evaluate(probe)
+                page.close()
+                return found
+
+            for code, html in defects.items():
+                report = audit(html, 1240 if code != 'tiny-text' else 390)
+                codes = {f['code'] for f in report['findings']}
+                assert code in codes, f'{code} не знайдено: {codes}'
+                sample = next(f for f in report['findings'] if f['code'] == code)
+                assert sample['message'] and (sample['text'] or code in ('page-overflow', 'image-broken')), sample
+
+            for width in (1240, 390):
+                report = audit(clean, width)
+                assert not report['findings'], f'хибні спрацювання на чистій сторінці ({width}px): {report["findings"]}'
+                assert report['metrics']['scroll_width'] <= width + 2
+        finally:
+            browser.close()
+
+
+def test_render_gate_is_wired_as_a_free_critic_and_never_fails_the_run():
+    """Гейт вбудований у прогін, безкоштовний і мʼякий до недоступного сервісу.
+
+    Мʼякість принципова: аудит - це контроль якості, а не етап генерації.
+    Вимкнений профілем `shots` сервіс не має валити проєкт; він має чесно
+    сказати, що перевірки НЕ БУЛО - і в журналі, і у вкладці «Якість».
+    Порожній звіт і відсутній звіт - різні речі, і плутати їх не можна.
+    """
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    shots = (root / 'apps/shots/server.py').read_text(encoding='utf-8')
+    pipeline = (root / 'apps/api/app/pipeline.py').read_text(encoding='utf-8')
+    tasks = (root / 'apps/api/app/tasks.py').read_text(encoding='utf-8')
+    main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
+    web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
+    compose = (root / 'docker-compose.yml').read_text(encoding='utf-8')
+
+    assert "@app.post('/audit')" in shots and 'def _audit(payload: AuditIn)' in shots
+    # вікно на всю сторінку: інакше перекриття видно лише на першому екрані
+    assert "page.set_viewport_size({'width': payload.width, 'height': full_height})" in shots
+    assert 'checkVisibility' in shots, 'схований предок не має рахуватись зниклим текстом'
+    assert "el.closest('details:not([open])')" in shots, 'згорнутий FAQ - не дефект'
+    for code in ('text-clipped', 'low-contrast', 'text-covered', 'page-overflow', 'image-broken', 'placeholder-copy'):
+        assert f"'{code}'" in shots, code
+
+    assert 'def render_audit(' in pipeline and 'def render_gate(' in pipeline
+    assert "RENDER_WIDTHS = {'desktop': 1240, 'mobile': 390}" in pipeline
+    assert 'return None' in pipeline.split('def render_audit(')[1].split('def render_gate(')[0], 'недоступний сервіс = None, не виняток'
+    assert 'from app.pipeline import' in main or 'render_gate' in main
+
+    assert 'render_gate(latest)' in tasks and "critic_type='render'" in tasks
+    assert 'Верстку не перевірено' in tasks, 'відсутність перевірки має бути видно в журналі'
+    # ручний перезапуск перевірок теж міряє верстку (безкоштовно)
+    assert 'render_gate(list(latest.values()))' in main
+    assert "render:'Верстка у браузері'" in web
+    assert 'Верстку у браузері не перевірено' in web
+    assert 'profiles: ["shots"]' in compose and 'POST /audit' in compose
