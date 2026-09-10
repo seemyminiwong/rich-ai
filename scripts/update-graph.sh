@@ -3,7 +3,7 @@
 set -e
 cd "$(dirname "$0")/.."
 if [ ! -f graphify-out/graph.html ]; then
-  echo "Немає graphify-out/graph.html — спершу запустіть /graphify . у Claude Code"
+  echo "Немає graphify-out/graph.html — спершу запустіть /graphify ."
   exit 1
 fi
 cp graphify-out/graph.html apps/api/graph/graph.html
