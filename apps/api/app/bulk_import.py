@@ -49,6 +49,9 @@ _COLUMN_ALIASES = {
     'hero_url': 'custom_hero_url',
     'custom_feature_url': 'custom_feature_url',
     'feature_url': 'custom_feature_url',
+    # Тема сторінки ARTLINE Master: mixed / light / dark.
+    'style_theme': 'style_theme',
+    'theme': 'style_theme',
 }
 
 

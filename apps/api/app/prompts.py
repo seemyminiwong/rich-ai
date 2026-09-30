@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.73"
+BASE_STYLE_VERSION = "12.74"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -1133,6 +1133,116 @@ if ('#19BCC9' in BENTO_LIGHT_STYLE_PROMPT or '#101010' in BENTO_LIGHT_STYLE_PROM
         or 'grid-auto-flow:dense' not in BENTO_LIGHT_STYLE_PROMPT
         or 'ARTLINE BLOCK 08: FAQ' not in BENTO_LIGHT_STYLE_PROMPT):
     raise RuntimeError('BENTO light derivation failed')
+
+
+# --- Спільний стандарт ARTLINE у тексті кожного керованого стилю ----------------
+# Стилі писалися до стандарту: Hero 60px/950, радіуси 12px, корінь з max-width,
+# «Avoid all-caps», довгі тире в прикладах. Модель отримувала два протилежні
+# накази (стиль і ARTLINE_STANDARD), а сервер потім виправляв механічно. Тепер
+# текст самих стилів приведено до стандарту - сітки, блоки й ритм незмінні.
+# Заміни йдуть ПІСЛЯ всіх похідних редакцій (Dark, Promo, Podium, Bento Light),
+# тож їхні .replace()-якорі на вихідному тексті не ламаються. Кожна пара мусить
+# спрацювати хоча б в одному стилі - мертва пара падає на старті.
+_STANDARD_SWAPS = (
+    # корінь на всю ширину контейнера сторінки
+    ('<section style="max-width:1240px;margin:0 auto;padding:0 14px;', '<section style="width:100%;margin:0;padding:0;'),
+    ('<section style="max-width:480px;margin:0 auto;padding:0 10px;', '<section style="width:100%;margin:0;padding:0;'),
+    # Base / Engineering: шкала 30/24/18/16/26/14
+    ('- Hero h2 desktop: 48-56px, line-height 1.02-1.08, weight 800-900.\n- Hero h2 mobile: 32-36px, line-height 1.05-1.12, weight 800-900.',
+     '- Hero h2: 30px, line-height 1.12, weight 900, on desktop and mobile.'),
+    ('- Hero h2 desktop: 48-56px, line-height 1.02-1.08, weight 800-900. Hero h2 mobile: 32-36px.',
+     '- Hero h2: 30px, line-height 1.12, weight 900, on desktop and mobile.'),
+    ('- Section h2 desktop: 34-40px; mobile: 27-31px; line-height 1.08-1.2; weight 800-900.',
+     '- Section h2: 24px, line-height 1.25, weight 900, on desktop and mobile; uppercase, while brand, model and protocol spelling stays intact.'),
+    ('- Card h3: 18-20px, line-height 1.25-1.35, weight 700-800.', '- Card h3 and subtitles: 18px, line-height 1.4, weight 700-800.'),
+    ('- Parameter value lead line in cards: 24-28px desktop, 20-24px mobile, weight 900',
+     '- Parameter value lead line in cards: 26px, line-height 1.15, weight 900'),
+    ('- Body desktop: 16-17px, line-height 1.55-1.7. Body mobile: 14-16px, line-height 1.55-1.65.',
+     '- Body: 16px, line-height 1.6, on desktop and mobile. Technical captions 14px/1.4; badges 12-13px; nothing below 12px.'),
+    ('Avoid all-caps except short badges.', 'No all-caps except the uppercase section h2 and short badges.'),
+    ('- Main section and card radius: 12px, including the Hero background canvas (border-radius:12px; overflow:hidden).',
+     '- Outer section radius: 14px, including the Hero background canvas (border-radius:14px; overflow:hidden); inner cards and frames 10-12px.'),
+    ('The Hero section itself must carry border-radius:12px and overflow:hidden', 'The Hero section itself must carry border-radius:14px and overflow:hidden'),
+    ('square Hero corners next to 12px cards look broken', 'square Hero corners next to rounded cards look broken'),
+    ('- the Hero section has border-radius:12px and overflow:hidden', '- the Hero section has border-radius:14px and overflow:hidden'),
+    # Showcase-родина (Showcase, Dark, Promo, Podium і похідні)
+    ('- Radii: one quiet base radius everywhere - outer sections 12px, inner cards 8-10px; chips and badges 999px (pills are part of this style). Generous padding, not big radii, carries the premium feel; apart from pills, a corner rounder than 12px is a defect.',
+     '- Radii: outer sections 14px, inner cards and frames 10-12px; chips and badges 999px (pills are part of this style). Generous padding, not big radii, carries the premium feel; apart from pills, a corner rounder than 14px is a defect.'),
+    ('- Weights are heavy: h2 900-950, numeric values 950, chips 850-900.', '- Weights: h2 and numeric values 900, chips 800-900; never 950.'),
+    ('position:relative;overflow:hidden;border-radius:12px;border:1px solid #35393F;background:#101010 url(HERO_URL)',
+     'position:relative;overflow:hidden;border-radius:14px;border:1px solid #35393F;background:#101010 url(HERO_URL)'),
+    ('one h2 60-64px/950 line-height .94 (mobile 34-38px), one bold subtitle 24-27px in #C9F0F4, one paragraph 16-17px #D0D7DE',
+     'one h2 30px/900 line-height 1.12 (the same on mobile), one bold subtitle 18px in #C9F0F4, one paragraph 16px #D0D7DE'),
+    ('value first at 34px/950 in the accent, then h3 19px, then one short line.', 'value first at 26px/900 in the accent, then h3 18px, then one short 14px line.'),
+    ('#F5F7FA, radius 12px, padding 44px;', '#F5F7FA, radius 14px, padding 44px;'),
+    ('the SHARED SECTION LABEL, h2 40-42px/950, one paragraph', 'the SHARED SECTION LABEL, h2 24px/900, one paragraph'),
+    ('white h2 36-38px, one paragraph', 'white h2 24px/900, one paragraph'),
+    ('24px/950 cyan value + 14px label', '26px/900 cyan value + 14px label'),
+    ('Copy lives in a separate padding:22px block with h3 20px and one line.', 'Copy lives in a separate padding:22px block with h3 18px and one 16px line.'),
+    ('6. TRUST SPLIT - outer canvas #F5F7FA, radius 12px, padding 18px;', '6. TRUST SPLIT - outer canvas #F5F7FA, radius 14px, padding 18px;'),
+    ('with h2 34-36px and one supportive paragraph', 'with h2 24px/900 and one supportive paragraph'),
+    ('7. FINAL RECAP - centered dark section, radius 12px,', '7. FINAL RECAP - centered dark section, radius 14px,'),
+    ('one h2 40-42px white stating', 'one h2 24px/900 white stating'),
+    ('border-radius:12px;padding:32px 30px 12px (mobile 24px 16px 8px)', 'border-radius:14px;padding:32px 30px 12px (mobile 24px 16px 8px)'),
+    ('At the top one h2 30-32px/900', 'At the top one h2 24px/900'),
+    ('list-style:none;font-size:17px;font-weight:600;', 'list-style:none;font-size:18px;line-height:1.4;font-weight:700;'),
+    ('font-size:15px;line-height:1.55;', 'font-size:16px;line-height:1.6;'),
+    # Podium
+    ('border:1px solid #D0D7DE;border-radius:12px;padding:46px', 'border:1px solid #D0D7DE;border-radius:14px;padding:46px'),
+    ('border:1px solid #2F3137;border-radius:12px;padding:46px', 'border:1px solid #35393F;border-radius:14px;padding:46px'),
+    ('one h2 46-52px/950', 'one h2 30px/900'),
+    ('one subtitle 20-22px in', 'one subtitle 18px in'),
+    # Bento
+    ('border-radius:12px;padding:14px;box-sizing:border-box.', 'border-radius:14px;padding:14px;box-sizing:border-box.'),
+    ('- Radii 12px outer / 8px inner. Chips 999px. Weights heavy: values 850-950, h3 800.',
+     '- Radii 14px outer, 10-12px tiles, 8px inner cards. Chips 999px. Weights: h2 and values 900, h3 800; never 950.'),
+    ('brand + model code as h2 40-46px/950 letter-spacing:-.02em', 'brand + model code as h2 30px/900'),
+    ('value first 34-40px/950 in', 'value first 26px/900 in'),
+    ('then h3 15px', 'then h3 18px'),
+    ('then one short 13px line', 'then one short 14px line'),
+    ('h3 18px/800 + one 13px line', 'h3 18px/800 + one 14px line'),
+    # канонічна палітра: сервер підміняє кольори бренду лише в канонічних токенах
+    ('#0D1013', '#101010'),
+    ('#AFB8C1', '#D8DDE2'),
+    ('#F2F5F7', '#F5F7FA'),
+    ('#F7F9FA', '#F5F7FA'),
+    ('#0F171E', '#101010'),
+    ('#5B6670', '#555555'),
+    ('1px solid rgba(15,23,32,.08)', '1px solid #D0D7DE'),
+    ('1px solid rgba(15,23,32,.10)', '1px solid #E7EAEE'),
+    ('background:rgba(15,23,32,.06)', 'background:#F5F7FA'),
+    ('color:#F5F7FA', 'color:#FFFFFF'),
+    ('Headings #F5F7FA', 'Headings #FFFFFF'),
+    ('Body text #F5F7FA', 'Body text #FFFFFF'),
+    ('summary text #F5F7FA', 'summary text #FFFFFF'),
+    ('h3 18px #F5F7FA', 'h3 18px #FFFFFF'),
+    ('- Optional secondary accent: #51C48A or #01743A, used only when it clarifies information.',
+     '- No secondary accent: #19BCC9 on dark and #157985 on light is the only accent colour.'),
+    # лише коротке тире: модель наслідує розділові знаки з прикладів промпту
+    (' — ', ' – '),
+)
+
+
+def standardize_style_prompt(text: str, used: set | None = None) -> str:
+    for index, (old, new) in enumerate(_STANDARD_SWAPS):
+        if old in text:
+            text = text.replace(old, new)
+            if used is not None:
+                used.add(index)
+    return text
+
+
+_standard_used: set = set()
+for _name in ('DEFAULT_STYLE_PROMPT', 'ENGINEERING_STYLE_PROMPT', 'SHOWCASE_STYLE_PROMPT', 'SHOWCASE_DARK_STYLE_PROMPT',
+              'SHOWCASE_PROMO_STYLE_PROMPT', 'PODIUM_STYLE_PROMPT', 'PODIUM3D_STYLE_PROMPT', 'PODIUM360_STYLE_PROMPT',
+              'PODIUMSCROLL_STYLE_PROMPT', 'PODIUM360DARK_STYLE_PROMPT', 'BENTO_STYLE_PROMPT', 'BENTO_LIGHT_STYLE_PROMPT'):
+    globals()[_name] = standardize_style_prompt(globals()[_name], _standard_used)
+    for _bad in ('950', 'max-width:1240px;margin:0 auto', '—', 'Avoid all-caps'):
+        if _bad in globals()[_name].replace('never 950', '').replace('Never use 950', ''):
+            raise RuntimeError(f'{_name} still breaks the ARTLINE standard: {_bad}')
+_dead = [old[:50] for i, (old, _) in enumerate(_STANDARD_SWAPS) if i not in _standard_used]
+if _dead:
+    raise RuntimeError(f'ARTLINE standard swaps matched nothing: {_dead}')
 
 
 # --- ARTLINE Master -----------------------------------------------------------

@@ -415,14 +415,14 @@ details.advanced-box[open]>summary svg{transform:rotate(90deg)}
 details.advanced-box>div{padding:0 14px 14px;display:grid;gap:var(--space-4);animation:stepIn var(--motion-base) var(--ease-out)}
 
 /* Probe, uploads, frames */
-.probe-box{border:1px dashed var(--color-border-strong);border-radius:var(--radius-card);padding:12px 14px;background:var(--color-surface-subtle);min-width:0;overflow:hidden}
+.probe-box{border:1px dashed var(--color-border-strong);border-radius:var(--radius-card);padding:12px 14px;background:var(--color-surface-subtle);min-width:0}
 .probe-note{margin:0;font-size:var(--fs-sm)}
 .probe-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .probe-head b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%}
 .verdict{font-size:var(--fs-xs);font-weight:600;padding:2px 8px;border-radius:4px;background:var(--color-surface-muted);color:#3E474E}
 .verdict.ok{background:var(--color-success-soft);color:var(--color-success-text)}
 .verdict.bad{background:var(--color-danger-soft);color:var(--color-danger-text)}
-.probe-grid{max-height:220px;overflow-y:auto;display:flex;flex-wrap:wrap;gap:8px}
+.probe-grid{display:flex;flex-wrap:wrap;gap:8px}
 .frame{position:relative;flex:0 0 74px;width:74px;height:74px;padding:0;border:2px solid transparent;border-radius:var(--radius-control);overflow:hidden;background:#fff;cursor:pointer;transition:border-color var(--motion-fast)}
 .frame img{width:100%;height:100%;object-fit:cover;display:block}
 .frame:hover{border-color:var(--color-border-control)}
@@ -435,14 +435,32 @@ details.advanced-box>div{padding:0 14px 14px;display:grid;gap:var(--space-4);ani
 .upload-busy{display:grid;place-items:center;width:100%;height:100%;color:var(--color-text-secondary);font-weight:700}
 .frame-x{position:absolute;top:3px;right:3px;width:22px;height:22px;border:0;border-radius:4px;background:rgb(16 16 16 / 72%);color:#fff;font-size:12px;line-height:1;padding:0}
 .frame-num{position:absolute;left:3px;top:3px;background:rgb(16 16 16 / 72%);color:#fff;font-size:11px;font-weight:700;border-radius:4px;padding:1px 5px;line-height:1.4}
-.uwrap{display:grid;gap:4px;justify-items:stretch;flex:0 0 74px;width:74px}
-.uwrap .frame{width:100%;flex:none}
-.role-row{display:flex;gap:3px}
-.role-chip{flex:1;border:1px solid var(--color-border-strong);background:#fff;border-radius:4px;padding:2px 0;font-size:11px;font-weight:600;color:var(--color-text-secondary)}
-.role-chip.active{background:var(--color-brand);border-color:var(--color-brand);color:var(--color-on-brand)}
-.role-chip.ref.active{background:var(--color-ink);border-color:var(--color-ink);color:var(--color-brand)}
-.ref-grid .frame.picked{border-color:var(--color-brand);box-shadow:0 0 0 2px var(--color-brand) inset}
-.ref-grid .frame.picked::after{content:'AI';position:absolute;right:4px;bottom:4px;background:var(--color-ink);color:var(--color-brand);font-size:10px;font-weight:700;border-radius:4px;padding:1px 4px}
+.uwrap{position:relative;display:grid;gap:4px;justify-items:stretch;flex:0 0 96px;width:96px}
+.uwrap .frame{width:100%;height:96px;flex:none}
+.uwrap.is-off .role-badge{display:none}
+/* Роль кадру: бейдж на самому кадрі + меню з поясненням під ним */
+.role-badge{position:absolute;left:4px;right:4px;bottom:4px;padding:2px 4px;border-radius:4px;background:rgb(16 16 16 / 82%);color:#fff;font-size:10px;font-weight:700;line-height:1.25;text-align:center;pointer-events:none}
+.role-badge.reference{color:var(--color-brand)}
+.role-badge.auto{background:rgb(255 255 255 / 90%);color:var(--color-text-secondary);border:1px dashed var(--color-border-control);font-weight:600}
+.uwrap .menu-wrap{display:block}
+.role-trigger{display:flex;align-items:center;justify-content:space-between;gap:2px;width:100%;min-height:28px;padding:3px 6px;border:1px solid var(--color-border-control);border-radius:var(--radius-control);background:var(--color-surface);color:var(--color-text);font:inherit;font-size:var(--fs-xs);font-weight:600;cursor:pointer;white-space:nowrap;overflow:hidden}
+.role-trigger:hover{border-color:var(--color-brand-strong)}
+.uwrap .menu{min-width:260px}
+.uwrap .menu small{display:block;margin-top:2px;color:var(--color-text-secondary);font-size:var(--fs-xs);font-weight:400;white-space:normal;line-height:1.35}
+.frame-state{display:block;min-height:28px;padding-top:5px;color:var(--color-text-secondary);font-size:var(--fs-xs);text-align:center}
+.role-legend{margin:0 0 10px;font-size:var(--fs-sm)}
+.role-legend summary{display:inline-flex;align-items:center;gap:6px;color:var(--color-info-text);font-weight:600;cursor:pointer}
+.role-legend dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 12px;margin:8px 0 4px}
+.role-legend dt{font-weight:700}
+.role-legend dd{margin:0;color:var(--color-text-secondary)}
+.role-legend p{margin:0;color:var(--color-text-secondary);font-size:var(--fs-xs)}
+/* Пропозиція палітри за брендом товару */
+.brand-hint:empty{display:none}
+.brand-hint p{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin:6px 0 0;padding:8px 10px;border-radius:var(--radius-control);background:var(--color-surface-subtle);font-size:var(--fs-sm)}
+.brand-hint p.on{background:var(--color-brand-soft)}
+.brand-hint p span{flex:1 1 220px}
+.bulk-brand em{display:block;color:var(--color-text-secondary);font-style:normal;font-size:var(--fs-xs)}
+.ref-grid .frame.picked::after{content:'Основа AI';position:absolute;right:4px;bottom:4px;background:var(--color-ink);color:var(--color-brand);font-size:10px;font-weight:700;border-radius:4px;padding:1px 4px}
 .upload-360{margin-top:10px}
 #upload360Hint p{margin:8px 0 0}
 .prior-strip{margin:10px 0;padding:10px 12px;border:1px solid var(--color-brand-border);border-radius:var(--radius-card);background:var(--color-brand-soft)}
@@ -1085,3 +1103,22 @@ tr.is-updated td{animation:rowFlash 1.6s var(--ease-out)}
   .seg-thumb{display:none}
   .text-editor .tool-row .spacer{display:none}
 }
+
+/* --- Тема сторінки ARTLINE Master ------------------------------------------ */
+.theme-slot:empty{display:none}
+.theme-choice{margin:0;padding:0;border:0;min-width:0}
+.theme-choice legend{margin-bottom:6px;font-size:var(--fs-sm);font-weight:600}
+.theme-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.theme-option{position:relative;display:grid;gap:2px;padding:10px 12px 10px 12px;border:1px solid var(--color-border);border-radius:var(--radius-card);background:var(--color-surface);cursor:pointer}
+.theme-option:hover{border-color:var(--color-border-control)}
+.theme-option:has(input:checked){border-color:var(--color-brand-strong);background:var(--color-brand-soft)}
+.theme-option:has(input:focus-visible){outline:2px solid var(--color-brand-strong);outline-offset:2px}
+.theme-option input{position:absolute;opacity:0;pointer-events:none}
+.theme-option b{font-size:var(--fs-sm)}
+.theme-option small{color:var(--color-text-secondary);font-size:var(--fs-xs);line-height:1.35}
+.theme-swatch{display:flex;gap:3px;margin-bottom:4px}
+.theme-swatch i{width:22px;height:14px;border-radius:3px;border:1px solid rgb(16 16 16 / 14%)}
+.theme-option.mixed .theme-swatch i:nth-child(odd),.theme-option.dark .theme-swatch i{background:#1A2128}
+.theme-option.mixed .theme-swatch i:nth-child(even),.theme-option.light .theme-swatch i{background:#F5F7FA}
+@media (max-width:640px){.theme-options{grid-template-columns:minmax(0,1fr)}}
+.form-grid>.theme-slot,.two>.theme-slot{grid-column:1/-1}

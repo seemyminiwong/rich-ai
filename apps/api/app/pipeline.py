@@ -18,6 +18,7 @@ from PIL import Image, ImageOps
 from app.config import settings
 from app.media import media_url
 from app.artline_standard import apply_artline_standard
+from app.master_theme import apply_master_theme, master_theme_prompt, normalize_theme, theme_image_hint
 from app.raster import compose_hero_canvas, contrast_ratio, cutout_product, flatten_to_white, paste_product_back, readable_on
 from app.runtime import GEMINI_BASE_URL, OPENROUTER_BASE_URL, runtime_config
 
@@ -1963,7 +1964,8 @@ def generate_image(
         )
         # High input fidelity asks supported GPT Image models to preserve small
         # product details, labels and geometry. GPT Image 2 always uses it and
-        # rejects an explicit parameter, so omit it there.
+        # rejects an explicit parameter; the 2.5 docs do not list it either, so the
+        # same prefix leaves it out for gpt-image-2.5-sunburst too.
         if not model.startswith('gpt-image-2'):
             edit_options['extra_body'] = {'input_fidelity': 'high'}
         if locked:
@@ -3754,9 +3756,9 @@ POST_GENERATION_GUARANTEES = [
 ]
 
 
-def build_prompt(product, style, language='ua', variant='desktop', hero='', feature='', gallery=None):
+def build_prompt(product, style, language='ua', variant='desktop', hero='', feature='', gallery=None, theme='mixed'):
     """Публічна обгортка _prompt для dry-run: точний текст, що піде в модель."""
-    return _prompt(product, style, language, variant, hero, feature, gallery)
+    return _prompt(product, style, language, variant, hero, feature, gallery, theme)
 
 
 def _golden_example(style) -> str:
@@ -3788,7 +3790,7 @@ def _style_text_for(prompt: str, variant: str) -> str:
     return text if variant == 'mobile' else strip_mobile_layout(text)
 
 
-def _prompt(product, style, language, variant, hero, feature, gallery=None):
+def _prompt(product, style, language, variant, hero, feature, gallery=None, theme='mixed'):
     layout = 'single-column mobile layout with no horizontal overflow' if variant == 'mobile' else 'desktop layout up to 1240px'
     target_language_rule = language_rule(language)
     return f"""Create standardized premium ecommerce rich content. Return HTML only: exactly one complete <section>...</section>.
@@ -3801,7 +3803,7 @@ Embedding rule: the rich content is displayed on a light ARTLINE product page. K
 Mandatory visual guardrails: use #101010 for headings and #555555 or #69737D for paragraphs on light surfaces; use #FFFFFF or #F7F8FA for headings and #D0D7DE or #AFB8C1 for paragraphs on dark surfaces. Use the #19BCC9 accent only for compact badges, eyebrow labels, big specification values and subtle borders; as text on a light surface it becomes #157985. Never use turquoise, green, blue, purple or orange for paragraphs or multi-line headings. At least 70 percent of the content area must remain light or transparent. Use 14px radii for major blocks, 10-12px for inner cards and frames, and 8px or 999px for badges. Do not use decorative colored strips, alternating card colors, checkerboard layouts, excessive gradients or repeated heavy shadows.
 The style prompt below is the primary design specification. Follow it precisely unless it conflicts with factual accuracy or HTML validity.
 STYLE PROMPT:
-{_style_text_for(style.prompt, variant)}{_standard_for(style.prompt)}{_golden_example(style)}
+{_style_text_for(style.prompt, variant)}{_standard_for(style.prompt)}{master_theme_prompt(theme) if is_master_style(style.prompt) else ''}{_golden_example(style)}
 Mandatory factual rule: use only facts present in Product JSON. Never invent warranty, partnership, certification, compatibility, performance, contents or support claims.
 Images: hero={hero}; feature={feature}.{_gallery_line(style, gallery)}
 Product JSON: {json.dumps(product, ensure_ascii=False)}"""
@@ -3846,7 +3848,7 @@ def _deterministic_html(product, style, language, variant, hero, feature):
     while len(facts) < 6:
         facts.append(localized_benefits[len(facts)] if len(facts) < len(localized_benefits) else description[:180] or name)
     cards = ''.join(
-        f'<div style="padding:26px;border-radius:12px;background:#F7F8FA;border:1px solid #D0D7DE;color:#101010"><div style="font-size:25px;font-weight:900;color:{"#19BCC9" if i<3 else "#01743A"};margin-bottom:10px">{html_lib.escape(fact[:55])}</div><p style="margin:0;line-height:1.55;color:#555">{html_lib.escape(fact)}</p></div>'
+        f'<div style="padding:26px;border-radius:12px;background:#F7F8FA;border:1px solid #D0D7DE;color:#101010"><div style="font-size:25px;font-weight:900;color:#157985;margin-bottom:10px">{html_lib.escape(fact[:55])}</div><p style="margin:0;line-height:1.55;color:#555">{html_lib.escape(fact)}</p></div>'
         for i, fact in enumerate(facts)
     )
     hero_css = f"linear-gradient(90deg,rgba(26,33,40,.96) 0%,rgba(26,33,40,.82) 42%,rgba(37,37,37,.16) 100%),url('{hero}') center/cover no-repeat" if hero else 'linear-gradient(135deg,#1A2128 0%,#252525 58%,#35393F 100%)'
@@ -3858,7 +3860,7 @@ def _deterministic_html(product, style, language, variant, hero, feature):
     trust_columns = '1fr' if variant == 'mobile' else '.9fr 1.1fr'
     return f'''<section style="max-width:{width};margin:0 auto;padding:0 14px;font-family:'Montserrat','Segoe UI',Arial,sans-serif;box-sizing:border-box;color:#101010">
 <!-- 1. HERO -->
-<div style="min-height:{hero_height};padding:{hero_padding};border-radius:12px;background:{hero_css};display:flex;align-items:center;margin-bottom:22px;box-sizing:border-box"><div style="max-width:620px"><div style="display:inline-block;padding:7px 12px;border-radius:8px;background:#19BCC9;color:#101010;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase">{brand}</div><h2 style="font-size:{hero_title_size};line-height:1.06;font-weight:900;margin:16px 0;color:#FFFFFF">{name}</h2><p style="max-width:620px;margin:0;font-size:17px;line-height:1.65;color:#D0D7DE">{description}</p></div></div>
+<div style="min-height:{hero_height};padding:{hero_padding};border-radius:14px;background:{hero_css};display:flex;align-items:center;margin-bottom:22px;box-sizing:border-box"><div style="max-width:620px"><div style="display:inline-block;padding:7px 12px;border-radius:8px;background:#19BCC9;color:#101010;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase">{brand}</div><h2 style="font-size:{hero_title_size};line-height:1.06;font-weight:900;margin:16px 0;color:#FFFFFF">{name}</h2><p style="max-width:620px;margin:0;font-size:17px;line-height:1.65;color:#D0D7DE">{description}</p></div></div>
 <!-- 2. KEY BENEFITS -->
 <div style="display:grid;grid-template-columns:{columns};gap:16px;margin-bottom:22px;box-sizing:border-box">{cards}</div>
 <!-- 3. CORE FEATURE -->
@@ -4211,7 +4213,7 @@ def public_fallback_reason(exc: Exception) -> str:
     return f'внутрішня помилка генерації ({type(exc).__name__})'
 
 
-def generate_html(product, style, language, variant, hero, feature, model: str, gallery=None, rotation=None, palette: dict | None = None, video: str = '', video_product: str = ''):
+def generate_html(product, style, language, variant, hero, feature, model: str, gallery=None, rotation=None, palette: dict | None = None, video: str = '', video_product: str = '', theme: str = 'mixed'):
     """Return (html, input_tokens, output_tokens, fallback_reason).
 
     fallback_reason is '' when the AI response was used, otherwise a short reason
@@ -4220,7 +4222,11 @@ def generate_html(product, style, language, variant, hero, feature, model: str, 
     fallback = _deterministic_html(product, style, language, variant, hero, feature)
     if not text_ready():
         return fallback, 0, 0, 'Text provider is not configured'
-    base_prompt = _prompt(product, style, language, variant, hero, feature, gallery)
+    master = is_master_style(getattr(style, 'prompt', '') or '')
+    theme = normalize_theme(theme) if master else 'mixed'
+    # Темна тема майстра вмикає ті самі темні FAQ і блок відео, що й темні стилі.
+    dark_page = (getattr(style, 'name', '') or '') in DARK_STYLE_NAMES or theme == 'dark'
+    base_prompt = _prompt(product, style, language, variant, hero, feature, gallery, theme)
     try:
         response = _responses_create(model, base_prompt, 16000)
         output = _html_only(response.output_text)
@@ -4282,18 +4288,21 @@ HTML:
                 dark_edition=getattr(style, 'name', '') == 'ARTLINE Showcase Dark',
             )
         else:
-            output = finalize_faq_html(output, dark=(getattr(style, 'name', '') or '') in DARK_STYLE_NAMES)
+            output = finalize_faq_html(output, dark=dark_page)
         if video:
             # Перед палітрою: канонічні кольори блока відео мапляться схемою
             # так само, як у решти секцій.
             output = inject_video_block(
                 output, video, language,
-                dark=(getattr(style, 'name', '') or '') in DARK_STYLE_NAMES,
+                dark=dark_page,
                 product_name=video_product or (product or {}).get('name', ''),
                 profile=video_profile(prompt_text), variant=variant,
             )
         output = latinize_units(output, language)
         output = enforce_site_font(output)
+        # Тема майстра (світла/темна) - до стандарту: той рахує акцент від
+        # підсумкової поверхні.
+        output = apply_master_theme(output, theme)
         # Стандарт ARTLINE (шкала, ваги, радіуси, акцент, тире, регістр h2,
         # lazy) - для кожного стилю, до палітри: вона мапить канонічні кольори.
         output = apply_artline_standard(output, (product or {}).get('name', ''))
@@ -4304,7 +4313,7 @@ HTML:
         return output, input_tokens, output_tokens, ''
     except Exception as exc:
         logger.exception('generate_html fell back to deterministic template for %s/%s', language, variant)
-        fallback = apply_artline_standard(latinize_units(fallback, language), (product or {}).get('name', ''))
+        fallback = apply_artline_standard(apply_master_theme(latinize_units(fallback, language), theme), (product or {}).get('name', ''))
         return apply_palette(fallback, palette or style_palette(style)), 0, 0, public_fallback_reason(exc)
 
 

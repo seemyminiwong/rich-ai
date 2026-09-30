@@ -11,6 +11,8 @@ DEFAULT_TEXT_PRICING = {
     "gpt-5": {"input": 1.25, "output": 10.00},
 }
 
+FLAGSHIP_IMAGE_MODELS = ('gpt-image-2.5-sunburst',)
+
 DEFAULT_IMAGE_PRICING = {
     "gpt-image-1": {"low": 0.02, "medium": 0.07, "high": 0.19},
     "gpt-image-1-mini": {"low": 0.005, "medium": 0.015, "high": 0.04},
@@ -19,6 +21,11 @@ DEFAULT_IMAGE_PRICING = {
     # Non-square tiers (our Hero/Feature are 1536x1024 or 1024x1536) plus an edit
     # surcharge: gpt-image-2 always ingests the reference photo at high fidelity.
     "gpt-image-2": {"low": 0.02, "medium": 0.06, "high": 0.20},
+    # GPT Image 2.5 Sunburst (вересень 2026): ті самі токенні ставки, що в gpt-image-2
+    # ($30/1M вихідних токенів), тож до появи офіційного калькулятора - ті самі
+    # оцінки за кадр. Flare не додаємо: у нього немає /v1/images/edits, а студія
+    # завжди РЕДАГУЄ справжнє фото товару.
+    "gpt-image-2.5-sunburst": {"low": 0.02, "medium": 0.06, "high": 0.20},
     "gemini-2.5-flash-image": {"low": 0.039, "medium": 0.039, "high": 0.039},
     "gemini-3.1-flash-image-preview": {"low": 0.045, "medium": 0.045, "high": 0.045},
     "gemini-3.1-flash-lite-image": {"low": 0.02, "medium": 0.02, "high": 0.02},
@@ -57,7 +64,7 @@ class Settings(BaseSettings):
     openai_reasoning_effort: str = 'low'
     openai_image_model: str = 'gpt-image-1'
     openai_text_models: str = 'gpt-5-mini,gpt-5,gpt-4.1-mini,gpt-4.1,gpt-4o-mini,gpt-4o'
-    openai_image_models: str = 'gpt-image-2,gpt-image-1,gpt-image-1-mini'
+    openai_image_models: str = 'gpt-image-2.5-sunburst,gpt-image-2,gpt-image-1,gpt-image-1-mini'
     gemini_image_models: str = 'gemini-3.1-flash-image-preview,gemini-2.5-flash-image,gemini-3-pro-image-preview'
     text_pricing_json: str = json.dumps(DEFAULT_TEXT_PRICING)
     image_pricing_json: str = json.dumps(DEFAULT_IMAGE_PRICING)
@@ -129,7 +136,14 @@ class Settings(BaseSettings):
 
     @property
     def image_models(self):
-        return [x.strip() for x in self.openai_image_models.split(',') if x.strip()]
+        models = [x.strip() for x in self.openai_image_models.split(',') if x.strip()]
+        # Нові флагмани пропонуються й там, де .env писали до їхнього виходу:
+        # інакше пресет «Максимум» мовчки лишався б на старій моделі. Якщо ключ
+        # моделі не бачить, /api/models її відфільтрує за живим списком.
+        for flagship in FLAGSHIP_IMAGE_MODELS:
+            if flagship not in models:
+                models.insert(0, flagship)
+        return models
 
     @property
     def gemini_models(self):

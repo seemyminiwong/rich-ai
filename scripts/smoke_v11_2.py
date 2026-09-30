@@ -105,7 +105,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.73"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.74"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 3 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -124,7 +124,7 @@ checks = {
     'viewpoint locked in image prompts': prompts.count('VIEWPOINT LOCK') == 8 and 'working-angle' not in prompts and prompts.count('no substituted product variant') == 2,
     'image prompts ban redrawn logos': prompts.count('LOGOS, LABELS AND TEXT ON THE PRODUCT') == 6 and prompts.count('garbled') >= 6,
     'base prompt bans meta text': 'NEVER DESCRIBE THE PAGE OR THE IMAGES' in prompts and 'could not be pasted onto a different product' in prompts,
-    'hero canvas has rounded corners': prompts.count('The Hero section itself must carry border-radius:12px') == 2 and prompts.count('including the Hero background canvas') == 2 and 'border-radius:12px;background:{hero_css}' in pipeline,
+    'hero canvas has rounded corners': prompts.count('The Hero section itself must carry border-radius:12px') == 3 and "'The Hero section itself must carry border-radius:14px and overflow:hidden'" in prompts and 'border-radius:14px;background:{hero_css}' in pipeline,
 
     # --- v11.10: project UX + cost + category ---
     'text model is a select': "<select name=\"text_model\">" in web,
@@ -340,7 +340,7 @@ checks = {
         and "reference_url: Mapped[str] = mapped_column(Text, default='')" in (root / 'apps/api/app/models.py').read_text(encoding='utf-8')
         and 'reuse = bool(payload and payload.reuse_images) and not reference_changed' in main
         and 'materialize_local_reference(manual_local, project.id)' in tasks
-        and web.count("'reference')\">AI</button>") == 2 and 'function referencePickerField' in web
+        and "reference:['Основа для AI'" in web and web.count('frameRoleMenu(`set') == 2 and 'function referencePickerField' in web
         and 'def test_operator_can_pick_the_ai_reference_frame' in tests
     ),
     'faq block is named by its details, not by its position': (
@@ -372,6 +372,32 @@ checks = {
         and "relaid = master_hero_layout(relaid, mobile_hero or hero, 'mobile')" in tasks
         and '__ARTLINE_ALT_' in pipeline and 'with_alt=True' in pipeline
         and 'VALUE TILES:' in prompts and 'def test_master_hero_packshot_split_tiles_and_alt' in tests
+    ),
+    'brand is detected and its palette proposed (probe, wizard, bulk, worker)': (
+        (root / 'apps/api/app/brand_detect.py').exists() and 'def test_brand_is_detected_and_its_palette_is_proposed' in tests
+        and "'brand': brand}" in main and '_adopt_brand_palette(db, project, product, jsonld)' in tasks
+        and 'function brandHintTpl()' in web
+    ),
+    'frame roles are explained: legend, labelled role menu, badge on the frame': (
+        'function frameRoleLegend()' in web and 'function frameBadge(' in web and "triggerClass:'role-trigger'" in web
+        and 'opts.triggerClass' in (root / 'apps/web/ui.js').read_text(encoding='utf-8') and '>AI</button>' not in web
+    ),
+    'ARTLINE Master theme switch: mixed / light / dark, migrated, wired end to end': (
+        (root / 'apps/api/alembic/versions/0022_project_style_theme.py').exists()
+        and (root / 'apps/api/app/master_theme.py').exists()
+        and "style_theme: Mapped[str]" in (root / 'apps/api/app/models.py').read_text(encoding='utf-8')
+        and "'style_theme': _checked_theme(payload.style_theme)" in main and 'p.style_theme = _checked_theme(payload.style_theme)' in main
+        and 'output = apply_master_theme(output, theme)' in pipeline and 'rich_html = apply_master_theme(rich_html, page_theme)' in tasks
+        and 'theme=page_theme' in tasks and '{page_theme_hint}' in tasks
+        and 'function themeOptionTpl(' in web and "style_theme:f.get('style_theme')||'mixed'" in web
+        and 'def test_master_theme_light_and_dark_keep_the_grid' in tests
+    ),
+    'every managed style prompt follows the ARTLINE standard; gpt-image-2.5-sunburst drives the max preset': (
+        'def standardize_style_prompt' in prompts and 'ARTLINE standard swaps matched nothing' in prompts
+        and "FLAGSHIP_IMAGE_MODELS = ('gpt-image-2.5-sunburst',)" in (root / 'apps/api/app/config.py').read_text(encoding='utf-8')
+        and "image:['gpt-image-2.5-sunburst'," in web
+        and 'def test_every_managed_style_prompt_follows_the_artline_standard' in tests
+        and 'def test_gpt_image_25_sunburst_is_offered_priced_and_used_by_max' in tests
     ),
     'rich text is editable in place: segments API, new version, same layout': (
         (root / 'apps/api/app/text_edit.py').exists()
@@ -598,7 +624,7 @@ checks.update({
     'prompts module executes without raising (import-time asserts)': (lambda: (exec(compile(prompts, 'prompts.py', 'exec'), {'__name__': 'app.prompts'}) or True))(),
     'podium 3d: server-made css spin, sanitizer allows inert style only': "PODIUM3D_STYLE_NAME = 'ARTLINE Podium 3D'" in prompts and 'def _apply_podium_spin' in pipeline and 'backface-visibility:hidden' in pipeline and '_apply_podium_spin(relaid, hero)' in tasks and "'ARTLINE Podium 3D'" in web and "any(bad in css for bad in ('url(', '@import'" in pipeline,
     'multi-column rows wrap on any width (all styles)': 'def _responsive_grids' in pipeline and '_responsive_grids(sanitize_html' in pipeline and 'auto-fit,minmax(150px,1fr)' in pipeline,
-    'uploaded photo can be pinned as hero or feature': "upload_hero: str = ''" in main and 'p.custom_hero_url = url' in main and 'function setUploadRole' in web and 'function setFrameRole' in web and 'clearRoleEverywhere' in web and "u.role==='hero'" in web and 'role-chip' in web,
+    'uploaded photo can be pinned as hero or feature': "upload_hero: str = ''" in main and 'p.custom_hero_url = url' in main and 'function setUploadRole' in web and 'function setFrameRole' in web and 'clearRoleEverywhere' in web and 'function frameRoleMenu(' in web and 'function frameRoleLegend(' in web,
     'operator photo uploads: optional, per-photo toggle, gallery merge': "@app.post('/api/uploads/image')" in main and "startswith('/media/uploads/')" in main and 'uploaded_frames' in tasks and 'function uploadRefs' in web and 'toggleUpload(' in web and "uploads:(state.uploads||[]).filter(u=>u.on&&u.url)" in web,
     'pixel field behind login and boot screens': 'function startPixelField' in web and web.count("startPixelField(document.querySelector") >= 1 and 'pixel-bg' not in web.split('function bootScreen')[1].split('\n')[0] and 'image-rendering:pixelated' in (root / 'apps/web/styles.css').read_text(encoding='utf-8') and 'prefers-reduced-motion' in web,
     'github oauth: invite-gated, csrf state, hash handoff': "@app.get('/api/auth/github/callback')" in main and 'def _github_state_ok' in main and 'немає запрошення' in main and 'github_client_secret' in config and 'gh_token=' in web and 'loadAuthMethods' in web and "'user:email'" in main,
@@ -714,7 +740,9 @@ checks.update({
         'def test_transparent_png_lands_on_white_not_black' in tests
         and 'def test_infographic_trims_a_transparent_packshot_by_its_alpha' in tests
     ),
-    'probe box cannot inflate the dialog': 'dialog form>*{min-width:0}' in css and '.probe-grid{max-height' in css,
+    # Сітка кадрів без власної прокрутки (інакше меню «Роль» обрізалось), а
+    # роздуття діалогу стримує ліміт галереї: не більше 10 кадрів.
+    'probe box cannot inflate the dialog': 'dialog form>*{min-width:0}' in css and '.probe-grid{display:flex;flex-wrap:wrap' in css and 'frames = gallery_urls(images, limit=10)' in main,
     'studio ui: tokens, grouped nav, wizard, one primary per screen, guarded by tests': ':root{' in css and '--color-brand:#19BCC9' in css and (root / 'apps/web/ui.js').exists() and 'const NAV_GROUPS=' in web and 'function wizardSubmit' in web and (root / 'tests/test_studio_ui.py').exists(),
 })
 

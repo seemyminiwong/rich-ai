@@ -31,6 +31,8 @@ from app.raster import flatten_to_white
 from app.pipeline import _is_reasoning_model, decode_entities, fetch_bytes_capped, fetch_html, gallery_urls, image_url_rejection, image_urls_in_html, is_public_http_url, is_publishable_image_url, palette_from_accent, parse_page, plain_text_from_html, replace_image_urls, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
 from app.landing import LANDING_PROMPT, LANDING_STYLE_NAME
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
+from app.master_theme import THEMES, normalize_theme
+from app.brand_detect import detect_brand
 from app.text_edit import apply_segments, editable_segments
 from app.version import __version__
 from app.bulk_import import BulkCSVError, MAX_BULK_CSV_BYTES, parse_bulk_csv, split_bulk_values
@@ -132,7 +134,7 @@ MANAGED_STYLES = [
         'name': MASTER_STYLE_NAME,
         'default': False,
         'values': {
-            'description': 'Майстер-промпт ARTLINE v1.0: темний Hero на фото, ключові значення, фото-перевага за перевагою, трійка можливостей, закривальний банер, експлуатація і FAQ. Montserrat, шкала 30/24/18/16. Відео - перед FAQ.',
+            'description': 'Майстер-промпт ARTLINE v1.0: Hero на фото, ключові значення, фото-перевага за перевагою, трійка можливостей, закривальний банер, експлуатація і FAQ. Тема сторінки - змішана, світла або темна - обирається при запуску проєкту. Montserrat, шкала 30/24/18/16. Відео - перед FAQ.',
             'prompt': MASTER_STYLE_PROMPT,
             'hero_prompt': SHOWCASE_HERO_PROMPT,
             'feature_prompt': SHOWCASE_FEATURE_PROMPT,
@@ -475,6 +477,8 @@ class ProjectIn(BaseModel):
     # Палітра з фото товару: акцент і відтінки знімаються воркером із
     # референса перед генерацією. Взаємовиключно з palette_id.
     photo_palette: bool = False
+    # Палітра за брендом товару: воркер визначає бренд і бере його пресет.
+    brand_palette: bool = False
     languages: list[str] = Field(default_factory=lambda: ['ua', 'ru'], max_length=10)
     variants: list[str] = Field(default_factory=lambda: ['desktop', 'mobile'], max_length=10)
     text_model: str | None = Field(default=None, max_length=200)
@@ -501,6 +505,8 @@ class ProjectIn(BaseModel):
     faq: bool = True
     # YouTube-ролик: порожньо = без блока відео.
     video_url: str = Field(default='', max_length=500)
+    # Тема сторінки ARTLINE Master: mixed / light / dark (інші стилі ігнорують).
+    style_theme: str = Field(default='mixed', max_length=16)
 class BulkProjectImportIn(BaseModel):
     csv_text: str = Field(min_length=1, max_length=MAX_BULK_CSV_BYTES)
     style_id: str | None = Field(default=None, max_length=200)
@@ -509,6 +515,9 @@ class BulkProjectImportIn(BaseModel):
     text_model: str | None = Field(default=None, max_length=200)
     image_model: str | None = Field(default=None, max_length=200)
     image_quality: str = Field(default='medium', max_length=20)
+    style_theme: str = Field(default='mixed', max_length=16)
+    # Кожен товар пакета отримує палітру свого бренду (якщо пресет є).
+    brand_palette: bool = False
     skip_existing: bool = True
     validate_only: bool = True
     # Returned by the preview and required for the paid commit. Reusing it is
@@ -559,6 +568,8 @@ class RerunIn(BaseModel):
     palette_id: str | None = None
     # True = зняти палітру з фото заново (токени скидаються — фото могло змінитись).
     photo_palette: bool = False
+    # True = визначити бренд заново і взяти його пресет.
+    brand_palette: bool = False
     languages: list[str] | None = None
     variants: list[str] | None = None
     reuse_images: bool = False
@@ -566,6 +577,8 @@ class RerunIn(BaseModel):
     faq: bool | None = None
     # None = лишити як було; '' = прибрати відео.
     video_url: str | None = Field(default=None, max_length=500)
+    # None = лишити як було; інакше mixed / light / dark для ARTLINE Master.
+    style_theme: str | None = Field(default=None, max_length=16)
     # None = лишити як було; '' = повернути автопідбір; URL = цей кадр.
     # Інший референс робить наявні AI-зображення недійсними - reuse_images
     # ігнорується, зображення створюються заново.
@@ -675,11 +688,12 @@ def project_dict(p, full=False, style_name=''):
         runs = []
     r = {'id': p.id, 'name': decode_entities(p.name), 'source_url': p.source_url, 'style_id': p.style_id, 'style_name': style_name, 'owner_id': p.owner_id, 'status': p.status.value, 'stage': p.stage, 'progress': p.progress,
          'lifetime_cost': float(getattr(p, 'lifetime_cost', 0) or 0), 'run_index': getattr(p, 'run_index', 1) or 1, 'runs': runs,
-         'languages': [x for x in p.languages.split(',') if x], 'variants': [x for x in p.variants.split(',') if x], 'text_model': p.text_model, 'image_model': p.image_model, 'image_quality': p.image_quality, 'faq': bool(getattr(p, 'faq_enabled', True)), 'image_map': _safe_map(getattr(p, 'image_map_json', '')), 'video_url': getattr(p, 'video_url', '') or '',
+         'languages': [x for x in p.languages.split(',') if x], 'variants': [x for x in p.variants.split(',') if x], 'text_model': p.text_model, 'image_model': p.image_model, 'image_quality': p.image_quality, 'faq': bool(getattr(p, 'faq_enabled', True)), 'image_map': _safe_map(getattr(p, 'image_map_json', '')), 'video_url': getattr(p, 'video_url', '') or '', 'style_theme': normalize_theme(getattr(p, 'style_theme', 'mixed')),
          'custom_hero_url': p.custom_hero_url, 'custom_feature_url': p.custom_feature_url, 'reference_url': getattr(p, 'reference_url', '') or '', 'product_category': decode_entities(p.product_category), 'sku': str(product.get('sku') or ''), 'cost_breakdown': breakdown, 'error': p.error, 'duration_seconds': p.duration_seconds, 'input_tokens': p.input_tokens, 'output_tokens': p.output_tokens,
          'image_count': p.image_count, 'text_request_count': p.text_request_count, 'image_request_count': p.image_request_count, 'text_cost': p.text_cost, 'image_cost': p.image_cost, 'estimated_cost': p.estimated_cost,
          'created_at': p.created_at, 'started_at': p.started_at, 'finished_at': p.finished_at,
          'photo_palette': _palette_raw(p).get('source') == 'photo',
+         'brand_palette': _palette_raw(p).get('source') == 'brand', 'palette_brand': str(_palette_raw(p).get('brand') or ''),
          'palette_tokens': {k: v for k, v in _palette_raw(p).items()
                             if k in ('accent', 'dark', 'dark_soft', 'light_soft')}}
     if full:
@@ -1377,7 +1391,7 @@ def probe_product_page(payload: ProbeIn, user=Depends(require_perm('project.crea
         raise HTTPException(400, 'Посилання має бути публічним http(s)-URL')
     try:
         page_html = fetch_html(url)
-        _, images, title, _ = parse_page(page_html, url)
+        jsonld, images, title, _ = parse_page(page_html, url)
     except Exception as exc:
         raise HTTPException(422, f'Не вдалося прочитати сторінку: {str(exc)[:200]}')
     frames = gallery_urls(images, limit=10)
@@ -1397,7 +1411,16 @@ def probe_product_page(payload: ProbeIn, user=Depends(require_perm('project.crea
         if found:
             order = {label: index for index, label in enumerate(ADOPTABLE_IMAGE_LABELS)}
             prior = {'images': sorted(found.values(), key=lambda x: order.get(x['label'], 99))}
-    return {'name': title, 'gallery': frames, 'count': len(frames), 'prior': prior}
+        # Бренд товару -> пропозиція палітри. Назва для пошуку - з картки товару,
+        # а не <title>: у заголовку сторінки стоїть і назва магазину.
+        presets = db.scalars(select(Palette)).all()
+        product_name = str((jsonld or {}).get('name') or '').strip() if isinstance(jsonld, dict) else ''
+        found_brand = detect_brand([x.name for x in presets], jsonld=jsonld,
+                                   name=product_name or re.split(r'\s[|–—-]\s', title or '')[0], url=url)
+        preset = next((x for x in presets if x.name == found_brand['preset']), None) if found_brand['preset'] else None
+        brand = {'name': found_brand['brand'], 'source': found_brand['source'], 'house': found_brand['house'],
+                 'palette_id': preset.id if preset else None, 'palette_name': preset.name if preset else None}
+    return {'name': title, 'gallery': frames, 'count': len(frames), 'prior': prior, 'brand': brand}
 
 
 def _pick_even(items: list, limit: int) -> list:
@@ -1443,7 +1466,15 @@ def _project_values(payload: ProjectIn, db: Session) -> tuple[dict, Style]:
         'gallery_json': json.dumps([u.strip() for u in payload.gallery if is_public_http_url(u.strip())][:10]),
         'faq_enabled': bool(payload.faq),
         'video_url': video_url,
+        'style_theme': _checked_theme(payload.style_theme),
     }, style
+
+
+def _checked_theme(value) -> str:
+    theme = str(value or '').strip().lower() or 'mixed'
+    if theme not in THEMES:
+        raise HTTPException(400, 'Тема сторінки: mixed, light або dark')
+    return theme
 
 
 def _new_project_record(payload: ProjectIn, db: Session, user) -> tuple[Project, Style]:
@@ -1452,6 +1483,7 @@ def _new_project_record(payload: ProjectIn, db: Session, user) -> tuple[Project,
     # 'source: photo' - лише НАМІР: токени зніме воркер із збереженого
     # референса. Свідомо без міграції - палітра живе у наявному palette_json.
     project.palette_json = (json.dumps({'source': 'photo'}) if payload.photo_palette
+                            else json.dumps({'source': 'brand'}) if payload.brand_palette
                             else resolve_palette_snapshot(db, payload.palette_id))
     db.add(project)
     db.flush()
@@ -1791,6 +1823,7 @@ def bulk_import_projects(payload: BulkProjectImportIn, db: Session = Depends(get
                 image_quality=quality,
                 custom_hero_url=str(row.get('custom_hero_url') or '').strip(),
                 custom_feature_url=str(row.get('custom_feature_url') or '').strip(),
+                style_theme=str(row.get('style_theme') or '').strip() or payload.style_theme,
             )
             values, resolved_style = _project_values(row_payload, db)
         except ValidationError as exc:
@@ -1879,6 +1912,8 @@ def bulk_import_projects(payload: BulkProjectImportIn, db: Session = Depends(get
             reserved_cost=item['estimated_cost'],
             **item['values'],
         )
+        if payload.brand_palette:
+            project.palette_json = json.dumps({'source': 'brand'})
         db.add(project)
         db.flush()
         db.add(Event(project_id=project.id, stage='dispatch_pending', message=f'Додано з CSV-пакета {batch_id}; очікує передачі воркеру'))
@@ -2194,6 +2229,8 @@ def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends
     if payload and payload.photo_palette:
         # Токени скидаються до наміру: фото могло змінитись між прогонами.
         p.palette_json = json.dumps({'source': 'photo'})
+    elif payload and payload.brand_palette:
+        p.palette_json = json.dumps({'source': 'brand'})
     elif payload and payload.palette_id is not None:
         p.palette_json = resolve_palette_snapshot(db, payload.palette_id or None)
     if payload and payload.faq is not None:
@@ -2203,6 +2240,8 @@ def rerun(project_id: str, payload: RerunIn | None = None, db: Session = Depends
         if candidate and not youtube_video_id(candidate):
             raise HTTPException(400, 'Посилання на відео має вести на ролик YouTube')
         p.video_url = candidate
+    if payload and payload.style_theme is not None:
+        p.style_theme = _checked_theme(payload.style_theme)
     reference_changed = False
     if payload and payload.reference_url is not None:
         candidate = payload.reference_url.strip()
@@ -3467,7 +3506,7 @@ def available_models(db: Session = Depends(get_db), user=Depends(current)):
     reasoning_models = [x for x in text_models if _is_reasoning_model(x)]
     # Pricing travels with the model list so the New Project dialog can price a run
     # before it starts, using the same figures the worker bills against.
-    return {'text_models': text_models, 'image_models': image_models, 'reasoning_models': reasoning_models, 'source': source, 'gemini_available': bool(cfg['gemini_api_key']), 'gemini_models': list(settings.gemini_models), 'unavailable': unavailable, 'unpriced': sorted({x for x in text_models if x not in settings.text_pricing} | {x for x in image_models if x not in settings.image_pricing}), 'default_text_model': settings.openai_text_model, 'default_image_model': settings.openai_image_model,
+    return {'text_models': text_models, 'image_models': image_models, 'reasoning_models': reasoning_models, 'source': source, 'gemini_available': bool(cfg['gemini_api_key']), 'gemini_models': list(settings.gemini_models), 'unavailable': unavailable, 'unpriced': sorted({x for x in text_models if x not in {**DEFAULT_TEXT_PRICING, **settings.text_pricing}} | {x for x in image_models if x not in {**DEFAULT_IMAGE_PRICING, **settings.image_pricing}}), 'default_text_model': settings.openai_text_model, 'default_image_model': settings.openai_image_model,
             # Ціни: перекриття з .env поверх вбудованих - модель без рядка в .env (gpt-image-2)
             # інакше падала в дефолт 0.07 у діалозі, а воркер рахував їй 0.20.
             'text_pricing': {**DEFAULT_TEXT_PRICING, **settings.text_pricing}, 'image_pricing': {**DEFAULT_IMAGE_PRICING, **settings.image_pricing},

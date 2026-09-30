@@ -540,8 +540,8 @@ def test_dark_editions_keep_contracts_and_never_reintroduce_light_sections():
 
     p360d = PODIUM360DARK_STYLE_PROMPT
     assert 'PODIUM-3D-360' in p360d, 'маркер каруселі мусить успадкуватись'
-    assert 'background:#0D1013' in p360d
-    assert 'background:#FFFFFF;border:1px solid #D0D7DE;border-radius:12px;padding:46px' not in p360d, 'світла сцена не має пережити деривацію'
+    assert 'background:#101010' in p360d
+    assert 'background:#FFFFFF;border:1px solid #D0D7DE;border-radius:14px;padding:46px' not in p360d, 'світла сцена не має пережити деривацію'
     assert 'Container: background:#FFFFFF' not in p360d, 'FAQ на темній сторінці теж темний'
     assert 'rgba(25,188,201,.28)' in p360d, 'ціанове світіння замість тіні'
 
@@ -1423,8 +1423,8 @@ def test_bento_light_edition_contract():
     p = BENTO_LIGHT_STYLE_PROMPT
     assert BENTO_LIGHT_STYLE_NAME == 'ARTLINE Bento Light'
     # світла редакція: жодного темного полотна, канонічний світлий акцент
-    assert '#101010' not in p and '#1A2128' not in p and '#19BCC9' not in p
-    assert '#F2F5F7' in p and 'background:#FFFFFF' in p and '#157985' in p
+    assert 'background:#101010' not in p and 'background:#1A2128' not in p and '#19BCC9' not in p
+    assert 'background:#F5F7FA' in p and 'background:#FFFFFF' in p and '#157985' in p
     assert 'light bento-grid' in p and 'light canvas' in p
     # структура мозаїки ідентична темній редакції
     for token in ('grid-auto-flow:dense', 'NEVER grid-row spans', '12-14 tiles',
@@ -2447,7 +2447,7 @@ def test_showcase_contract_has_no_internal_contradictions():
     assert 'appear in the Hero badge' not in t and 'appear in the Hero h2' in t
     assert 'strictly alternate' not in t and 'matches the RHYTHM RULE exactly' in t
     assert 'For thin 1px borders and small glyphs' in t
-    assert 'apart from pills, a corner rounder than 12px' in t
+    assert 'apart from pills, a corner rounder than 14px' in t
     assert '#d8dde2' not in t.lower().replace('#d0d7de', '')
 
     # оповідь
@@ -2780,7 +2780,7 @@ def test_operator_can_pick_the_ai_reference_frame():
     assert 'materialize_local_reference(manual_local, project.id)' in tasks
     assert 'працює автопідбір кадру' in tasks
     # UI: роль на кадрах і фото, пікер у повторі, новий референс знімає reuse
-    assert web.count("'reference')\">AI</button>") == 2
+    assert "reference:['Основа для AI'" in web and web.count('frameRoleMenu(`set') == 2, 'роль «Основа для AI» на кадрах і власних фото'
     assert "reference_url:(state.probe?.frames||[]).find(x=>x.role==='reference'" in web
     assert "upload_reference:(state.uploads||[]).find(u=>u.role==='reference'" in web
     assert 'function referencePickerField' in web and '${referencePickerField(p)}${reuseImagesField()}' in web
@@ -3091,7 +3091,7 @@ def test_master_style_is_seeded_and_recognised_by_the_faq_machinery():
     main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
     web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
 
-    assert MASTER_STYLE_NAME == 'ARTLINE Master' and BASE_STYLE_VERSION == '12.73'
+    assert MASTER_STYLE_NAME == 'ARTLINE Master' and BASE_STYLE_VERSION == '12.74'
     assert 'ARTLINE BLOCK 08' not in MASTER_STYLE_PROMPT, 'схема коментарів Showcase тут чужа'
     assert style_has_faq(MASTER_STYLE_PROMPT) and is_master_style(MASTER_STYLE_PROMPT)
     assert video_profile(MASTER_STYLE_PROMPT) == 'master' and surface_radius_cap(MASTER_STYLE_PROMPT) == 14
@@ -3457,3 +3457,131 @@ def test_text_edit_changes_words_in_place_and_keeps_the_layout():
             assert why in str(exc), (bad, exc)
         else:
             raise AssertionError(f'{bad} мало бути відхилено')
+
+
+def test_every_managed_style_prompt_follows_the_artline_standard():
+    """Кожен керований стиль у ТЕКСТІ промпту відповідає стандарту ARTLINE."""
+    import app.prompts as P
+    from app.pipeline import is_master_style, strip_image_blocks
+    styles = {
+        'Base': P.DEFAULT_STYLE_PROMPT, 'Engineering': P.ENGINEERING_STYLE_PROMPT, 'Showcase': P.SHOWCASE_STYLE_PROMPT,
+        'Showcase Dark': P.SHOWCASE_DARK_STYLE_PROMPT, 'Showcase Promo': P.SHOWCASE_PROMO_STYLE_PROMPT,
+        'Podium': P.PODIUM_STYLE_PROMPT, 'Podium 3D': P.PODIUM3D_STYLE_PROMPT, 'Podium 3D 360': P.PODIUM360_STYLE_PROMPT,
+        'Podium 3D Scroll': P.PODIUMSCROLL_STYLE_PROMPT, 'Podium 3D 360 Dark': P.PODIUM360DARK_STYLE_PROMPT,
+        'Bento': P.BENTO_STYLE_PROMPT, 'Bento Light': P.BENTO_LIGHT_STYLE_PROMPT, 'Master': P.MASTER_STYLE_PROMPT,
+    }
+    scale = {12, 13, 14, 16, 18, 24, 26, 30}
+    canonical = {'#101010', '#1A2128', '#252525', '#35393F', '#FFFFFF', '#F5F7FA', '#F7F8FA', '#D0D7DE', '#E3E6EA',
+                 '#E7EAEE', '#555555', '#69737D', '#D8DDE2', '#19BCC9', '#157985', '#C9F0F4'}
+    typo = re.compile(r'(?:h[23]|value|subtitle|paragraph|line|font-size:|Body|caption|label|chips?)\D{0,12}?(\d{2})(?:-(\d{2}))?px')
+    for name, text in styles.items():
+        html_part = strip_image_blocks(text)  # арт-дирекція фото - не про верстку
+        sizes = {int(x) for m in typo.finditer(html_part) for x in m.groups() if x}
+        assert sizes <= scale, (name, sorted(sizes - scale))
+        assert not [m for m in re.finditer(r'radius:?\s*(\d{2})px', html_part) if 14 < int(m.group(1)) < 100], name
+        assert '950' not in html_part.replace('never 950', '').replace('Never use 950', ''), name
+        assert '<section style="max-width' not in html_part and 'Avoid all-caps' not in html_part, name
+        assert '—' not in html_part.replace('never the character "—"', ''), name
+        hexes = {h.upper() for h in re.findall(r'#[0-9A-Fa-f]{6}\b', html_part)}
+        assert hexes <= canonical, (name, sorted(hexes - canonical))
+        # кожен, крім майстра, ще й отримує ARTLINE_STANDARD у промпт генерації
+        assert is_master_style(text) == (name == 'Master')
+    # похідні редакції зберегли свої контракти після приведення
+    assert 'DARK EDITION OVERRIDES' in P.SHOWCASE_DARK_STYLE_PROMPT and 'PODIUM-3D-360' in P.PODIUM360DARK_STYLE_PROMPT
+    assert 'light bento-grid' in P.BENTO_LIGHT_STYLE_PROMPT and 'grid-auto-flow:dense' in P.BENTO_LIGHT_STYLE_PROMPT
+
+
+def test_master_theme_light_and_dark_keep_the_grid():
+    """Тема майстра: світла/темна міняє лише кольори; фото-рамки білі; відео не чіпається."""
+    from app.master_theme import apply_master_theme, master_theme_prompt, normalize_theme, theme_image_hint
+    from app.pipeline import _prompt
+    from app.prompts import MASTER_STYLE_PROMPT, SHOWCASE_STYLE_PROMPT
+    page = ('<section style="width:100%;margin:0;padding:0;color:#101010">'
+            '<div style="position:relative;border-radius:14px;background:#101010 url(/media/p/hero-desktop.webp) center/cover no-repeat">'
+            '<img src="/media/p/hero-desktop.webp" alt="" style="position:absolute;inset:0">'
+            '<div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(16,16,16,.92) 0%,rgba(16,16,16,0) 100%)"></div>'
+            '<div style="position:relative"><h2 style="color:#FFFFFF;font-weight:900">HYTE X50</h2><p style="color:#D8DDE2">Опис</p></div></div>'
+            '<div style="background:#F5F7FA;border:1px solid #E3E6EA"><h2 style="color:#101010">КЛЮЧОВІ</h2>'
+            '<div style="background:#FFFFFF;border:1px solid #D0D7DE"><div style="color:#157985;font-weight:900">430 мм</div><p style="color:#555555">GPU</p></div></div>'
+            '<div style="background:#101010;border:1px solid #35393F"><div style="background:#FFFFFF;border-radius:12px;padding:18px"><img src="/media/p/g1.webp" alt="x"></div>'
+            '<h2 style="color:#FFFFFF">ПАНОРАМА</h2><p style="color:#D8DDE2">Текст</p></div>'
+            '<div style="background-color:#101010;background-image:linear-gradient(135deg,#101010 0%,#1A2128 100%)"><h2 style="color:#FFFFFF">БАНЕР</h2></div>'
+            '<div class="arvid" style="background:#FFFFFF"><div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(16,16,16,0),rgba(16,16,16,.6))"></div></div>'
+            '</section>')
+    assert apply_master_theme(page, 'mixed') == page and normalize_theme('bogus') == 'mixed'
+
+    light = apply_master_theme(page, 'light')
+    assert apply_master_theme(light, 'light') == light, 'ідемпотентно'
+    soup = BeautifulSoup(light, 'html.parser')
+    blocks = soup.section.find_all('div', recursive=False)
+    assert '#F5F7FA url(/media/p/hero-desktop.webp)' in blocks[0]['style'], 'підкладка Hero світла, кадр той самий'
+    assert 'rgba(255,255,255,.92)' in light and blocks[0].h2['style'].count('color:#101010') == 1
+    assert 'color:#555555' in blocks[0].p['style']
+    assert 'background:#F5F7FA' in blocks[2]['style'] and 'border:1px solid #D0D7DE' in blocks[2]['style']
+    assert 'linear-gradient(135deg,#FFFFFF 0%,#F5F7FA 100%)' in blocks[3]['style']
+    assert 'rgba(16,16,16,.6)' in str(soup.find(class_='arvid')), 'вуаль на постері відео не перефарбовується'
+    assert [t.name for t in soup.find_all(True)] == [t.name for t in BeautifulSoup(page, 'html.parser').find_all(True)], 'сітка та сама'
+
+    dark = apply_master_theme(page, 'dark')
+    assert apply_master_theme(dark, 'dark') == dark
+    soup = BeautifulSoup(dark, 'html.parser')
+    blocks = soup.section.find_all('div', recursive=False)
+    assert 'background:#101010' in blocks[1]['style'] and 'border:1px solid #35393F' in blocks[1]['style']
+    card = blocks[1].find('div')
+    assert 'background:#1A2128' in card['style'] and 'color:#19BCC9' in str(card) and 'color:#D8DDE2' in str(card)
+    frame = blocks[2].find('div')
+    assert frame['style'].startswith('background:#FFFFFF'), 'біла рамка з фото товару лишається білою'
+    assert 'color:#FFFFFF' in soup.section['style']
+
+    # промпт: тема лише для майстра; підказка сцени Hero - під тон
+    product, st = {'name': 'X'}, SimpleNamespace(prompt=MASTER_STYLE_PROMPT, golden_html='')
+    assert 'CANVAS THEME: LIGHT' in _prompt(product, st, 'ua', 'desktop', '/h', '/f', theme='light')
+    assert 'CANVAS THEME' not in _prompt(product, st, 'ua', 'desktop', '/h', '/f')
+    assert 'CANVAS THEME' not in _prompt(product, SimpleNamespace(prompt=SHOWCASE_STYLE_PROMPT, golden_html=''), 'ua', 'desktop', '/h', '/f', theme='dark')
+    assert 'bright, airy' in theme_image_hint('light') and theme_image_hint('mixed') == '' and master_theme_prompt('mixed') == ''
+
+
+def test_gpt_image_25_sunburst_is_offered_priced_and_used_by_max():
+    from pathlib import Path
+    from app.config import DEFAULT_IMAGE_PRICING, FLAGSHIP_IMAGE_MODELS, Settings
+    assert 'gpt-image-2.5-sunburst' in DEFAULT_IMAGE_PRICING and 'gpt-image-2.5-sunburst' in FLAGSHIP_IMAGE_MODELS
+    # старий .env без нової моделі все одно її пропонує
+    assert Settings(openai_image_models='gpt-image-2,gpt-image-1').image_models[0] == 'gpt-image-2.5-sunburst'
+    root = Path(__file__).resolve().parents[1]
+    web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
+    assert "max:{name:'Максимум'" in web and "image:['gpt-image-2.5-sunburst'," in web.split("max:{name:'Максимум'", 1)[1].split('\n', 1)[0]
+    # Flare не має /images/edits - студія завжди редагує фото товару
+    assert 'flare' not in (root / 'apps/api/app/config.py').read_text(encoding='utf-8').split('DEFAULT_IMAGE_PRICING', 1)[1].split('}\n', 1)[0].lower().replace('flare не додаємо', '')
+    pipeline = (root / 'apps/api/app/pipeline.py').read_text(encoding='utf-8')
+    assert "if not model.startswith('gpt-image-2'):" in pipeline, 'input_fidelity не надсилається і для 2.5'
+
+
+def test_brand_is_detected_and_its_palette_is_proposed():
+    """Бренд товару -> фірмовий пресет: JSON-LD, назва, адреса; суббренд точніший; ARTLINE - своя схема."""
+    from pathlib import Path
+    from app.brand_detect import detect_brand, jsonld_brand
+    from app.brand_palettes import BRAND_ACCENTS
+    known = ['ARTLINE Cyan'] + [b for b, _ in BRAND_ACCENTS]
+    assert jsonld_brand({'brand': {'@type': 'Brand', 'name': 'DEYE'}}) == 'DEYE' and jsonld_brand({'brand': ['HYTE']}) == 'HYTE'
+    r = detect_brand(known, jsonld={'brand': {'name': 'Deye'}}, name='Гібридний інвертор DEYE SUN-12K')
+    assert r['preset'] == 'DEYE' and r['source'] == 'jsonld'
+    r = detect_brand(known, jsonld={'brand': 'ASUS'}, name='Зовнішня кишеня Asus ROG Strix Arion White')
+    assert r['preset'] == 'ASUS ROG' and r['brand'] == 'ASUS', 'суббренд ROG точніший за ASUS'
+    assert detect_brand(known, name='Корпус HYTE X50 Taro Milk')['preset'] == 'HYTE'
+    assert detect_brand(known, name='Материнська плата ASRock B650 для AMD AM5')['preset'] == 'ASRock', 'найраніший бренд у назві'
+    assert detect_brand(known, name='Товар', url='https://artline.ua/uk/product/korpus-be-quiet-pure-base-500')['preset'] == 'be quiet!'
+    house = detect_brand(known, name='Компьютер ARTLINE Avangard x3D')
+    assert house['house'] and house['preset'] is None, 'ARTLINE - фірмова схема стилю'
+    none = detect_brand(known, jsonld={'brand': 'Gamemax'}, name='Корпус Gamemax BLADE')
+    assert none == {'brand': 'Gamemax', 'preset': None, 'source': 'jsonld', 'house': False}
+    assert detect_brand(known, name='Кабель AMDX')['preset'] is None, 'лише цілим словом'
+    root = Path(__file__).resolve().parents[1]
+    main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
+    tasks = (root / 'apps/api/app/tasks.py').read_text(encoding='utf-8')
+    web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
+    # проба пропонує, воркер застосовує намір «за брендом» (одиночний, повтор, CSV)
+    assert "'palette_id': preset.id if preset else None" in main and "json.dumps({'source': 'brand'}) if payload.brand_palette" in main
+    assert "p.palette_json = json.dumps({'source': 'brand'})" in main and 'if payload.brand_palette:' in main
+    assert '_adopt_brand_palette(db, project, product, jsonld)' in tasks
+    assert 'function suggestBrandPalette()' in web and "brand_palette:paletteChoice==='__brand__'" in web
+    assert '<option value="__brand__"' in web and "brand_palette:f.get('bulk_brand_palette')==='on'" in web

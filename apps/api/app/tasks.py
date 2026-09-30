@@ -9,10 +9,12 @@ from sqlalchemy import delete, func, select, update
 from app.celery_app import celery
 from app.config import DEFAULT_IMAGE_PRICING, DEFAULT_TEXT_PRICING, settings
 from app.db import SessionLocal
-from app.models import Artifact, Asset, CriticReport, Event, Project, Status, Style
+from app.models import Artifact, Asset, CriticReport, Event, Palette, Project, Status, Style
 from app.limits import add_spend, add_user_spend
 from app.media import media_url
 from app.artline_standard import apply_artline_standard
+from app.master_theme import apply_master_theme, normalize_theme, theme_image_hint
+from app.brand_detect import detect_brand
 from app.prompts import BASE_STYLE_VERSION, LICENSE_COMMENT
 from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, DARK_STYLE_NAMES, _clamp_surface_radii, _finalize_showcase_layout, ensure_feature_mounted, finalize_faq_html, inject_video_block, prompt_without_faq, strip_faq, style_has_faq, latinize_units, decode_entities, _fit_mobile_hero, _fit_photo_cards, _frame_contained_photos, _harmonize_radii, _never_crop_product_photos
 from app.pipeline import (
@@ -125,6 +127,50 @@ def _photo_palette_requested(project) -> bool:
     except Exception:
         return False
     return raw.get('source') == 'photo'
+
+
+def _brand_palette_requested(project) -> bool:
+    try:
+        raw = json.loads(getattr(project, 'palette_json', None) or '{}') or {}
+    except Exception:
+        return False
+    return raw.get('source') == 'brand'
+
+
+def _adopt_brand_palette(db, project, product: dict, jsonld=None) -> None:
+    """Палітра «за брендом товару»: бренд визначається з картки товару, пресет - за назвою.
+
+    Викликається одразу після витягу характеристик, до зображень: акцент бренду
+    має встигнути в підказку BRAND ACCENT для Hero/Feature. Ідемпотентно: якщо
+    токени вже підставлені (повторний запуск), пресет не шукається вдруге.
+    Бренд без пресета - діє схема стилю, у журналі видно чому."""
+    if not _brand_palette_requested(project):
+        return
+    try:
+        current = json.loads(project.palette_json or '{}') or {}
+    except Exception:
+        current = {'source': 'brand'}
+    if any(k in current for k in PALETTE_TOKENS):
+        return
+    presets = db.scalars(select(Palette)).all()
+    found = detect_brand([p.name for p in presets], jsonld=jsonld, name=str((product or {}).get('name') or project.name or ''),
+                         url=project.source_url or '', brand=str((product or {}).get('brand') or ''))
+    preset = next((p for p in presets if p.name == found['preset']), None) if found['preset'] else None
+    if preset is not None:
+        try:
+            tokens = json.loads(preset.tokens_json or '{}') or {}
+        except Exception:
+            tokens = {}
+        current.update({k: v for k, v in tokens.items() if k in PALETTE_TOKENS or k == 'radius'})
+        current['brand'] = found['brand'] or preset.name
+        project.palette_json = json.dumps(current)
+        log(db, project, 'extract', f'Палітра за брендом: {preset.name}', 16)
+    elif found['house']:
+        log(db, project, 'extract', 'Бренд ARTLINE - діє фірмова схема стилю', 16)
+    else:
+        log(db, project, 'extract',
+            f'Палітра за брендом: {"для бренду " + found["brand"] if found["brand"] else "бренд не визначено"} фірмового пресета немає - діє схема стилю', 16, 'warning')
+    db.commit()
 
 
 def _adopt_photo_palette(db, project, blob: bytes | None) -> None:
@@ -357,6 +403,7 @@ def process_project(self, project_id, reuse_images=False):
             recalculate_cost(project)
             project.cost_breakdown_json = json.dumps(cost_breakdown(project, extract_in, extract_out, content_in, content_out), ensure_ascii=False)
             db.commit()
+            _adopt_brand_palette(db, project, product, jsonld)
 
             style_row = db.get(Style, project.style_id)
             if not style_row:
@@ -375,6 +422,9 @@ def process_project(self, project_id, reuse_images=False):
                 prompt=(style_row.prompt if getattr(project, 'faq_enabled', True)
                         else prompt_without_faq(style_row.prompt))
             )
+            # Тема сторінки (світла/темна/змішана) - лише для майстер-стилю.
+            page_theme = normalize_theme(getattr(project, 'style_theme', 'mixed')) if is_master_style(style.prompt or '') else 'mixed'
+            page_dark = (style.name or '') in DARK_STYLE_NAMES or page_theme == 'dark'
 
             # Image-led styles build the page from real gallery frames; those frames
             # are working material exactly like Hero and Feature, so they belong in
@@ -520,6 +570,8 @@ def process_project(self, project_id, reuse_images=False):
                     # ДЕТЕРМІНОВАНОМУ порядку списку форматів, а не в порядку
                     # завершення - інакше журнал і нумерація ассетів плавали б.
                     pending_heroes = []
+                    # Тема майстра: сцена Hero має бути в тоні сторінки (світла - світла).
+                    page_theme_hint = theme_image_hint(page_theme) if is_master_style(style.prompt or '') else ''
                     for offset, variant in enumerate(requested_variants):
                         adopted_hero = existing_images.get(f'hero-{variant}-generated') or existing_images.get('hero-custom')
                         if adopted_hero:
@@ -528,7 +580,7 @@ def process_project(self, project_id, reuse_images=False):
                             continue
                         size, width, height, composition = hero_specs.get(variant, hero_specs['desktop'])
                         hero_prompt = (
-                            f"{style_hero}\nENVIRONMENT: {hero_environment(product)}\n{brand_accent}"
+                            f"{style_hero}{page_theme_hint}\nENVIRONMENT: {hero_environment(product)}\n{brand_accent}"
                             f"Canvas requirement: {composition}. "
                             f"Render specifically at {size}; do not crop important product parts.\n"
                             f"Negative requirements: {negative}\nProduct: {product_name}. Verified product facts: {facts}"
@@ -698,7 +750,7 @@ def process_project(self, project_id, reuse_images=False):
                                     # блок відео (вставка ідемпотентна).
                                     relaid = inject_video_block(
                                         relaid, video_link, master_language,
-                                        dark=(style.name or '') in DARK_STYLE_NAMES,
+                                        dark=page_dark,
                                         product_name=product_name,
                                         profile=video_profile(style.prompt or ''), variant='mobile',
                                     )
@@ -717,7 +769,7 @@ def process_project(self, project_id, reuse_images=False):
                                         dark_edition=style.name == 'ARTLINE Showcase Dark',
                                     )
                                 else:
-                                    relaid = finalize_faq_html(relaid, dark=(style.name or '') in DARK_STYLE_NAMES)
+                                    relaid = finalize_faq_html(relaid, dark=page_dark)
                                 relaid = latinize_units(relaid, master_language)
                                 # Модель могла загубити <style> обертання при перекомпонуванні -
                                 # повторне застосування ідемпотентне.
@@ -738,6 +790,7 @@ def process_project(self, project_id, reuse_images=False):
                             rich_html, generated_in, generated_out, fallback_reason = generate_html(
                                 product, style, master_language, variant, hero, feature, project.text_model, gallery=page_gallery, rotation=rotation_frames,
                                 palette=_project_palette(project), video=getattr(project, 'video_url', '') or '', video_product=product_name,
+                                theme=page_theme,
                             )
                             added_input += generated_in
                             added_output += generated_out
@@ -809,7 +862,7 @@ def process_project(self, project_id, reuse_images=False):
                             # template, whose structure is identical for all languages.
                             rich_html, added_input, added_output, fallback_reason = generate_html(
                                 product, style, language, variant, hero, feature, project.text_model, gallery=page_gallery, rotation=rotation_frames,
-                                palette=_project_palette(project),
+                                palette=_project_palette(project), theme=page_theme,
                             )
                             if fallback_reason and settings.openai_api_key:
                                 fallback_hits.append(f'{language.upper()}/{variant}: {fallback_reason}')
@@ -834,6 +887,10 @@ def process_project(self, project_id, reuse_images=False):
                     # тож якщо їх уже підмінили, робити нема чого.
                     # Шрифт сайту - на кожному виході, після перекладу й перекомпонування.
                     rich_html = enforce_site_font(rich_html)
+                    # Тема майстра - на кожному виході: переклад і перекомпонування
+                    # повертають темні/світлі блоки змішаного ритму за звичкою.
+                    if is_master_style(style.prompt or ''):
+                        rich_html = apply_master_theme(rich_html, page_theme)
                     # Стандарт ARTLINE для кожного стилю: переклад і перекомпонування
                     # повертають «свої» розміри, радіуси й «—» за звичкою.
                     rich_html = apply_artline_standard(rich_html, (product or {}).get('name', ''))
@@ -988,6 +1045,8 @@ def translate_project(project_id: str, language: str):
             if not translated:
                 log(db, project, 'translate', f'{variant}: перекладач не повернув результат', level='warning')
                 continue
+            # Перекладач повертає «—» і змішаний регістр заголовків за звичкою.
+            translated = apply_artline_standard(translated, project.name or '')
             project.input_tokens += added_input
             project.output_tokens += added_output
             if added_input or added_output:
