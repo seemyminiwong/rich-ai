@@ -12,6 +12,7 @@ from app.db import SessionLocal
 from app.models import Artifact, Asset, CriticReport, Event, Project, Status, Style
 from app.limits import add_spend, add_user_spend
 from app.media import media_url
+from app.artline_standard import apply_artline_standard
 from app.prompts import BASE_STYLE_VERSION, LICENSE_COMMENT
 from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, DARK_STYLE_NAMES, _clamp_surface_radii, _finalize_showcase_layout, ensure_feature_mounted, finalize_faq_html, inject_video_block, prompt_without_faq, strip_faq, style_has_faq, latinize_units, decode_entities, _fit_mobile_hero, _fit_photo_cards, _frame_contained_photos, _harmonize_radii, _never_crop_product_photos
 from app.pipeline import (
@@ -42,7 +43,6 @@ from app.pipeline import (
     master_hero_title,
     dedupe_value_tiles,
     mobile_layout_rules,
-    no_em_dash,
     surface_radius_cap,
     video_profile,
     local_media_path,
@@ -832,12 +832,11 @@ def process_project(self, project_id, reuse_images=False):
                     # НА ВИХОДІ, після будь-якого проходу. Повторне
                     # застосування безпечне: мапляться лише канонічні кольори,
                     # тож якщо їх уже підмінили, робити нема чого.
-                    if is_master_style(style.prompt or ''):
-                        # Переклад і перекомпонування повертають «—» за звичкою;
-                        # контракт майстер-стилю - лише коротке тире.
-                        rich_html = no_em_dash(rich_html)
                     # Шрифт сайту - на кожному виході, після перекладу й перекомпонування.
                     rich_html = enforce_site_font(rich_html)
+                    # Стандарт ARTLINE для кожного стилю: переклад і перекомпонування
+                    # повертають «свої» розміри, радіуси й «—» за звичкою.
+                    rich_html = apply_artline_standard(rich_html, (product or {}).get('name', ''))
                     rich_html = apply_palette(rich_html, _project_palette(project) or style_palette(style))
                     latest_version = db.scalar(select(func.max(Artifact.version)).where(
                         Artifact.project_id == project.id,

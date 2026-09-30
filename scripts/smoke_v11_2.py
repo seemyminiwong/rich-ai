@@ -105,7 +105,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.72"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.73"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 3 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -370,13 +370,21 @@ checks = {
         and '__ARTLINE_ALT_' in pipeline and 'with_alt=True' in pipeline
         and 'VALUE TILES:' in prompts and 'def test_master_hero_packshot_split_tiles_and_alt' in tests
     ),
+    'ARTLINE standard applies to every style (scale, radii, accent, casing, dash, lazy)': (
+        (root / 'apps/api/app/artline_standard.py').exists()
+        and 'ARTLINE_STANDARD = ' in prompts and 'ADAPTED MASTER PROMPT' not in prompts.split('ARTLINE_STANDARD = ', 1)[1].split("'''", 2)[1]
+        and '{_standard_for(style.prompt)}' in pipeline
+        and pipeline.count('apply_artline_standard(') >= 2 and 'apply_artline_standard(rich_html' in tasks
+        and '    return _MASTER_MAX_SURFACE_RADIUS\n' in pipeline
+        and 'def test_artline_standard_unifies_every_style' in tests
+    ),
     'ARTLINE Master style seeded, locked and understood by the FAQ/video machinery': (
         "MASTER_STYLE_NAME = 'ARTLINE Master'" in prompts and 'MASTER_STYLE_PROMPT' in main
         and "'ARTLINE Master'" in web.split('MANAGED_STYLE_NAMES=')[1].split(']')[0]
         and 'return FAQ_BLOCK_MARKER in text or MASTER_FAQ_MARKER in text' in pipeline
         and "profile=video_profile(prompt_text), variant=variant" in pipeline
         and "style_rules=mobile_layout_rules(style.prompt or '')" in tasks
-        and 'surface_radius_cap(style.prompt' in tasks and 'no_em_dash(rich_html)' in tasks
+        and 'surface_radius_cap(style.prompt' in tasks and 'apply_artline_standard(rich_html' in tasks
         and 'def test_master_video_block_goes_before_faq_and_renumbers_the_comments' in tests
         and 'def test_master_mobile_relayout_may_regroup_blocks_but_never_the_copy' in tests
     ),
@@ -477,7 +485,7 @@ checks = {
     ),
     'api outranks the static cache regex too': 'location ^~ /api/' in nginx and 'location /api/ {' not in nginx,
     'frontend crashes reach the alert channel': "addEventListener('error'" in web and "@app.post('/api/client-error')" in main,
-    'close buttons are labelled': web.count('aria-label="Закрити"') + web.count('aria-label="Прибрати"') == web.count('>×</button>'),
+    'close buttons are labelled': web.count('aria-label="Закрити"') + web.count('aria-label="Прибрати') == web.count('>×</button>'),
     'refuses to boot on shipped secrets': 'def check_secrets' in main and 'check_secrets()' in main and 'SHIPPED_DEFAULTS' in config,
     'jwt secret has a length floor': "len(self.jwt_secret) < 32" in config,
     'postgres password warns but never blocks': 'def warn_secrets' in config and 'postgres_password' not in config.split('def insecure_secrets')[1].split('def warn_secrets')[0],
@@ -498,7 +506,7 @@ checks = {
     'post-baseline changes captured in a revision': (root / 'apps/api/alembic/versions/0002_runtime_settings.py').exists(),
     'hand-rolled column adds are gone': 'column_migrations' not in db,
     'license present': (root / 'LICENSE').exists() and 'PolyForm Noncommercial License 1.0.0' in (root / 'LICENSE').read_text(encoding='utf-8'),
-    'critic css': 'v11.8' in css,
+    'critic css': '.critic-block{' in css and '.critic-clean{' in css and '.issue-items' in css,
 }
 
 # Late additions: registered via update() with asserts in the build script, after
@@ -508,7 +516,7 @@ checks.update({
     'video block: youtube only, server-injected, switchable by link': 'def youtube_video_id' in pipeline and 'def inject_video_block' in pipeline and 'img.youtube.com/vi/' in pipeline and '_youtube_poster' in pipeline and 'youtube-nocookie.com/embed/' in pipeline and 'height:auto' in pipeline and 'stripVideoEmbedsForPreview' in web and 'video_url' in models and (root / 'apps/api/alembic/versions/0018_project_video.py').exists() and 'video=getattr(project' in tasks and 'inject_video_block(' in tasks and "name=\"video_url\"" in web and 'video_url' in main,
     'paid feature is always mounted, env frames cover, faq starts closed': 'def ensure_feature_mounted' in pipeline and 'ensure_feature_mounted(relaid, feature' in tasks and '_is_environment_photo' in pipeline and '_probe_media_surface' in pipeline and 'fetch_bytes_capped(http, canonical' in pipeline and "item.attrs.pop('open', None)" in pipeline and 'never write the open attribute' in prompts,
     'paid feature lands in its own block, not just anywhere on the page': 'def _block_photo_slot' in pipeline and "_block_photo_slot(soup, 'ARTLINE BLOCK 04'" in pipeline and 'Feature frame moved into BLOCK 04' in pipeline,
-    'faq is switchable per project and visible in the ui': 'faq_enabled' in models and (root / 'apps/api/alembic/versions/0017_project_faq.py').exists() and 'def prompt_without_faq' in pipeline and 'def strip_faq' in pipeline and 'def style_has_faq' in pipeline and "'has_faq': style_has_faq" in main and 'faq: bool = True' in main and 'prompt_without_faq(style_row.prompt)' in tasks and 'renderFaqOption' in web and 'faqBox' in web and "x.has_faq?'FAQ':''" in web and 'FAQ IS DISABLED FOR THIS RUN' in pipeline,
+    'faq is switchable per project and visible in the ui': 'faq_enabled' in models and (root / 'apps/api/alembic/versions/0017_project_faq.py').exists() and 'def prompt_without_faq' in pipeline and 'def strip_faq' in pipeline and 'def style_has_faq' in pipeline and "'has_faq': style_has_faq" in main and 'faq: bool = True' in main and 'prompt_without_faq(style_row.prompt)' in tasks and 'renderFaqOption' in web and 'faqBox' in web and 'x.has_faq?' in web and 'FAQ IS DISABLED FOR THIS RUN' in pipeline,
     'bento mosaic style seeded and locked': "'ARTLINE Bento'" in web.split('MANAGED_STYLE_NAMES=')[1].split(']')[0] and 'BENTO_STYLE_NAME' in main and 'grid-auto-flow:dense' in prompts and 'def finalize_faq_html' in pipeline and 'finalize_faq_html(relaid' in tasks and 'DARK_STYLE_NAMES' in pipeline,
     'cyrillic units latinized on latin-script pages': 'def latinize_units' in pipeline and 'latinize_units(output, language)' in pipeline and 'latinize_units(result, language)' in pipeline and 'latinize_units(relaid, master_language)' in tasks and 'numbers and units unchanged' not in pipeline and 'trademarks, numbers and units' not in pipeline,
     'image link swap: one place to repoint every frame at the shop server': 'def image_urls_in_html' in pipeline and 'def replace_image_urls' in pipeline and 'def is_publishable_image_url' in pipeline and 'def image_url_rejection' in pipeline and "/api/artifacts/{artifact_id}/images" in main and 'image_map_json' in main and 'image_map_json' in models and (root / 'apps/api/alembic/versions/0019_project_image_map.py').exists() and 'function imageLinksPanel' in web and 'applyImageLinks' in web and "t.push('links')" in web,
@@ -516,7 +524,7 @@ checks.update({
     'infographic: brand icon library, four layouts, 2000px webp without a browser': (root / 'apps/api/app/infographic/icons.json').exists() and len(list((root / 'apps/api/app/infographic/icons').glob('*.png'))) > 100 and 'def render_infographic' in (root / 'apps/api/app/infographic.py').read_text(encoding='utf-8') and "TEMPLATES = ('icons-left', 'icons-right', 'callouts', 'strip-bottom')" in (root / 'apps/api/app/infographic.py').read_text(encoding='utf-8') and 'def suggest_infographic' in pipeline and "/api/projects/{project_id}/infographic" in main and '/api/infographic/icons' in main and 'function infographicPanel' in web and "t.push('info')" in web and 'fonts-dejavu-core' in (root / 'apps/api/Dockerfile').read_text(encoding='utf-8'),
     'project filters: merged categories, facets, quick chips, saved between visits': 'const catKey=' in web and 'function projectCategoryGroups' in web and 'catIsProductName' in web and 'QUICK_FILTERS' in web and 'function activeFilterChips' in web and 'projectFilters' in web and 'styleFilter' in web and 'modelFilter' in web,
     'icon previews load without a bearer token (img cannot send headers)': "def infographic_icon(slug: str, c: str = ''):" in main and 'infographic/icon/' in web,
-    'standalone infographic section works before the product page exists': "@app.post('/api/infographic/suggest')" in main and "@app.post('/api/infographic/render')" in main and '/api/infographic/gallery' in main and 'function infographicPage' in web and "['infographic','Інфографіка']" in web and 'infographic:infographicPage' in web and 'function igBrandBlock' in web and 'function igItemsBlock' in web,
+    'standalone infographic section works before the product page exists': "@app.post('/api/infographic/suggest')" in main and "@app.post('/api/infographic/render')" in main and '/api/infographic/gallery' in main and 'function infographicPage' in web and "['infographic','Інфографіка'" in web and 'infographic:infographicPage' in web and 'function igBrandBlock' in web and 'function igItemsBlock' in web,
     'infographic suggest imported lazily so a partial deploy cannot kill the api': 'from app.pipeline import suggest_infographic' in main and 'suggest_infographic' not in main.split('\n')[main.split('\n').index([l for l in main.split('\n') if l.startswith('from app.pipeline import _is_reasoning_model')][0])],
     'infographic: any brand logo from the ui, svg rasterized in the browser': '/api/infographic/logos' in main and "@app.post('/api/infographic/logo')" in main and 'async function svgToPng' in web and 'igLogoUpload' in web and "brand: str = 'ARTLINE'" in (root / 'apps/api/app/infographic.py').read_text(encoding='utf-8') and 'wordmark_only' in (root / 'apps/api/app/infographic.py').read_text(encoding='utf-8'),
     'plain-text edition available for every finished page without a rerun': 'def plain_text_from_html' in pipeline and "/api/artifacts/{artifact_id}/text" in main and 'text/rich-{language}-{variant}.txt' in main and 'function textPanel' in web and "t.push('text')" in web and 'downloadArtifactText' in web,
@@ -581,12 +589,12 @@ checks.update({
     'multi-column rows wrap on any width (all styles)': 'def _responsive_grids' in pipeline and '_responsive_grids(sanitize_html' in pipeline and 'auto-fit,minmax(150px,1fr)' in pipeline,
     'uploaded photo can be pinned as hero or feature': "upload_hero: str = ''" in main and 'p.custom_hero_url = url' in main and 'function setUploadRole' in web and 'function setFrameRole' in web and 'clearRoleEverywhere' in web and "u.role==='hero'" in web and 'role-chip' in web,
     'operator photo uploads: optional, per-photo toggle, gallery merge': "@app.post('/api/uploads/image')" in main and "startswith('/media/uploads/')" in main and 'uploaded_frames' in tasks and 'function uploadRefs' in web and 'toggleUpload(' in web and "uploads:(state.uploads||[]).filter(u=>u.on&&u.url)" in web,
-    'pixel field behind login and boot screens': 'function startPixelField' in web and web.count("startPixelField(document.querySelector") >= 2 and 'image-rendering:pixelated' in (root / 'apps/web/styles.css').read_text(encoding='utf-8') and 'prefers-reduced-motion' in web,
+    'pixel field behind login and boot screens': 'function startPixelField' in web and web.count("startPixelField(document.querySelector") >= 1 and 'pixel-bg' not in web.split('function bootScreen')[1].split('\n')[0] and 'image-rendering:pixelated' in (root / 'apps/web/styles.css').read_text(encoding='utf-8') and 'prefers-reduced-motion' in web,
     'github oauth: invite-gated, csrf state, hash handoff': "@app.get('/api/auth/github/callback')" in main and 'def _github_state_ok' in main and 'немає запрошення' in main and 'github_client_secret' in config and 'gh_token=' in web and 'loadAuthMethods' in web and "'user:email'" in main,
     'playwright e2e is the primary frontend insurance': (root / 'tests/e2e/test_studio_flow.py').exists() and 'pageerror' in (root / 'tests/e2e/test_studio_flow.py').read_text(encoding='utf-8') and 'playwright install' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8') and 'needs: [checks, e2e]' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8'),
     'health endpoint hides the version from anonymous callers': "def health(): return {'status': 'ok'}" in main,
     'progress memo capped at 100 entries': 'mk.length-100' in web,
-    'tech stack loop on settings page': 'function techStrip' in web and 'techloop-seq' in web and '${seq(false)}${seq(true)}' in web and '${techStrip()}' in web and 'tlScroll' in (root / 'apps/web/styles.css').read_text(encoding='utf-8'),
+    'tech stack list on settings page, static (no decorative loops in the work area)': 'function techStrip' in web and 'techloop-seq' in web and '${techStrip()}' in web and 'tlScroll' not in (root / 'apps/web/styles.css').read_text(encoding='utf-8'),
     'fallback reason is classified, not raw exception text': 'def public_fallback_reason' in pipeline and 'public_fallback_reason(exc)' in pipeline and 'used built-in template: {exc}' not in pipeline,
     'external downloads are stream-capped': 'def fetch_bytes_capped' in pipeline and pipeline.count('fetch_bytes_capped(') >= 4 and 'fetch_bytes_capped(http, asset.url)' in main and 'total_archive_bytes' in main,
     'optional project ownership mode': 'def require_project_edit' in main and main.count('require_project_edit(') >= 6 and 'project_ownership' in config,
@@ -606,7 +614,7 @@ checks.update({
     'every content image gets rounded corners mechanically': 'def _round_image_corners' in pipeline and '_round_image_corners(output)' in pipeline,
     'progress bar tweens through a memo, not a dead transition': 'PROGRESS_MEMO' in web and 'function animateProgressBars' in web and web.count('animateProgressBars()') >= 3,
     'only active runs animate': "['processing','queued'].includes(p.status)" in web and '.progress.run i::after' in css,
-    'progress respects reduced motion': '.progress.run i::after,.progress .phead{animation:none}' in css,
+    'progress respects reduced motion': '@media (prefers-reduced-motion: reduce)' in css and 'animation-duration:.01ms!important' in css and '.progress.run i::after' in css,
     'podium style derived with import-time sanity': "PODIUM_STYLE_NAME = 'ARTLINE Podium'" in prompts and 'PODIUM style derivation failed' in prompts,
     'podium generates zero ai images': "'name': PODIUM_STYLE_NAME" in main and main.split("'name': PODIUM_STYLE_NAME")[1][:600].count("'hero_prompt': ''") == 1,
     'abs-img hero repair gated by contract phrase, not gallery': "img_hero='THE FIRST CHILD of the wrapper' in (style.prompt or '')" in pipeline,
@@ -630,7 +638,7 @@ checks.update({
     'artifacts carry a build marker': 'ARTLINE Rich Studio · стиль v' in tasks,
     'media lists every image the page references': 'used_page_images' in tasks and "page-image-" in tasks and 'Зображення сторінки' in web,
     'review draft survives tab switches': 'function reviewDraft' in web and 'state.reviewDraft=null' in web,
-    'review has an embedded preview': 'review-stage' in web and 'Перевіряйте прямо тут' in web,
+    'review has an embedded preview': 'review-layout' in web and "previewCanvasTpl('Перегляд для перевірки'" in web,
     'approve gated on the full checklist': 'reviewApproveBtn' in web and 'done===items.length' in web,
     'checkbox ticks never reload the preview iframe': 'function updateReviewUI' in web and 'render()' not in web.split('function reviewCheckToggle(el){')[1].split('}')[0],
     'changes requested leads to a rerun cta': 'review-cta' in web,
@@ -696,6 +704,7 @@ checks.update({
         and 'def test_infographic_trims_a_transparent_packshot_by_its_alpha' in tests
     ),
     'probe box cannot inflate the dialog': 'dialog form>*{min-width:0}' in css and '.probe-grid{max-height' in css,
+    'studio ui: tokens, grouped nav, wizard, one primary per screen, guarded by tests': ':root{' in css and '--color-brand:#19BCC9' in css and (root / 'apps/web/ui.js').exists() and 'const NAV_GROUPS=' in web and 'function wizardSubmit' in web and (root / 'tests/test_studio_ui.py').exists(),
 })
 
 # Structural guard for the class of bug that ate the probe helpers: every function
@@ -704,7 +713,8 @@ import re as _re
 _dialog = web[web.index('function projectDialog'):web.index('async function createProject')]
 _called = set(_re.findall(r'(?:onclick|onblur|onchange|oninput|onerror)="([A-Za-z_]\w*)\(', _dialog)) | set(_re.findall(r'\$\{([A-Za-z_]\w*)\(', _dialog))
 _known = {'esc', 'hint', 'options', 'dataList', 'languagePicker', 'updateEstimate', 'setProjectMode', 'probePage', 'createProject'}
-_defined = lambda f: _re.search(r'function ' + f + r'\(', web) or _re.search(r'[=,;({\s]' + f + r'\s*=', web)
+_ui = (root / 'apps/web/ui.js').read_text(encoding='utf-8')
+_defined = lambda f: _re.search(r'function ' + f + r'\(', web + _ui) or _re.search(r'[=,;({\s]' + f + r'\s*=', web + _ui)
 _missing = sorted(f for f in _called if f not in _known and not _defined(f))
 # A truthy string here would count as a pass; keep the value strictly boolean and
 # report the names on their own line instead.

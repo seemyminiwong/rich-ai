@@ -969,7 +969,15 @@ def delete_user(user_id: str, db: Session = Depends(get_db), user=Depends(requir
 @app.get('/api/styles')
 def styles(db: Session = Depends(get_db), user=Depends(current)):
     counts = dict(db.execute(select(Project.style_id, func.count(Project.id)).group_by(Project.style_id)).all())
-    return [style_dict(x, usage=int(counts.get(x.id, 0))) for x in db.scalars(select(Style).order_by(Style.name)).all()]
+    # Активна версія і час останньої зміни - для списку стилів і інспектора.
+    # Одна агрегація по style_versions, без дотику до самих стилів.
+    versions = {sid: (ver, at) for sid, ver, at in db.execute(
+        select(StyleVersion.style_id, func.max(StyleVersion.version), func.max(StyleVersion.created_at))
+        .group_by(StyleVersion.style_id)).all()}
+    return [{**style_dict(x, usage=int(counts.get(x.id, 0))),
+             'version': int((versions.get(x.id) or (0, None))[0] or 0),
+             'updated_at': (versions.get(x.id) or (0, None))[1]}
+            for x in db.scalars(select(Style).order_by(Style.name)).all()]
 
 
 @app.post('/api/styles')
@@ -1276,7 +1284,11 @@ def analyze_style(payload: StyleAnalyzeIn, user=Depends(require_perm('style.mana
 @app.get('/api/projects')
 def projects(db: Session = Depends(get_db), user=Depends(current)):
     styles_by_id = {x.id: x.name for x in db.scalars(select(Style)).all()}
-    return [project_dict(x, style_name=styles_by_id.get(x.style_id, '')) for x in db.scalars(select(Project).order_by(Project.created_at.desc())).all()]
+    # Автор рядка - для черги рев'юера і колонки «Автор». Одне читання
+    # користувачів на весь список, лише ім'я: пошта і права сюди не потрапляють.
+    owners = {u.id: (u.name or u.email.split('@')[0]) for u in db.scalars(select(User)).all()}
+    return [{**project_dict(x, style_name=styles_by_id.get(x.style_id, '')), 'owner_name': owners.get(x.owner_id, '')}
+            for x in db.scalars(select(Project).order_by(Project.created_at.desc())).all()]
 
 
 @app.post('/api/projects/{project_id}/translate')

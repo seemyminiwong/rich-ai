@@ -3,6 +3,7 @@ set -eu
 python3 -m compileall -q apps/api/app
 NODE_BIN="${NODE_BIN:-node}"
 if command -v "$NODE_BIN" >/dev/null 2>&1; then
+  "$NODE_BIN" --check apps/web/ui.js
   "$NODE_BIN" --check apps/web/app.js
 else
   echo "Node.js not found; JavaScript syntax check skipped"

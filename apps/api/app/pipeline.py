@@ -17,6 +17,7 @@ from openai import OpenAI
 from PIL import Image, ImageOps
 from app.config import settings
 from app.media import media_url
+from app.artline_standard import apply_artline_standard
 from app.raster import compose_hero_canvas, contrast_ratio, cutout_product, flatten_to_white, paste_product_back, readable_on
 from app.runtime import GEMINI_BASE_URL, OPENROUTER_BASE_URL, runtime_config
 
@@ -1693,20 +1694,34 @@ def core_feature_text(markup: str) -> str:
     return ''
 
 
+def _section_re(section: str):
+    """Розділ [X]...[/X] промпту стилю.
+
+    Блок починається з ОСТАННЬОЇ мітки [X] перед [/X]: промпт може згадувати
+    розділ у тексті («rules in [MOBILE_LAYOUT] below»). Живий дефект: нежадібний
+    .*? стартував зі згадки, і десктопна генерація майстра втрачала всі правила
+    від контракту студії до сітки - FACTS, HTML, DESIGN SYSTEM, GRID.
+    """
+    tag = re.escape(section)
+    return re.compile(rf'\[{tag}\]((?:(?!\[{tag}\]).)*?)\[/{tag}\]', re.I | re.S)
+
+
 def strip_image_blocks(style_prompt: str) -> str:
     """Remove [HERO_IMAGE]/[FEATURE_IMAGE] art direction from the text-model prompt.
 
     Those blocks steer the image models. If the HTML model sees them it may render
     them as visible copy, which is exactly the meta-text failure we forbid.
     """
-    return re.sub(r'\[(HERO_IMAGE|FEATURE_IMAGE)\].*?\[/\1\]', '', style_prompt or '', flags=re.I | re.S).strip()
+    text = style_prompt or ''
+    for section in ('HERO_IMAGE', 'FEATURE_IMAGE'):
+        text = _section_re(section).sub('', text)
+    return text.strip()
 
 
 def style_image_prompt(style_prompt: str, section: str) -> str:
     # Optional sections inside the single style field:
     # [HERO_IMAGE] ... [/HERO_IMAGE] and [FEATURE_IMAGE] ... [/FEATURE_IMAGE]
-    pattern = rf"\[{re.escape(section)}\](.*?)\[/{re.escape(section)}\]"
-    match = re.search(pattern, style_prompt or "", re.I | re.S)
+    match = _section_re(section).search(style_prompt or "")
     return match.group(1).strip() if match else ""
 
 
@@ -3205,8 +3220,9 @@ def video_profile(prompt: str) -> str:
 
 
 def surface_radius_cap(prompt: str) -> int:
-    """Стеля радіуса поверхонь: 12px для всієї родини, 14px - контракт майстер-стилю."""
-    return _MASTER_MAX_SURFACE_RADIUS if is_master_style(prompt) else _MAX_SURFACE_RADIUS
+    """Стеля радіуса поверхонь: 14px - спільний стандарт ARTLINE для всіх стилів."""
+    # Стандарт ARTLINE: зовнішні блоки 14px для всіх стилів, не лише майстра.
+    return _MASTER_MAX_SURFACE_RADIUS
 
 
 def mobile_layout_rules(prompt: str) -> str:
@@ -3216,7 +3232,7 @@ def mobile_layout_rules(prompt: str) -> str:
 
 def strip_mobile_layout(prompt: str) -> str:
     """Прибрати мобільний план із промпту десктопної генерації: там він лише шум."""
-    return re.sub(r'\[MOBILE_LAYOUT\].*?\[/MOBILE_LAYOUT\]', '', prompt or '', flags=re.S).strip()
+    return _section_re('MOBILE_LAYOUT').sub('', prompt or '').strip()
 
 
 def no_em_dash(markup: str) -> str:
@@ -3760,6 +3776,12 @@ def _golden_example(style) -> str:
             'those must come from Product JSON for the NEW product):\n' + golden)
 
 
+def _standard_for(prompt: str) -> str:
+    """Спільний стандарт ARTLINE для стилю. У майстер-стилі він уже всередині промпту."""
+    from app.prompts import ARTLINE_STANDARD
+    return '' if is_master_style(prompt) else '\n\n' + ARTLINE_STANDARD
+
+
 def _style_text_for(prompt: str, variant: str) -> str:
     """Текст стилю для моделі: без арт-дирекції зображень, мобільний план - лише мобільному."""
     text = strip_image_blocks(prompt)
@@ -3776,10 +3798,10 @@ Variant: {variant}. Layout: {layout}. Use inline CSS only.
 Site font rule: the root section uses font-family:'Montserrat','Segoe UI',Arial,sans-serif - the artline.ua font - and no element uses another family; never import or load a font.
 SEO heading rule: never use <h1>. The product page already contains its primary H1. Use <h2> for the Hero product title and major section headings, and <h3> for card titles.
 Embedding rule: the rich content is displayed on a light ARTLINE product page. Keep the root canvas transparent or white and make the majority of content surfaces light. Dark styling may be used inside selected high-contrast sections such as Hero or the final section, but never as a full-page background.
-Mandatory visual guardrails: use #101010 for headings and #555555 or #69737D for paragraphs on light surfaces; use #FFFFFF or #F7F8FA for headings and #D0D7DE or #AFB8C1 for paragraphs on dark surfaces. Use #19BCC9 only for compact badges, eyebrow labels, small specification values and subtle borders. Never use turquoise, green, blue, purple or orange for paragraphs or multi-line headings. At least 70 percent of the content area must remain light or transparent. Use 12px radii for sections and cards and 8px for badges. Do not use decorative colored strips, alternating card colors, checkerboard layouts, excessive gradients or repeated heavy shadows.
+Mandatory visual guardrails: use #101010 for headings and #555555 or #69737D for paragraphs on light surfaces; use #FFFFFF or #F7F8FA for headings and #D0D7DE or #AFB8C1 for paragraphs on dark surfaces. Use the #19BCC9 accent only for compact badges, eyebrow labels, big specification values and subtle borders; as text on a light surface it becomes #157985. Never use turquoise, green, blue, purple or orange for paragraphs or multi-line headings. At least 70 percent of the content area must remain light or transparent. Use 14px radii for major blocks, 10-12px for inner cards and frames, and 8px or 999px for badges. Do not use decorative colored strips, alternating card colors, checkerboard layouts, excessive gradients or repeated heavy shadows.
 The style prompt below is the primary design specification. Follow it precisely unless it conflicts with factual accuracy or HTML validity.
 STYLE PROMPT:
-{_style_text_for(style.prompt, variant)}{_golden_example(style)}
+{_style_text_for(style.prompt, variant)}{_standard_for(style.prompt)}{_golden_example(style)}
 Mandatory factual rule: use only facts present in Product JSON. Never invent warranty, partnership, certification, compatibility, performance, contents or support claims.
 Images: hero={hero}; feature={feature}.{_gallery_line(style, gallery)}
 Product JSON: {json.dumps(product, ensure_ascii=False)}"""
@@ -4272,8 +4294,9 @@ HTML:
             )
         output = latinize_units(output, language)
         output = enforce_site_font(output)
-        if is_master_style(prompt_text):
-            output = no_em_dash(output)
+        # Стандарт ARTLINE (шкала, ваги, радіуси, акцент, тире, регістр h2,
+        # lazy) - для кожного стилю, до палітри: вона мапить канонічні кольори.
+        output = apply_artline_standard(output, (product or {}).get('name', ''))
         # Кольорова схема - НАЙОСТАННІШИЙ прохід: сітка вже зафіксована всіма
         # гардами, підміна кольорів її гарантовано не чіпає. Схема, обрана при
         # запуску проєкту (palette), має пріоритет над схемою стилю.
@@ -4281,7 +4304,8 @@ HTML:
         return output, input_tokens, output_tokens, ''
     except Exception as exc:
         logger.exception('generate_html fell back to deterministic template for %s/%s', language, variant)
-        return apply_palette(latinize_units(fallback, language), palette or style_palette(style)), 0, 0, public_fallback_reason(exc)
+        fallback = apply_artline_standard(latinize_units(fallback, language), (product or {}).get('name', ''))
+        return apply_palette(fallback, palette or style_palette(style)), 0, 0, public_fallback_reason(exc)
 
 
 def _translation_template(markup: str, with_alt: bool = False):

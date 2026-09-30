@@ -16,8 +16,10 @@ RUN apt-get update \
 
 FROM nginx:1.27-alpine
 COPY index.html /usr/share/nginx/html/index.html
+COPY ui.js /usr/share/nginx/html/ui.js
 COPY app.js /usr/share/nginx/html/app.js
 COPY styles.css /usr/share/nginx/html/styles.css
+COPY artline-logo.svg /usr/share/nginx/html/artline-logo.svg
 COPY favicon-32.png /usr/share/nginx/html/favicon-32.png
 COPY icon-512.png /usr/share/nginx/html/icon-512.png
 COPY apple-touch-icon.png /usr/share/nginx/html/apple-touch-icon.png

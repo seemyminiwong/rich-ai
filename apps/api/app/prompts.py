@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.72"
+BASE_STYLE_VERSION = "12.73"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -14,6 +14,23 @@ LICENSE_COMMENT = ('\n<!-- Згенеровано ARTLINE Rich Studio · https:/
                    'Правовласник — Copyright 2026 seemyminiwong. '
                    'Для комерційної ліцензії: yehorshuliak@gmail.com. -->')
 BASE_STYLE_NAME = "ARTLINE Base"
+
+# Спільний стандарт ARTLINE для ВСІХ стилів (з майстер-промпту власника).
+# Кожен стиль зберігає свою сітку й порядок блоків; шрифт, шкала, ваги,
+# радіуси, акцент, регістр заголовків, тире й alt - однакові. Сервер
+# гарантує це механічно (app/artline_standard.py), текст пояснює моделі.
+# Маркера майстер-стилю тут бути не може: інакше будь-який стиль став би «Master».
+ARTLINE_STANDARD = r'''ARTLINE STANDARD (shared by every ARTLINE style; it overrides any conflicting size, radius, weight or casing in the style prompt above, while that prompt still decides the grid, block order and imagery)
+- Root: <section style="width:100%;margin:0;padding:0;font-family:'Montserrat','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;"> - no max-width on the root; each major block carries its own padding.
+- Type scale, both devices: Hero h2 30px/1.12; every other h2 24px/1.25; h3 and subtitles 18px/1.4; body 16px/1.6; big technical values 26px/1.15; captions 14px/1.4; badges 12-13px. Nothing below 12px.
+- Weights: body 400-500; h3 and subtitles 700-800; h2 and values 900. Never 950.
+- Radius: outer blocks 14px; inner cards and frames 10-12px; badge pills 999px only where useful. Nothing rounder than 14px except pills.
+- Canonical palette: dark #101010 / #1A2128; light #FFFFFF / #F5F7FA; borders #35393F on dark, #D0D7DE on light; text #101010 and #555555 on light, #FFFFFF and #D8DDE2 on dark. Accent #19BCC9 on dark and #157985 on light: badges, eyebrows, big values and thin borders only - never paragraphs, never a fill.
+- Casing: every h2 except the Hero title is uppercase, while brand, model and protocol spelling stays intact; h3 and subtitles are sentence case.
+- Punctuation: en dash (–) and hyphen (-) only. Never the em dash character and never &mdash;.
+- Images: every img has a concise alt in the target language; loading="lazy" on every img outside the Hero.
+- FAQ, when the style has one: product-specific questions answered by Product JSON, all items closed, plain question text in summary.
+- Mobile: one column, no horizontal overflow, the same copy and images as desktop, outer radius 14px, block padding about 20px 16px.'''
 ENGINEERING_STYLE_NAME = "ARTLINE Engineering"
 
 DEFAULT_STYLE_PROMPT = r'''Create production-ready premium ecommerce rich content that feels native to artline.ua and belongs to one coherent ARTLINE design system.
@@ -1135,7 +1152,7 @@ Create product rich content for ARTLINE. Real product images lead; short, precis
 STUDIO CONTRACT (this edition runs inside ARTLINE Rich Studio and replaces the manual workflow of the source prompt)
 - FACTS: Product JSON in the request is the only source of product facts; external pages cannot be opened here. Match the exact model, color, capacity and regional variant in Product JSON and never infer one variant's specifications from another. Omit every claim the JSON does not confirm.
 - IMAGES: use only the supplied URLs - hero (a scene of this exact product: product on the right, calm space on the left), feature (one additional frame for the primary feature) and GALLERY_IMAGES (real photos of this exact product, mostly studio renders on a white background). Never invent, rename or shorten a URL, never use a search-result or local path.
-- ONE REQUEST = ONE OUTPUT: the target language and the variant are given in the request. Other languages are translated from your page by the studio, and the mobile page is re-laid-out from the desktop page by the rules in [MOBILE_LAYOUT] below. Never output several versions, markdown fences or explanations.
+- ONE REQUEST = ONE OUTPUT: the target language and the variant are given in the request. Other languages are translated from your page by the studio, and the mobile page is re-laid-out from the desktop page by the separate mobile layout plan. Never output several versions, markdown fences or explanations.
 - HEADER COMMENT: the studio writes the file header (style version, language/variant, time) itself. Never write a timestamp comment.
 - VIDEO: never write video, iframe or links. When the project has a YouTube link, the studio inserts the video block itself directly before the FAQ and renumbers the block comments. Do not reserve a slot for it and do not mention it.
 - FAQ INTERACTION: the studio adds the collapsed state and the toggle glyph exactly as in the other ARTLINE styles. You write plain questions and answers.

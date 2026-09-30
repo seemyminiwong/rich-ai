@@ -3091,11 +3091,11 @@ def test_master_style_is_seeded_and_recognised_by_the_faq_machinery():
     main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
     web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
 
-    assert MASTER_STYLE_NAME == 'ARTLINE Master' and BASE_STYLE_VERSION == '12.72'
+    assert MASTER_STYLE_NAME == 'ARTLINE Master' and BASE_STYLE_VERSION == '12.73'
     assert 'ARTLINE BLOCK 08' not in MASTER_STYLE_PROMPT, 'схема коментарів Showcase тут чужа'
     assert style_has_faq(MASTER_STYLE_PROMPT) and is_master_style(MASTER_STYLE_PROMPT)
     assert video_profile(MASTER_STYLE_PROMPT) == 'master' and surface_radius_cap(MASTER_STYLE_PROMPT) == 14
-    assert video_profile('any other style') == 'default' and surface_radius_cap('any other style') == 12
+    assert video_profile('any other style') == 'default' and surface_radius_cap('any other style') == 14
     # вимкнений FAQ: правило під нумерацію майстра, а не «сім блоків» Showcase
     off = prompt_without_faq(MASTER_STYLE_PROMPT)
     assert 'FAQ IS DISABLED' in off and 'Omit the FAQ block' in off and 'exactly seven blocks' not in off
@@ -3346,3 +3346,67 @@ def test_master_hero_packshot_split_tiles_and_alt():
         translated, _, _ = translate_html(source, 'ua', 'test-model')
     img = BeautifulSoup(translated, 'html.parser').img
     assert img['alt'] == 'Корпус "X50" на темному тлі' and img['src'] == '/media/p/g.webp'
+
+
+def test_artline_standard_unifies_every_style():
+    """Кожен стиль - своя сітка, але спільний стандарт ARTLINE з майстер-промпту."""
+    from app.artline_standard import apply_artline_standard
+    from app.pipeline import _prompt, surface_radius_cap
+    from app.prompts import ARTLINE_STANDARD, MASTER_STYLE_PROMPT, SHOWCASE_STYLE_PROMPT, PODIUM_STYLE_PROMPT
+
+    # Showcase із зайвою обгорткою, Podium-подібний Hero на 52px/950, «—», 28px-радіуси
+    page = ('<section style="max-width:1240px;margin:0 auto;padding:24px;font-family:Montserrat">'
+            '<style>@keyframes spin{}</style><div>'
+            '<div style="border-radius:28px;background:#1A2128">'
+            '<h2 style="font-size:52px;font-weight:950;line-height:1.05">QUBE V24F100-PLUS</h2>'
+            '<p style="font-size:20px;font-weight:700;color:#19BCC9">Монітор — 23.8″</p><img src="/h.webp"></div>'
+            '<div style="border-radius:12px;background:#FFFFFF;padding:24px">'
+            '<h2 style="font-size:40px">Чому обирають Redmi Note з 100 Гц і Wi-Fi</h2>'
+            '<div style="font-size:56px;color:#19BCC9;font-weight:900">100 Гц</div>'
+            '<p style="font-size:17px">Текст — опис</p><img src="/g.webp">'
+            '<span style="font-size:10px;border-radius:999px">мала</span>'
+            '<div style="border-radius:20px;background:#F5F7FA"><h3 style="font-size:22px">Картка</h3></div>'
+            '</div></div></section>')
+    out = apply_artline_standard(page, 'Смартфон Xiaomi Redmi Note 13')
+    assert apply_artline_standard(out, 'Смартфон Xiaomi Redmi Note 13') == out, 'ідемпотентно'
+    soup = BeautifulSoup(out, 'html.parser')
+    root = soup.section
+    assert 'max-width' not in root['style'] and 'width:100%' in root['style'] and 'padding:0' in root['style']
+    hero_h2, section_h2 = soup.find_all('h2')
+    assert 'font-size:30px' in hero_h2['style'] and 'font-weight:900' in hero_h2['style']
+    assert hero_h2.get_text() == 'QUBE V24F100-PLUS', 'Hero не переводиться у верхній регістр'
+    assert 'font-size:24px' in section_h2['style'] and 'font-weight:900' in section_h2['style']
+    assert section_h2.get_text() == 'ЧОМУ ОБИРАЮТЬ Redmi Note З 100 Гц І Wi-Fi', section_h2.get_text()
+    assert 'font-size:18px' in soup.h3['style']
+    assert '—' not in soup.get_text() and '–' in soup.get_text()
+    assert '950' not in out and 'border-radius:28px' not in out and 'border-radius:20px' not in out
+    assert out.count('border-radius:14px') == 3 and 'border-radius:999px' in out, 'пігулки лишаються'
+    value = soup.find(string='100 Гц').parent
+    assert 'font-size:26px' in value['style'] and 'color:#157985' in value['style'], 'акцент на світлому - темніший'
+    assert 'color:#19BCC9' in hero_h2.find_next('p')['style'], 'на темному Hero акцент лишається'
+    assert 'font-size:12px' in soup.span['style'] and 'font-size:16px' in soup.find(string='Текст – опис').parent['style']
+    imgs = soup.find_all('img')
+    assert not imgs[0].get('loading') and imgs[1]['loading'] == 'lazy'
+    assert '@keyframes spin{}' in out, '<style> стилю (обертання Podium) не чіпається'
+
+    # Промпт: стандарт додається кожному стилю, крім майстра (там він уже всередині)
+    assert 'ADAPTED MASTER PROMPT' not in ARTLINE_STANDARD and '—' not in ARTLINE_STANDARD
+    product = {'name': 'QUBE V24F100-PLUS'}
+    for text in (SHOWCASE_STYLE_PROMPT, PODIUM_STYLE_PROMPT, 'Custom operator style'):
+        prompt = _prompt(product, SimpleNamespace(prompt=text, golden_html=''), 'ua', 'desktop', '/h.webp', '/f.webp')
+        assert 'ARTLINE STANDARD' in prompt and 'Hero h2 30px/1.12' in prompt and 'Use 14px radii' in prompt
+        assert surface_radius_cap(text) == 14
+    master = _prompt(product, SimpleNamespace(prompt=MASTER_STYLE_PROMPT, golden_html=''), 'ua', 'desktop', '/h.webp', '/f.webp')
+    assert 'ARTLINE STANDARD' not in master and master.count('Hero h2 30px/1.12') == 1
+
+    # Згадка «[MOBILE_LAYOUT] below» у тексті не зʼїдає правила десктопа
+    for rule in ('FACTS AND COPY', 'HTML AND EDITOR RULES', 'DESIGN SYSTEM', 'UNIVERSAL DESKTOP GRID',
+                 'HERO IMPLEMENTATION', 'FAQ IMPLEMENTATION', 'FINAL SELF-CHECK'):
+        assert rule in master, rule
+    assert 'UNIVERSAL MOBILE GRID' not in master and '[/MOBILE_LAYOUT]' not in master
+    from app.pipeline import mobile_layout_rules, strip_image_blocks, style_image_prompt
+    mobile = mobile_layout_rules(MASTER_STYLE_PROMPT)
+    assert mobile.startswith('The mobile page is the desktop page') and 'DESIGN SYSTEM' not in mobile
+    text = 'See [HERO_IMAGE] notes below.\n[HERO_IMAGE]\nstudio light\n[/HERO_IMAGE]\nKeep'
+    assert style_image_prompt(text, 'HERO_IMAGE') == 'studio light'
+    assert strip_image_blocks(text) == 'See [HERO_IMAGE] notes below.\n\nKeep'

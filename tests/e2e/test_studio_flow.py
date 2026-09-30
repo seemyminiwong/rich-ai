@@ -7,7 +7,8 @@ grep-smoke тричі мовчки промахувався (перевірка 
 - зникнення функцій діалогу при перекроюванні шаблонів (ReferenceError);
 - затінення <dialog id=...> однойменною функцією (TypeError на .close());
 - стирання URL з поля при перемиканні режимів Простий/Розширений;
-- відсутність вибору стилю в простому режимі.
+- відсутність вибору стилю в простому режимі;
+- майстер нового проєкту: кроки вперед/назад і перемикання режимів не губить введене.
 - розрив двокрокового CSV-імпорту «перевірити → створити валідні рядки».
 
 Колектор page.on('pageerror') — це і є детектор: будь-який неперехоплений
@@ -71,6 +72,11 @@ def test_login_dialog_modes_create_and_settings(browser_page):
     page.wait_for_selector('#newProject[open]')
     url_value = 'https://example.com/product-123'
     page.fill('#newProject input[name=source_url]', url_value)
+    # Майстер: 1 Джерело -> 2 Товар і медіа -> 3 Результат (тут режими) -> 4 Запуск.
+    page.click('#newProject .wiz-foot button:has-text("Далі")')
+    page.wait_for_selector('#newProject .wiz-step[data-step="2"]:not([hidden])')
+    page.click('#newProject .wiz-foot button:has-text("Далі")')
+    page.wait_for_selector('#newProject .wiz-step[data-step="3"]:not([hidden])')
 
     page.click('#newProject button:has-text("Розширений")')
     page.wait_for_selector('#newProject select[name=text_model]')
@@ -81,6 +87,12 @@ def test_login_dialog_modes_create_and_settings(browser_page):
     page.wait_for_selector('#newProject .preset-grid')
     assert page.input_value('#newProject input[name=source_url]') == url_value, \
         'Перемикання назад у Простий стерло URL'
+    assert page.locator('#newProject .wiz-step[data-step="3"]:not([hidden])').count() == 1, \
+        'Перемикання режиму мусить лишати майстер на кроці «Результат»'
+    # Назад не губить введене
+    page.click('#newProject .wiz-foot button:has-text("Назад")')
+    page.wait_for_selector('#newProject .wiz-step[data-step="2"]:not([hidden])')
+    assert page.input_value('#newProject input[name=source_url]') == url_value
     # Вибір стилю є і в простому режимі; 4 керовані стилі засіяно при старті.
     assert page.locator('#newProject select[name=style_id] option').count() >= 4
 
@@ -92,6 +104,9 @@ def test_login_dialog_modes_create_and_settings(browser_page):
     page.click('button:has-text("Новий проєкт")')
     page.wait_for_selector('#newProject[open]')
     page.fill('#newProject input[name=source_url]', url_value)
+    for _ in range(3):
+        page.click('#newProject .wiz-foot button:has-text("Далі")')
+    page.wait_for_selector('#newProject #wizSummary dl')
     page.click('#newProject button:has-text("Створити й запустити")')
     # Без worker проєкт чесно висить у черзі — сторінка проєкту вже відкрита.
     # Червоний тост = API відхилив створення; впасти треба з ЙОГО текстом,
