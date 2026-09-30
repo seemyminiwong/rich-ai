@@ -2,6 +2,15 @@
 # сходиться), а не trixie зі slim, де падало на ttf-ubuntu-font-family.
 # playwright ставимо ТИМ САМИМ pip, що й fastapi, тож "import playwright"
 # бачить пакет (на офіційному MS-образі він жив в іншому python).
+# Montserrat береться з окремого trixie-етапу: у bookworm пакета fonts-montserrat
+# немає, а сам образ лишається на bookworm заради Playwright.
+FROM debian:trixie-slim AS fonts
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends fonts-montserrat \
+ && mkdir -p /fonts \
+ && find /usr/share/fonts -type f \( -name "Montserrat-*.otf" -o -name "Montserrat-*.ttf" \) -exec cp {} /fonts/ \; \
+ && ls /fonts | grep -q "Montserrat-Black"
+
 FROM python:3.12-slim-bookworm
 # Montserrat (шрифт artline.ua) - системним шрифтом: гейт верстки й експорт PNG
 # мусять укладати текст тими метриками, що й магазин. Montserrat ширший за
@@ -11,10 +20,11 @@ WORKDIR /app
 RUN pip install --no-cache-dir --break-system-packages \
         fastapi==0.115.12 uvicorn==0.34.2 pydantic==2.11.7 playwright==1.49.0 pillow==11.0.0 \
     && playwright install --with-deps chromium \
-    && apt-get update && apt-get install -y --no-install-recommends fonts-montserrat fontconfig \
-    && fc-cache -f && fc-list | grep -qi montserrat \
+    && apt-get update && apt-get install -y --no-install-recommends fontconfig \
     && rm -rf /var/lib/apt/lists/* \
     && python -c "import playwright, fastapi, uvicorn, pydantic, PIL; print('imports ok')"
+COPY --from=fonts /fonts /usr/share/fonts/opentype/montserrat
+RUN fc-cache -f && fc-list | grep -qi montserrat
 
 COPY server.py .
 EXPOSE 8080

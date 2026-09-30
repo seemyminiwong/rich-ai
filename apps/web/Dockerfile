@@ -3,7 +3,9 @@
 # Segoe/Arial з іншими переносами рядків. Беремо файли з Debian (fonts-montserrat,
 # OFL 1.1) і роздаємо з /fonts/. Складання падає, якщо якоїсь ваги немає:
 # тихе відкочування на Arial зробило б прев'ю неправдивим непомітно.
-FROM debian:bookworm-slim AS fonts
+# Лише trixie: у bookworm пакета fonts-montserrat немає (живий збій складання
+# «Unable to locate package fonts-montserrat»).
+FROM debian:trixie-slim AS fonts
 RUN apt-get update \
  && apt-get install -y --no-install-recommends fonts-montserrat \
  && mkdir -p /fonts \

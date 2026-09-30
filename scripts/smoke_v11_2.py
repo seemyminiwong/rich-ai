@@ -360,6 +360,9 @@ checks = {
         'Roboto' not in prompts and 'def enforce_site_font' in pipeline and 'rich_html = enforce_site_font(rich_html)' in tasks
         and 'fonts-montserrat' in (root / 'apps/web/Dockerfile').read_text(encoding='utf-8')
         and 'fonts-montserrat' in (root / 'apps/shots/Dockerfile').read_text(encoding='utf-8')
+        and 'FROM debian:trixie-slim AS fonts' in (root / 'apps/web/Dockerfile').read_text(encoding='utf-8')
+        and 'FROM debian:trixie-slim AS fonts' in (root / 'apps/shots/Dockerfile').read_text(encoding='utf-8')
+        and (root / 'apps/api/Dockerfile').read_text(encoding='utf-8').startswith('FROM python:3.12-slim-trixie')
         and 'location ^~ /fonts/' in nginx and 'SITE_FONT_LINK' in web
         and 'def test_every_style_and_page_uses_the_site_font_montserrat' in tests
     ),

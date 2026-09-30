@@ -1,6 +1,7 @@
-FROM python:3.12-slim
+FROM python:3.12-slim-trixie
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /app
+# Образ закріплено на trixie: fonts-montserrat є лише з Debian 13 (у bookworm немає).
 # Шрифти для інфографіки (Pillow малює текст напряму, без браузера). Montserrat -
 # шрифт artline.ua; DejaVu з кирилицею лишається страховкою.
 RUN apt-get update \

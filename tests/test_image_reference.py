@@ -3270,6 +3270,13 @@ def test_every_style_and_page_uses_the_site_font_montserrat():
     assert 'Roboto' not in shots
     api_docker = (root / 'apps/api/Dockerfile').read_text(encoding='utf-8')
     assert 'fonts-montserrat' in api_docker
+
+    # fonts-montserrat існує лише з Debian trixie: жоден етап, що ставить пакет,
+    # не може стояти на bookworm (живий збій «Unable to locate package»).
+    for docker in (web_docker, shots_docker, api_docker):
+        for stage in re.split(r'(?m)^FROM ', docker)[1:]:
+            if 'apt-get install' in stage and 'fonts-montserrat' in stage:
+                assert stage.split()[0] in ('debian:trixie-slim', 'python:3.12-slim-trixie'), stage.split()[0]
     infographic = (root / 'apps/api/app/infographic.py').read_text(encoding='utf-8')
     assert infographic.index("'Montserrat-ExtraBold.otf'") < infographic.index("'Roboto-Bold.ttf'")
     assert '_FONT_ROOT.rglob(name)' in infographic
