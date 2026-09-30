@@ -68,7 +68,7 @@ checks = {
     # --- v11.8: security hardening ---
     'html sanitizer exists': 'def sanitize_html' in pipeline and 'def is_public_http_url' in pipeline,
     'generated html sanitized': ('return sanitize_html(' in pipeline or '_responsive_grids(sanitize_html(' in pipeline),
-    'artifact save sanitized': 'clean = sanitize_html(payload.html)' in main,
+    'artifact save sanitized': 'clean = sanitize_html(html)' in main and 'return _save_artifact_version(db, source, payload.html, user)' in main,
     'style preview sanitized': "sanitize_html(data.pop('preview_html'" in main,
     'ssrf guard on archive fetch': 'non-public image url blocked' in main,
     'ssrf guard on reference': 'if not is_public_http_url(url):' in pipeline,
@@ -214,7 +214,7 @@ checks = {
     # Причина класу: рендер планував довантаження на КОЖЕН свій прохід.
     'tab data is scheduled once per tab, not per render': (
         'function scheduleTabData' in web and 'if(tabDataKey===key)return' in web
-        and web.count('scheduleTabData(') == 4          # означення + три вкладки
+        and web.count('scheduleTabData(') == 5          # означення + вкладки (текст: редагування і плоский)
         and "setTimeout(loadIconLibrary,0)" not in web
     ),
     'render loop is pinned by a test': 'def test_tab_loaders_cannot_spin_the_renderer' in tests,
@@ -372,6 +372,14 @@ checks = {
         and "relaid = master_hero_layout(relaid, mobile_hero or hero, 'mobile')" in tasks
         and '__ARTLINE_ALT_' in pipeline and 'with_alt=True' in pipeline
         and 'VALUE TILES:' in prompts and 'def test_master_hero_packshot_split_tiles_and_alt' in tests
+    ),
+    'rich text is editable in place: segments API, new version, same layout': (
+        (root / 'apps/api/app/text_edit.py').exists()
+        and "@app.get('/api/artifacts/{artifact_id}/segments')" in main and "@app.put('/api/artifacts/{artifact_id}/segments')" in main
+        and "require_perm('project.edit_html')" in main.split("def save_artifact_segments", 1)[1].split('\n', 1)[0] + main.split("@app.put('/api/artifacts/{artifact_id}/segments')", 1)[1].split('\n', 2)[1]
+        and 'def _save_artifact_version' in main
+        and 'function textEditor()' in web and 'async function saveSegments(' in web and "setTextMode('" in web
+        and 'def test_text_edit_changes_words_in_place_and_keeps_the_layout' in tests
     ),
     'ARTLINE standard applies to every style (scale, radii, accent, casing, dash, lazy)': (
         (root / 'apps/api/app/artline_standard.py').exists()

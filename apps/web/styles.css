@@ -183,6 +183,10 @@ aside nav button:focus-visible{outline:2px solid var(--color-brand);outline-offs
 .panel{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-card);padding:var(--space-5)}
 .panel h2{margin:0 0 var(--space-3)}
 .panel>*:last-child,.panel>form>*:last-child{margin-bottom:0}
+/* Рядок інструментів панелі: зліва вибір, праворуч дії; переноситься цілими групами */
+.tool-row{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;margin:0 0 var(--space-3)}
+.tool-row .spacer{flex:1 1 0}
+.tool-row select,.tool-row .dd{width:auto;min-width:220px;max-width:340px;flex:0 1 300px}
 .panel-tools{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--space-2);margin-bottom:var(--space-3)}
 .panel-tools h2{margin:0}
 .panel-tools .row{gap:var(--space-2)}
@@ -218,7 +222,7 @@ aside nav button:focus-visible{outline:2px solid var(--color-brand);outline-offs
 .tag.brand{background:var(--color-brand-soft);color:var(--color-info-text)}
 .tag.managed{background:#1F252B;color:#E9EDF0}
 .tag.custom{background:var(--color-surface);border:1px solid var(--color-border-strong);color:var(--color-text)}
-.cat-chip{display:inline-block;max-width:100%;padding:1px 7px;border-radius:4px;background:var(--color-brand-soft);border:1px solid var(--color-brand-border);color:var(--color-info-text);font-size:var(--fs-xs);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;cursor:pointer}
+.cat-chip{display:inline-block;max-width:100%;font:inherit;line-height:1.5;text-align:left;padding:1px 7px;border-radius:4px;background:var(--color-brand-soft);border:1px solid var(--color-brand-border);color:var(--color-info-text);font-size:var(--fs-xs);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;cursor:pointer}
 .cat-chip:hover{border-color:var(--color-brand-strong)}
 
 /* Progress: one solid brand fill; shimmer only while a job is running */
@@ -583,14 +587,22 @@ tr.is-updated td{animation:rowFlash 1.6s var(--ease-out)}
 .project-top,.stage-row,.project-meta,.live-title{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3)}
 .project-top small{color:var(--color-text-secondary);font-size:var(--fs-xs)}
 .project-card h3{margin:2px 0 0;font-size:var(--fs-md);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.3;min-height:2.6em}
-.project-card p{margin:0;color:var(--color-text-secondary);font-size:var(--fs-xs);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.project-sku{font-size:var(--fs-xs);color:var(--color-text-secondary)}
-.project-sku b{color:var(--color-text);font-variant-numeric:tabular-nums}
+.project-card .project-url{margin:0;color:var(--color-text-secondary);font-size:var(--fs-xs);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Властивості картки - однакова сітка «підпис / значення» в один рядок:
+   довгий артикул чи категорія обрізаються, а не зсувають прогрес сусідніх карток. */
+.project-props{display:grid;gap:4px;margin:2px 0 0;font-size:var(--fs-xs)}
+.project-props div{display:grid;grid-template-columns:72px minmax(0,1fr);align-items:center;gap:8px;min-height:20px}
+.project-props dt{color:var(--color-text-secondary)}
+.project-props dd{margin:0;min-width:0;color:var(--color-text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.project-props dd b{font-weight:700;font-variant-numeric:tabular-nums}
+.project-props .cat-chip{max-width:100%}
 .stage-row{font-size:var(--fs-sm);color:var(--color-text-secondary)}
 .stage-row b{color:var(--color-text);font-variant-numeric:tabular-nums}
-.project-style{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;min-width:0;color:var(--color-text-secondary);font-size:var(--fs-xs)}
-.project-style b{color:var(--color-text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.project-meta{margin-top:auto;padding-top:8px;border-top:1px solid var(--color-border);color:var(--color-text-secondary);font-size:var(--fs-xs);font-variant-numeric:tabular-nums}
+.project-meta{margin-top:auto;padding-top:10px;border-top:1px solid var(--color-border);color:var(--color-text-secondary);font-size:var(--fs-xs);font-variant-numeric:tabular-nums;gap:8px}
+/* Власник і вартість поступаються місцем діям: кнопка й «⋯» завжди всередині картки */
+.project-meta .project-who{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.project-meta .project-cost{flex:none;color:var(--color-text);font-weight:600}
+.project-meta .row-actions{flex:none}
 
 /* Project workspace */
 .project-bar{position:sticky;top:var(--topbar-height);z-index:15;margin:calc(var(--space-6) * -1) calc(var(--space-6) * -1) var(--space-4);padding:var(--space-3) var(--space-6);background:var(--color-surface);border-bottom:1px solid var(--color-border)}
@@ -822,7 +834,7 @@ tr.is-updated td{animation:rowFlash 1.6s var(--ease-out)}
 .guarantee-list{margin:8px 0 0;padding-left:18px;color:var(--color-text-secondary);font-size:var(--fs-sm);line-height:1.6}
 .ab-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);margin-top:6px}
 .ab-grid>div>b{display:block;margin-bottom:6px;font-size:var(--fs-sm)}
-.ab-grid .preview-canvas{width:100%;height:60vh;overflow:auto;border-radius:var(--radius-card)}
+.ab-stage{height:60vh;min-height:360px;padding:var(--space-2);border-radius:var(--radius-card)}
 .prompt-outline{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}
 .prompt-outline .eyebrow{margin:0 4px 0 0}
 .prompt-outline button{border:1px solid var(--color-border-strong);background:var(--color-surface);border-radius:var(--radius-pill);padding:3px 10px;font-size:var(--fs-sm);font-weight:500}
@@ -1046,4 +1058,30 @@ tr.is-updated td{animation:rowFlash 1.6s var(--ease-out)}
 /* Reduced motion: state changes stay, movement goes */
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+
+/* --- Редактор тексту rich-сторінки --------------------------------------- */
+.text-editor .muted-note code{padding:0 4px;border-radius:4px;background:var(--color-surface-muted);font-size:.95em}
+.seg-status{color:var(--color-text-secondary);font-size:var(--fs-sm);white-space:nowrap}
+.text-editor>.muted-note{margin:0 0 var(--space-4)}
+.seg-block{margin:0 0 var(--space-3);padding:var(--space-3) var(--space-4) var(--space-2);border:1px solid var(--color-border);border-radius:var(--radius-card);background:var(--color-surface);min-width:0}
+.seg-block legend{display:flex;align-items:center;gap:8px;padding:0 6px;margin-left:-6px;font-weight:700;font-size:var(--fs-base);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seg-num{display:inline-grid;place-items:center;min-width:22px;height:22px;border-radius:var(--radius-pill);background:var(--color-surface-muted);color:var(--color-text-secondary);font-size:var(--fs-xs);font-weight:700}
+.seg{display:grid;grid-template-columns:140px minmax(0,1fr);align-items:start;gap:4px 12px;padding:6px 0;border-top:1px solid var(--color-border-subtle,#EEF0F3)}
+.seg:first-of-type{border-top:0}
+.seg>label{padding-top:8px;color:var(--color-text-secondary);font-size:var(--fs-xs);font-weight:600}
+.seg textarea{width:100%;min-height:36px;resize:vertical;font:inherit;font-size:var(--fs-base);line-height:1.5;padding:6px 10px;box-sizing:border-box}
+.seg.heading textarea{font-weight:700}
+.seg.subheading textarea,.seg.question textarea{font-weight:600}
+.seg.changed textarea{border-color:var(--color-brand-strong);background:var(--color-brand-soft)}
+.seg.changed>label::after{content:' · змінено';color:var(--color-brand-strong)}
+.seg.alt{grid-template-columns:140px 56px minmax(0,1fr)}
+.seg-thumb{width:56px;height:42px;object-fit:contain;border:1px solid var(--color-border);border-radius:var(--radius-control);background:#fff}
+.seg-savebar{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;justify-content:flex-end;gap:var(--space-2);margin:var(--space-3) calc(-1 * var(--space-5)) calc(-1 * var(--space-5));padding:12px var(--space-5);border-radius:0 0 var(--radius-card) var(--radius-card);background:var(--color-surface);border-top:1px solid var(--color-border);box-shadow:0 -6px 16px rgb(16 16 16 / 6%)}
+.seg-savebar span{margin-right:auto;color:var(--color-text-secondary);font-size:var(--fs-sm)}
+@media (max-width:760px){
+  .seg,.seg.alt{grid-template-columns:minmax(0,1fr)}
+  .seg>label{padding-top:0}
+  .seg-thumb{display:none}
+  .text-editor .tool-row .spacer{display:none}
 }

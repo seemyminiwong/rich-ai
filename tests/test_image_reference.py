@@ -2035,7 +2035,7 @@ def test_tab_loaders_cannot_spin_the_renderer():
     assert 'function scheduleTabData' in web
     assert 'if(tabDataKey===key)return' in web
     data_loaders = set(re.findall(r"scheduleTabData\((\w+)\)", tail))
-    assert data_loaders == {'loadArtifactText', 'loadArtifactImages', 'loadIconLibrary'}, data_loaders
+    assert data_loaders == {'loadArtifactText', 'loadArtifactSegments', 'loadArtifactImages', 'loadIconLibrary'}, data_loaders
 
     # Патчери DOM лишаються на кожному рендері - вони переписують щойно
     # створені вузли і render() не кличуть.
@@ -3417,3 +3417,43 @@ def test_artline_standard_unifies_every_style():
     text = 'See [HERO_IMAGE] notes below.\n[HERO_IMAGE]\nstudio light\n[/HERO_IMAGE]\nKeep'
     assert style_image_prompt(text, 'HERO_IMAGE') == 'studio light'
     assert strip_image_blocks(text) == 'See [HERO_IMAGE] notes below.\n\nKeep'
+
+
+def test_text_edit_changes_words_in_place_and_keeps_the_layout():
+    """Правка тексту: ті самі вузли, та сама верстка; **жирний** у абзаці; alt; захисти."""
+    from app.text_edit import apply_segments, editable_segments
+    page = ('<section style="width:100%"><!-- Блок 1. Hero START --><div style="background:#101010">'
+            '<span style="border:1px solid #19BCC9">HYTE · Корпус</span><h2 style="font-size:30px">HYTE X50</h2>'
+            '<p style="color:#555">Корпус з <b style="color:#157985">430 мм</b> GPU.</p>'
+            '<div><span>430 мм</span><span>E-ATX</span></div><img src="/media/p/g1.webp" alt="Корпус"></div>'
+            '<!-- Блок 1. Hero END --><div><h2>FAQ</h2><details><summary><span aria-hidden="true">+</span>Яка довжина?</summary>'
+            '<p>До 430 мм.</p></details></div></section>')
+    blocks = editable_segments(page)
+    assert [b['title'] for b in blocks] == ['HYTE X50', 'FAQ']
+    items = {i['key']: i for b in blocks for i in b['items']}
+    assert items['t2'] == {'key': 't2', 'kind': 'text', 'text': 'Корпус з **430 мм** GPU.'}, 'абзац із жирним - одне поле'
+    assert items['t3']['text'] == '430 мм' and items['t4']['text'] == 'E-ATX', 'чипи - окремі поля'
+    assert items['t6']['kind'] == 'question' and items['t6']['text'] == 'Яка довжина?', 'гліф FAQ не редагується'
+    assert items['a0'] == {'key': 'a0', 'kind': 'alt', 'text': 'Корпус', 'src': '/media/p/g1.webp'}
+
+    out, changed = apply_segments(page, {'t2': 'Місце для **відеокарти 430 мм** і радіатора.', 't6': 'Яка максимальна довжина відеокарти?', 'a0': 'Корпус HYTE X50 збоку', 't1': 'HYTE X50'})
+    assert changed == 3, 'незмінений фрагмент не рахується'
+    soup = BeautifulSoup(out, 'html.parser')
+    p = soup.find('p')
+    assert p['style'] == 'color:#555' and str(p.b) == '<b style="color:#157985">відеокарти 430 мм</b>'
+    assert p.get_text() == 'Місце для відеокарти 430 мм і радіатора.'
+    assert soup.summary.get_text() == '+Яка максимальна довжина відеокарти?' and soup.summary.span['aria-hidden'] == 'true'
+    assert soup.img['alt'] == 'Корпус HYTE X50 збоку' and soup.img['src'] == '/media/p/g1.webp'
+    assert '<!-- Блок 1. Hero START -->' in out and 'border:1px solid #19BCC9' in out, 'коментарі й стилі - як були'
+    assert apply_segments(out, {}) == (out, 0)
+    # ключі стабільні: нова версія розкладається так само
+    assert [i['key'] for b in editable_segments(out) for i in b['items']] == list(items)
+
+    for bad, why in (({'t2': 'a **b'}, 'Непарні'), ({'t1': '  '}, 'Порожній'), ({'t99': 'x'}, 'Невідомі'),
+                     ({'t0': '**x**'}, 'жирним'), ({'t1': 'x' * 2001}, 'задовгий')):
+        try:
+            apply_segments(page, bad)
+        except ValueError as exc:
+            assert why in str(exc), (bad, exc)
+        else:
+            raise AssertionError(f'{bad} мало бути відхилено')

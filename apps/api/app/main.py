@@ -31,6 +31,7 @@ from app.raster import flatten_to_white
 from app.pipeline import _is_reasoning_model, decode_entities, fetch_bytes_capped, fetch_html, gallery_urls, image_url_rejection, image_urls_in_html, is_public_http_url, is_publishable_image_url, palette_from_accent, parse_page, plain_text_from_html, replace_image_urls, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
 from app.landing import LANDING_PROMPT, LANDING_STYLE_NAME
 from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
+from app.text_edit import apply_segments, editable_segments
 from app.version import __version__
 from app.bulk_import import BulkCSVError, MAX_BULK_CSV_BYTES, parse_bulk_csv, split_bulk_values
 from app.brand_palettes import BRAND_ACCENTS, BRAND_PREVIOUS
@@ -2965,6 +2966,45 @@ def artifact_plain_text(artifact_id: str, bullets: bool = True, db: Session = De
     }
 
 
+class TextSegmentsIn(BaseModel):
+    segments: dict[str, str] = Field(default_factory=dict)
+
+
+@app.get('/api/artifacts/{artifact_id}/segments')
+def artifact_segments(artifact_id: str, db: Session = Depends(get_db), user=Depends(current)):
+    """Текст сторінки фрагментами для редактора: заголовки, абзаци, пункти, FAQ, alt."""
+    artifact = db.get(Artifact, artifact_id)
+    if not artifact:
+        raise HTTPException(404, 'Результат не знайдено')
+    return {'artifact_id': artifact.id, 'language': artifact.language, 'variant': artifact.variant,
+            'version': artifact.version, 'blocks': editable_segments(artifact.html)}
+
+
+@app.put('/api/artifacts/{artifact_id}/segments')
+def save_artifact_segments(artifact_id: str, payload: TextSegmentsIn, db: Session = Depends(get_db), user=Depends(require_perm('project.edit_html'))):
+    """Зберегти правки тексту як нову версію rich-сторінки.
+
+    Слова підставляються у ті самі вузли того самого артефакту: сітка, стилі,
+    зображення й коментарі блоків не змінюються. Інші мови й формат (десктоп/
+    мобільний) - окремі версії, їх ця правка не чіпає.
+    """
+    source = db.get(Artifact, artifact_id)
+    if not source:
+        raise HTTPException(404, 'Результат не знайдено')
+    require_project_edit(db.get(Project, source.project_id), user)
+    if len(payload.segments) > 2000:
+        raise HTTPException(400, 'Забагато фрагментів в одному збереженні')
+    try:
+        html, changed = apply_segments(source.html, payload.segments)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not changed:
+        raise HTTPException(400, 'Змін у тексті немає')
+    saved = _save_artifact_version(db, source, html, user, action='artifact.text_edit')
+    saved['changed'] = changed
+    return saved
+
+
 @app.get('/api/artifacts/{artifact_id}/blocks.zip')
 def artifact_blocks_png(artifact_id: str, db: Session = Depends(get_db), user=Depends(current)):
     """ZIP із PNG кожного блока сторінки (для маркетплейсів, що не беруть HTML).
@@ -3357,7 +3397,12 @@ def save_artifact(artifact_id: str, payload: HtmlIn, db: Session = Depends(get_d
     if not source:
         raise HTTPException(404, 'Результат не знайдено')
     require_project_edit(db.get(Project, source.project_id), user)
-    clean = sanitize_html(payload.html)
+    return _save_artifact_version(db, source, payload.html, user)
+
+
+def _save_artifact_version(db: Session, source: Artifact, html: str, user, action: str = 'artifact.version'):
+    """Нова версія того самого мови/формату. Спільна для правки HTML і правки тексту."""
+    clean = sanitize_html(html)
     if '<section' not in clean:
         raise HTTPException(400, 'HTML має містити принаймні один <section> блок')
     if 'Правовласник' not in clean:
@@ -3368,7 +3413,7 @@ def save_artifact(artifact_id: str, payload: HtmlIn, db: Session = Depends(get_d
         db.scalar(select(Project.id).where(Project.id == source.project_id).with_for_update())
         latest_version = db.scalar(select(func.max(Artifact.version)).where(Artifact.project_id == source.project_id, Artifact.language == source.language, Artifact.variant == source.variant)) or 0
         new = Artifact(project_id=source.project_id, language=source.language, variant=source.variant, html=clean, version=latest_version + 1, created_by=user.id, run_index=getattr(source, 'run_index', 1) or 1)
-        db.add(new); db.flush(); audit(db, user, 'artifact.version', 'artifact', new.id); db.commit(); db.refresh(new); return artifact_dict(new)
+        db.add(new); db.flush(); audit(db, user, action, 'artifact', new.id); db.commit(); db.refresh(new); return artifact_dict(new)
     except Exception as exc:
         db.rollback()
         raise HTTPException(500, f'Не вдалося зберегти нову версію: {exc}') from exc

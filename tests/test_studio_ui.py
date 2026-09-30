@@ -180,3 +180,34 @@ def test_frontend_files_ship_in_the_image_in_order():
     docker = (WEB / 'Dockerfile').read_text(encoding='utf-8')
     for name in ('ui.js', 'app.js', 'styles.css', 'artline-logo.svg'):
         assert f'COPY {name} ' in docker, name
+
+
+def test_project_cards_keep_actions_inside_and_rows_aligned():
+    css, js = _css(), _js()
+    card = _body(js, 'projectCard')
+    # властивості - сітка «підпис / значення» в один рядок, а не потік тегів
+    assert '<dl class="project-props">' in card and 'project-style' not in card
+    assert '.project-props dd{' in css and 'text-overflow:ellipsis' in css.split('.project-props dd{', 1)[1].split('}', 1)[0]
+    # власник поступається місцем: вартість і дії завжди видно повністю
+    assert '.project-meta .project-who{flex:1 1 auto;min-width:0' in css
+    assert '.project-meta .row-actions{flex:none}' in css and '.project-meta .project-cost{flex:none' in css
+    # етап завершеного проєкту - за статусом, а не «Опрацювання»
+    assert 'stageLabel(p)' in card
+
+
+def test_style_demo_and_ab_are_fitted_canvases():
+    js = _js()
+    editor = _body(js, 'styleEditor')
+    assert 'data-zoom="fit"' in editor and 'data-w="${state.stylePreviewVariant===' in editor
+    assert _body(js, 'abPanel').count('data-zoom="fit"') == 2
+    assert "const mode=c.dataset.zoom||state.previewZoom" in _body(js, 'applyPreviewZoom')
+
+
+def test_text_tab_edits_the_rich_page():
+    js = _js()
+    editor = _body(js, 'textEditor')
+    assert 'saveSegments(this)' in editor and editor.count('class="btn primary"') == 1
+    save = _body(js, 'saveSegments')
+    assert "/segments`,{method:'PUT'" in save and 'refreshSelected()' in save
+    # незбережені правки не губляться мовчки при перемиканні версії
+    assert 'Незбережені правки тексту' in _body(js, 'selectArtifact')
