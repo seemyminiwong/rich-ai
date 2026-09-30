@@ -105,7 +105,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.70"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.72"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 3 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -196,7 +196,7 @@ checks = {
     'browser tab carries the artline icon': 'rel="icon"' in (root / 'apps/web/index.html').read_text(encoding='utf-8') and (root / 'apps/web/favicon-32.png').exists() and (root / 'apps/web/apple-touch-icon.png').exists() and 'COPY favicon-32.png' in (root / 'apps/web/Dockerfile').read_text(encoding='utf-8') and 'png|svg|ico' in nginx,
     'index.html is never cached': 'no-store, must-revalidate' in nginx,
     'assets are immutable': 'max-age=31536000, immutable' in nginx,
-    'security headers repeated where add_header breaks inheritance': nginx.count('X-Content-Type-Options') == 5,
+    'security headers repeated where add_header breaks inheritance': nginx.count('X-Content-Type-Options') == 6,  # + /fonts/
     'media is embeddable from any context': 'Cross-Origin-Resource-Policy "cross-origin"' in nginx,
     # Статичний proxy_pass = разовий резолв імені: після пересоздання
     # контейнера api web проксіює на мертвий IP і віддає 502 на все.
@@ -356,6 +356,20 @@ checks = {
         and pipeline.count('return _palette_from_hsv(h, sat, val)') == 2
     ),
     'no third-party brand scheme is shipped': 'BRELOKI' not in main and 'BRELOKI' not in prompts and 'breloki' not in prompts.lower() and 'reloki' not in brands,
+    'site font Montserrat in every style, enforced on output and bundled where pages are viewed': (
+        'Roboto' not in prompts and 'def enforce_site_font' in pipeline and 'rich_html = enforce_site_font(rich_html)' in tasks
+        and 'fonts-montserrat' in (root / 'apps/web/Dockerfile').read_text(encoding='utf-8')
+        and 'fonts-montserrat' in (root / 'apps/shots/Dockerfile').read_text(encoding='utf-8')
+        and 'location ^~ /fonts/' in nginx and 'SITE_FONT_LINK' in web
+        and 'def test_every_style_and_page_uses_the_site_font_montserrat' in tests
+    ),
+    'master hero splits on a packshot, one tile per value, translated alt': (
+        'def master_hero_layout' in pipeline and 'def dedupe_value_tiles' in pipeline and 'def master_hero_title' in pipeline
+        and 'output = master_hero_layout(output, hero, variant)' in pipeline
+        and "relaid = master_hero_layout(relaid, mobile_hero or hero, 'mobile')" in tasks
+        and '__ARTLINE_ALT_' in pipeline and 'with_alt=True' in pipeline
+        and 'VALUE TILES:' in prompts and 'def test_master_hero_packshot_split_tiles_and_alt' in tests
+    ),
     'ARTLINE Master style seeded, locked and understood by the FAQ/video machinery': (
         "MASTER_STYLE_NAME = 'ARTLINE Master'" in prompts and 'MASTER_STYLE_PROMPT' in main
         and "'ARTLINE Master'" in web.split('MANAGED_STYLE_NAMES=')[1].split(']')[0]

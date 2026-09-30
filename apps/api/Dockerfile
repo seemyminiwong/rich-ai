@@ -1,11 +1,10 @@
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /app
-# Шрифти для інфографіки (Pillow малює текст напряму, без браузера). Roboto -
-# фірмовий; якщо в дистрибутиві його немає, лишається DejaVu з кирилицею.
+# Шрифти для інфографіки (Pillow малює текст напряму, без браузера). Montserrat -
+# шрифт artline.ua; DejaVu з кирилицею лишається страховкою.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends fonts-dejavu-core \
- && (apt-get install -y --no-install-recommends fonts-roboto-unhinted || echo 'roboto unavailable, using dejavu') \
+ && apt-get install -y --no-install-recommends fonts-dejavu-core fonts-montserrat \
  && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

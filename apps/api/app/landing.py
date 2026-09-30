@@ -267,7 +267,7 @@ def deterministic_landing(campaign: dict, products: list[dict], categories: list
     return f'''<!doctype html>
 <html lang="{'uk' if lang == 'ua' else 'ru'}">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title></head>
-<body style="margin:0;background:#F5F7FA;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif">
+<body style="margin:0;background:#F5F7FA;font-family:'Montserrat','Segoe UI',Arial,sans-serif">
 <section style="max-width:1240px;margin:0 auto;padding:14px;box-sizing:border-box">
 <div style="position:relative;overflow:hidden;background:{'#101010' if campaign.get('hero_url') else 'linear-gradient(135deg,#101010,#1A2128)'};border:1px solid #35393F;border-radius:32px;padding:64px 28px;text-align:center">
 {f'<img src="{html_lib.escape(str(campaign.get("hero_url")))}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center"><div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(16,16,16,.55) 0%,rgba(16,16,16,.82) 100%)"></div>' if campaign.get('hero_url') else ''}
@@ -289,6 +289,7 @@ LANDING_PROMPT = r'''Create a COMPLETE standalone promo landing page (single HTM
 STRICT RULES
 - Output ONE full HTML document: <!doctype html><html><head>...<body>. No markdown, no code fences, no commentary.
 - Inline CSS on elements. ONE <style> block in <head> is allowed ONLY for media queries and keyframes; it must not contain url() or @import.
+- Typography: the body uses font-family:'Montserrat','Segoe UI',Arial,sans-serif - the artline.ua font. Never load or import a font.
 - No scripts, forms, buttons (use <a> styled as buttons), iframes, external CSS.
 - Use ONLY the product data in PRODUCTS JSON: exact names, exact price_text, exact image URLs, exact product URLs. NEVER invent a product, price or URL. If price_text is empty, omit the price line for that product.
 - Every product card links its image, name and buy CTA to the product url.
@@ -371,7 +372,8 @@ def generate_landing_html(campaign: dict, products: list[dict], model: str, temp
             value = tag.get(attr) or ''
             if value.startswith(('http://', 'https://')) and value not in allowed and not is_public_http_url(value):
                 del tag[attr]
-        html = str(soup)
+        from app.pipeline import enforce_site_font
+        html = enforce_site_font(str(soup))
         input_tokens, output_tokens = _usage_counts(response, prompt, raw)
         return html, input_tokens, output_tokens, ''
     except Exception as exc:

@@ -2996,6 +2996,44 @@ _FAQ_CSS = (
 
 
 FAQ_BLOCK_MARKER = 'ARTLINE BLOCK 08: FAQ'
+# Шрифт сайту artline.ua - Montserrat. Кожна сторінка студії пишеться ним
+# (фрагмент на сайті наслідує його сам; стек - на випадок чужого редактора).
+SITE_FONT_STACK = "'Montserrat','Segoe UI',Arial,sans-serif"
+_FONT_FAMILY_RE = re.compile(r'font-family\s*:\s*([^;"]+)', re.I)
+
+
+def enforce_site_font(markup: str) -> str:
+    """Шрифт сайту на кожній сторінці - механічно, а не проханням у промпті.
+
+    Промпти всіх стилів тепер задають Montserrat, але модель пам'ятає Roboto й
+    Inter зі старих прикладів, а збережені оператором стилі можуть нести свій
+    стек. Тому: будь-яке font-family стає стеком сайту (моноширинний лишаємо -
+    це свідомий вибір для коду чи моделі), а корінь, у якого шрифту немає
+    взагалі, його отримує - інакше фрагмент поза artline.ua ставав би Times.
+    Корінь - перша <section> фрагмента або <body> повного документа (лендінг).
+    """
+    if not markup:
+        return markup
+
+    def repl(match):
+        value = match.group(1).strip()
+        if 'mono' in value.lower() or value.lower().startswith(("'montserrat'", '"montserrat"', 'montserrat')):
+            return match.group(0)
+        return 'font-family:' + SITE_FONT_STACK
+
+    out = _FONT_FAMILY_RE.sub(repl, markup)
+    root = re.search(r'<(body|section)\b[^>]*>', out, re.I)
+    if root and 'font-family' not in root.group(0).lower():
+        tag = root.group(0)
+        style = re.search(r'style\s*=\s*"([^"]*)"', tag, re.I)
+        if style:
+            merged = style.group(1).rstrip().rstrip(';')
+            merged = (merged + ';' if merged else '') + 'font-family:' + SITE_FONT_STACK
+            new_tag = tag[:style.start(1)] + merged + tag[style.end(1):]
+        else:
+            new_tag = tag[:-1].rstrip('/').rstrip() + f' style="font-family:{SITE_FONT_STACK}">'
+        out = out[:root.start()] + new_tag + out[root.end():]
+    return out
 # ARTLINE Master (майстер-промпт власника) має СВОЮ схему коментарів:
 # «Блок N. Назва START/END», а FAQ ще й обгорнутий маркерами джерела
 # «ARTLINE FAQ BLOCK». Сервер розпізнає обидві схеми.
@@ -3008,6 +3046,157 @@ _MASTER_MAX_SURFACE_RADIUS = 14
 def is_master_style(prompt: str) -> bool:
     """Стиль за майстер-промптом (ARTLINE Master): своя механіка FAQ, відео, радіусів."""
     return MASTER_STYLE_MARKER in (prompt or '')
+
+
+_PART_NUMBER_TAIL_RE = re.compile(r'\s*\((?=[^)]*\d)[A-Z0-9][A-Z0-9./_-]{4,}\)\s*$')
+_BG_COLOR_RE = re.compile(r'background(?:-color)?\s*:\s*(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3})\b', re.I)
+
+
+def master_hero_layout(markup: str, hero_url: str, variant: str) -> str:
+    """Hero майстер-стилю, коли кадр - студійний пекшот, а не сцена.
+
+    Контракт стилю - текст поверх фото зліва, товар справа. Це працює лише зі
+    згенерованою сценою (товар справа, тихий простір зліва). Коли Hero-кадр не
+    згенерувався і підставлено фото товару (рендер на рівному тлі, товар по
+    центру), виходило двічі погано (жива скарга, HYTE X50): текст лягав на
+    товар, а _never_crop_product_photos перемикав img на contain, і під ним
+    лишався cover-фон того самого кадру - два товари різного розміру один на
+    одному. Механічне правило: такий Hero перебудовується у спліт - текст на
+    суцільній темній поверхні, фото у власній рамці кольору свого тла; на
+    мобільному фото згори, текст під ним. Сцени (hero-*.webp або кадр зі
+    строкатим периметром) не чіпаємо. Перебудова ідемпотентна.
+    """
+    hero_path = (hero_url or '').split('?', 1)[0]
+    if not markup or not hero_path or _is_environment_photo(hero_url):
+        return markup
+    soup = BeautifulSoup(markup, 'html.parser')
+    root = soup.find('section')
+    wrapper = root.find('div', recursive=False) if root is not None else None
+    if wrapper is None:
+        return markup
+    img = wrapper.find('img', src=lambda v: bool(v) and hero_path in v)
+    h2 = wrapper.find('h2')
+    if img is None or h2 is None:
+        return markup
+    img_chain = {id(node) for node in img.parents}
+    lca = next((node for node in h2.parents if id(node) in img_chain), None)
+    if lca is None:
+        return markup
+    copy = h2
+    while copy.parent is not None and id(copy.parent) != id(lca):
+        copy = copy.parent
+    while True:
+        kids = copy.find_all(True, recursive=False)
+        direct_text = ''.join(str(t) for t in copy.find_all(string=True, recursive=False)).strip()
+        if len(kids) == 1 and kids[0].name != 'h2' and kids[0].find('h2') is not None and not direct_text:
+            copy = kids[0]
+            continue
+        break
+    wrapper_style = wrapper.get('style') or ''
+    bg = _BG_COLOR_RE.search(wrapper_style)
+    radius = re.search(r'border-radius\s*:\s*[^;]+', wrapper_style, re.I)
+    border = re.search(r'(?<![-\w])border\s*:\s*[^;]+', wrapper_style, re.I)
+    surface = _photo_surface_color(img.get('src') or '') or '#FFFFFF'
+    alt = img.get('alt') or ''
+    src = img.get('src') or ''
+    contents = [node.extract() for node in list(copy.contents)]
+
+    wrapper.clear()
+    wrapper['style'] = ';'.join(filter(None, [
+        'position:relative;overflow:hidden',
+        radius.group(0) if radius else 'border-radius:14px',
+        border.group(0) if border else '',
+        f'background:{bg.group(1) if bg else "#101010"}',
+        'box-sizing:border-box',
+    ])) + ';'
+    photo = soup.new_tag('img', attrs={'src': src, 'alt': alt,
+                                       'style': 'display:block;width:100%;height:auto;object-fit:contain;object-position:center'})
+    frame = soup.new_tag('div', attrs={'style': (
+        f'width:100%;margin:0 auto;background:{surface};border-radius:12px;padding:18px;'
+        'box-sizing:border-box;overflow:hidden')})
+    frame.append(photo)
+    if variant == 'mobile':
+        inner = soup.new_tag('div', attrs={'style': 'padding:16px 16px 24px;box-sizing:border-box;'})
+        copy_col = soup.new_tag('div', attrs={'style': 'margin-top:16px;min-width:0;box-sizing:border-box;overflow-wrap:anywhere;text-align:center;'})
+        inner.append(frame)
+        inner.append(copy_col)
+    else:
+        inner = soup.new_tag('div', attrs={'style': (
+            'display:grid;grid-template-columns:minmax(0,1.04fr) minmax(0,.96fr);gap:32px;'
+            'align-items:center;padding:46px 42px;box-sizing:border-box;')})
+        copy_col = soup.new_tag('div', attrs={'style': 'min-width:0;box-sizing:border-box;overflow-wrap:anywhere;text-align:left;'})
+        photo_col = soup.new_tag('div', attrs={'style': 'min-width:0;box-sizing:border-box;'})
+        photo_col.append(frame)
+        inner.append(copy_col)
+        inner.append(photo_col)
+    for node in contents:
+        copy_col.append(node)
+    wrapper.append(inner)
+    return str(soup)
+
+
+def master_hero_title(markup: str) -> str:
+    """Hero h2 - бренд і модель, без артикула в дужках («(CS-HYTE-X50G-TM)»).
+
+    Назва товару в магазині несе партномер; у заголовку він перевантажує
+    першу фразу сторінки і рве рядок посеред коду. Лише хвостові дужки з
+    цифрою всередині - «(ARGB)» чи «(Black)» лишаються.
+    """
+    soup = BeautifulSoup(markup or '', 'html.parser')
+    root = soup.find('section')
+    first = root.find('div', recursive=False) if root is not None else None
+    h2 = first.find('h2') if first is not None else None
+    if h2 is None or h2.string is None:
+        return markup
+    text = str(h2.string)
+    trimmed = _PART_NUMBER_TAIL_RE.sub('', text)
+    if trimmed == text or not trimmed.strip():
+        return markup
+    h2.string = trimmed
+    return str(soup)
+
+
+_VALUE_FONT_RE = re.compile(r'font-size\s*:\s*26px', re.I)
+_JUNK_TILE_CAPTION_RE = re.compile(r'^\s*(країна|страна|country|kraj)', re.I)
+
+
+def dedupe_value_tiles(markup: str) -> str:
+    """Кожне технічне значення - одна плитка на сторінку.
+
+    Жива скарга: «430 мм» і «170 мм» стояли в ключових характеристиках, потім
+    знову плитками в сумісності, а в експлуатації - плитки «Китай» (країна
+    виробництва) з акцентним числовим кеглем. Правило: плитка зі значенням,
+    яке вже показане вище, і плитка країни виробництва зникають, якщо в їхній
+    сітці лишається хоча б дві плитки; кількість колонок підганяється.
+    """
+    soup = BeautifulSoup(markup or '', 'html.parser')
+    seen: set[str] = set()
+    changed = False
+    values = [node for node in soup.find_all('div')
+              if _VALUE_FONT_RE.search(node.get('style') or '') and '900' in (node.get('style') or '')
+              and not node.find(True)]
+    for value in values:
+        tile = value.parent
+        grid = tile.parent if tile is not None else None
+        if tile is None or grid is None or tile.name != 'div':
+            continue
+        key = re.sub(r'\s+', '', value.get_text()).lower().replace('‑', '-')
+        caption = ' '.join(node.get_text(' ', strip=True) for node in tile.find_all(True, recursive=False)
+                           if node is not value)
+        if key and (key in seen or _JUNK_TILE_CAPTION_RE.search(caption)):
+            siblings = grid.find_all(True, recursive=False)
+            if len(siblings) > 2:
+                tile.decompose()
+                changed = True
+                remaining = len(grid.find_all(True, recursive=False))
+                gstyle = grid.get('style') or ''
+                cols = re.search(r'repeat\(\s*(\d+)', gstyle)
+                if cols and int(cols.group(1)) > remaining:
+                    grid['style'] = gstyle[:cols.start(1)] + str(remaining) + gstyle[cols.end(1):]
+                continue
+        if key:
+            seen.add(key)
+    return str(soup) if changed else markup
 
 
 def video_profile(prompt: str) -> str:
@@ -3584,6 +3773,7 @@ def _prompt(product, style, language, variant, hero, feature, gallery=None):
 TARGET LANGUAGE CODE: {language}. {target_language_rule}
 Never copy source-page sentences in another language. Translate and rewrite every visible sentence into the target language while preserving model names, trademarks and numbers. Units, unit abbreviations and period words are ALWAYS written in the target language and script (examples: В→V, Вт→W, мс→ms, кВт·год→kWh, мес→the target-language month abbreviation). A page in a Latin-script language must contain no Cyrillic characters except verbatim brand or model names.
 Variant: {variant}. Layout: {layout}. Use inline CSS only.
+Site font rule: the root section uses font-family:'Montserrat','Segoe UI',Arial,sans-serif - the artline.ua font - and no element uses another family; never import or load a font.
 SEO heading rule: never use <h1>. The product page already contains its primary H1. Use <h2> for the Hero product title and major section headings, and <h3> for card titles.
 Embedding rule: the rich content is displayed on a light ARTLINE product page. Keep the root canvas transparent or white and make the majority of content surfaces light. Dark styling may be used inside selected high-contrast sections such as Hero or the final section, but never as a full-page background.
 Mandatory visual guardrails: use #101010 for headings and #555555 or #69737D for paragraphs on light surfaces; use #FFFFFF or #F7F8FA for headings and #D0D7DE or #AFB8C1 for paragraphs on dark surfaces. Use #19BCC9 only for compact badges, eyebrow labels, small specification values and subtle borders. Never use turquoise, green, blue, purple or orange for paragraphs or multi-line headings. At least 70 percent of the content area must remain light or transparent. Use 12px radii for sections and cards and 8px for badges. Do not use decorative colored strips, alternating card colors, checkerboard layouts, excessive gradients or repeated heavy shadows.
@@ -3644,7 +3834,7 @@ def _deterministic_html(product, style, language, variant, hero, feature):
     hero_title_size = '38px' if variant == 'mobile' else '58px'
     h2_size = '32px' if variant == 'mobile' else '42px'
     trust_columns = '1fr' if variant == 'mobile' else '.9fr 1.1fr'
-    return f'''<section style="max-width:{width};margin:0 auto;padding:0 14px;font-family:Roboto,Inter,Arial,sans-serif;box-sizing:border-box;color:#101010">
+    return f'''<section style="max-width:{width};margin:0 auto;padding:0 14px;font-family:'Montserrat','Segoe UI',Arial,sans-serif;box-sizing:border-box;color:#101010">
 <!-- 1. HERO -->
 <div style="min-height:{hero_height};padding:{hero_padding};border-radius:12px;background:{hero_css};display:flex;align-items:center;margin-bottom:22px;box-sizing:border-box"><div style="max-width:620px"><div style="display:inline-block;padding:7px 12px;border-radius:8px;background:#19BCC9;color:#101010;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase">{brand}</div><h2 style="font-size:{hero_title_size};line-height:1.06;font-weight:900;margin:16px 0;color:#FFFFFF">{name}</h2><p style="max-width:620px;margin:0;font-size:17px;line-height:1.65;color:#D0D7DE">{description}</p></div></div>
 <!-- 2. KEY BENEFITS -->
@@ -4042,6 +4232,10 @@ HTML:
         output = _restore_image_urls(output, hero, feature, variant, img_hero='THE FIRST CHILD of the wrapper' in (style.prompt or ''))
         output = _enforce_image_whitelist(output, [hero, feature] + list(gallery or []), spares=list(gallery or []))
         output = _round_image_corners(output)
+        if is_master_style(style.prompt or ''):
+            output = master_hero_layout(output, hero, variant)
+            output = master_hero_title(output)
+            output = dedupe_value_tiles(output)
         if variant == 'mobile':
             output = _fit_mobile_hero(output, hero)
         output = _fit_photo_cards(output, variant)
@@ -4077,6 +4271,7 @@ HTML:
                 profile=video_profile(prompt_text), variant=variant,
             )
         output = latinize_units(output, language)
+        output = enforce_site_font(output)
         if is_master_style(prompt_text):
             output = no_em_dash(output)
         # Кольорова схема - НАЙОСТАННІШИЙ прохід: сітка вже зафіксована всіма
@@ -4089,10 +4284,23 @@ HTML:
         return apply_palette(latinize_units(fallback, language), palette or style_palette(style)), 0, 0, public_fallback_reason(exc)
 
 
-def _translation_template(markup: str):
-    """Replace visible text nodes with stable tokens while preserving the DOM/CSS."""
+def _translation_template(markup: str, with_alt: bool = False):
+    """Replace visible text nodes with stable tokens while preserving the DOM/CSS.
+
+    with_alt: alt зображень теж перекладається. Жива скарга: UA-сторінка
+    з російськими alt («на тёмном фоне») - текстові вузли йшли в переклад,
+    атрибути ні. Ключі alt мають префікс 'alt', токен окремий, бо в атрибуті
+    лапки треба екранувати.
+    """
     soup = BeautifulSoup(markup or '', 'html.parser')
     segments = {}
+    if with_alt:
+        for img in soup.find_all('img'):
+            alt = (img.get('alt') or '').strip()
+            if alt:
+                key = f'alt{len(segments)}'
+                segments[key] = alt
+                img['alt'] = f'__ARTLINE_ALT_{key}__'
     for node in list(soup.find_all(string=True)):
         if not isinstance(node, NavigableString) or isinstance(node, Comment) or node.parent.name in ('script', 'style'):
             continue
@@ -4101,7 +4309,7 @@ def _translation_template(markup: str):
             continue
         leading = value[:len(value) - len(value.lstrip())]
         trailing = value[len(value.rstrip()):]
-        key = str(len(segments))
+        key = str(sum(1 for k in segments if not k.startswith('alt')))
         segments[key] = value.strip()
         node.replace_with(f'{leading}__ARTLINE_TEXT_{key}__{trailing}')
     return str(soup), segments
@@ -4111,7 +4319,7 @@ def translate_html(source_html: str, language: str, model: str):
     """Translate copy only; layout, styles, media URLs and element order stay fixed."""
     if not text_ready():
         return None, 0, 0
-    template, segments = _translation_template(source_html)
+    template, segments = _translation_template(source_html, with_alt=True)
     if not segments:
         return source_html, 0, 0
     prompt = f"""Translate the supplied ecommerce copy segments into the target language.
@@ -4128,6 +4336,9 @@ SEGMENTS:
         value = translated.get(key)
         if not isinstance(value, str) or not value.strip():
             value = original
+        if key.startswith('alt'):
+            result = result.replace(f'__ARTLINE_ALT_{key}__', html_lib.escape(value.strip(), quote=True))
+            continue
         result = result.replace(f'__ARTLINE_TEXT_{key}__', html_lib.escape(value, quote=False))
     result = _html_only(result)
     result = latinize_units(result, language)

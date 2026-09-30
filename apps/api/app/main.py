@@ -3322,6 +3322,13 @@ def landing_public(share_token: str, db: Session = Depends(get_db)):
     # Ті самі data:URI, що й у «Скачати HTML»: сторінка не тягне /media, тож
     # публічний доступ не відкриває медіа-сховище студії.
     page = inline_media_images(landing.html)
+    # Публічна сторінка живе НЕ на artline.ua, тож шрифт сайту (Montserrat)
+    # підвантажуємо зі студії (/fonts/ роздає web). У збереженому HTML його
+    # немає свідомо: «Скачати HTML» лишається автономним файлом зі стеком.
+    font_link = '<link rel="stylesheet" href="/fonts/montserrat.css">'
+    if '/fonts/montserrat.css' not in page:
+        page = re.sub(r'<head[^>]*>', lambda m: m.group(0) + font_link, page, count=1, flags=re.I) \
+            if re.search(r'<head[^>]*>', page, re.I) else font_link + page
     return Response(page, media_type='text/html; charset=utf-8', headers={
         # Розісланий чернетковий лендінг не має спливати в пошуку.
         'X-Robots-Tag': 'noindex, nofollow',

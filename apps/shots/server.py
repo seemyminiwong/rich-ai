@@ -86,7 +86,7 @@ def _render(payload: RenderIn):
         '<!doctype html><html><head><meta charset="utf-8">'
         f'<base href="{BASE_URL}/">'
         f'<style>html,body{{margin:0;padding:0;background:{payload.background};'
-        'font-family:Roboto,Inter,Arial,sans-serif}</style></head>'
+        "font-family:'Montserrat','Segoe UI',Arial,sans-serif}</style></head>"
         f'<body>{payload.html}</body></html>'
     )
     stream = io.BytesIO()
@@ -448,7 +448,7 @@ def _audit(payload: AuditIn):
         '<!doctype html><html><head><meta charset="utf-8">'
         f'<base href="{BASE_URL}/">'
         '<style>html,body{margin:0;padding:0;background:#FFFFFF;'
-        'font-family:Roboto,Inter,Arial,sans-serif}</style></head>'
+        "font-family:'Montserrat','Segoe UI',Arial,sans-serif}</style></head>"
         f'<body>{payload.html}</body></html>'
     )
     external = []

@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.70"
+BASE_STYLE_VERSION = "12.72"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -76,10 +76,10 @@ HTML CONTRACT
 
 ROOT
 Desktop:
-<section style="max-width:1240px;margin:0 auto;padding:0 14px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
+<section style="max-width:1240px;margin:0 auto;padding:0 14px;font-family:'Montserrat','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
 
 Mobile:
-<section style="max-width:480px;margin:0 auto;padding:0 10px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
+<section style="max-width:480px;margin:0 auto;padding:0 10px;font-family:'Montserrat','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
 
 Keep the root transparent. Never create a dark full-page canvas.
 
@@ -375,10 +375,10 @@ HTML CONTRACT
 
 ROOT
 Desktop:
-<section style="max-width:1240px;margin:0 auto;padding:0 14px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
+<section style="max-width:1240px;margin:0 auto;padding:0 14px;font-family:'Montserrat','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
 
 Mobile:
-<section style="max-width:480px;margin:0 auto;padding:0 10px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
+<section style="max-width:480px;margin:0 auto;padding:0 10px;font-family:'Montserrat','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
 
 Keep the root transparent. Never create a dark full-page canvas.
 
@@ -598,8 +598,8 @@ NON-NEGOTIABLE RULES
 - NEVER DESCRIBE THE PAGE OR THE IMAGES. No sentence may mention pictures, sections, layouts or these instructions. The copy must read correctly with every image removed.
 
 ROOT
-Desktop: <section style="max-width:1240px;margin:0 auto;padding:0 14px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
-Mobile:  <section style="max-width:480px;margin:0 auto;padding:0 10px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
+Desktop: <section style="max-width:1240px;margin:0 auto;padding:0 14px;font-family:'Montserrat','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
+Mobile:  <section style="max-width:480px;margin:0 auto;padding:0 10px;font-family:'Montserrat','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
 
 BLOCK COMMENTS (REQUIRED)
 - The root contains exactly eight direct child blocks in the order below.
@@ -1033,8 +1033,8 @@ NON-NEGOTIABLE RULES
 - NEVER DESCRIBE THE PAGE OR THE IMAGES. The copy must read correctly with every image removed.
 
 ROOT
-Desktop: <section style="max-width:1240px;margin:0 auto;padding:0 14px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#F5F7FA;box-sizing:border-box">
-Mobile:  <section style="max-width:480px;margin:0 auto;padding:0 10px;font-family:'Roboto','Inter','Segoe UI',Arial,sans-serif;color:#F5F7FA;box-sizing:border-box">
+Desktop: <section style="max-width:1240px;margin:0 auto;padding:0 14px;font-family:'Montserrat','Segoe UI',Arial,sans-serif;color:#F5F7FA;box-sizing:border-box">
+Mobile:  <section style="max-width:480px;margin:0 auto;padding:0 10px;font-family:'Montserrat','Segoe UI',Arial,sans-serif;color:#F5F7FA;box-sizing:border-box">
 
 BLOCK COMMENTS (REQUIRED)
 - The root contains exactly two direct child blocks, each wrapped in these exact invisible comments:
@@ -1148,7 +1148,7 @@ FACTS AND COPY
 - Punctuation: an en dash (–) for punctuation and a hyphen (-) where needed. NO EM DASH: never the character "—" and never &mdash;.
 - Write a benefit only when the feature supports it. No invented superiority, certification, warranty, service, use cases or performance promises. No promises about SEO ranking or rich results.
 - No sentences about the page, images, blocks or instructions. The copy must read correctly with every image removed. No keyword stuffing, prices, purchase links or buttons.
-- Brand/model appear naturally in the Hero and in the closing accent; never repeat them in every heading. Hero badge: brand · category. Hero h2: the exact brand and model, not an overloaded commercial title; compact descriptors go to the subtitle.
+- Brand/model appear naturally in the Hero and in the closing accent; never repeat them in every heading. Hero badge: brand · category. Hero h2: the exact brand and model, not an overloaded commercial title and without the part number in parentheses (write "HYTE X50 Taro Milk", not "HYTE X50 Taro Milk (CS-HYTE-X50G-TM)"); compact descriptors go to the subtitle.
 - A feature block may carry a short technology eyebrow above its h2 (for example "HORIZON VIEW" or "DUAL CHAMBER") only when Product JSON names that technology.
 
 HTML AND EDITOR RULES
@@ -1182,6 +1182,7 @@ DESIGN SYSTEM
 - Radius: outer blocks 14px; inner cards and frames 10-12px; badge pills 999px only where useful. Never turn every specification into a pill.
 - Desktop: gap between major blocks 22px (margin-top on every block after the first); block padding 36-42px; split gap 28-36px; card gap 14-18px. Padding includes borders through box-sizing:border-box.
 - Canonical palette: dark #101010 / #1A2128; light #FFFFFF / #F5F7FA; borders #35393F on dark, #D0D7DE on light; text #101010 and #555555 on light, #FFFFFF and #D8DDE2 on dark. Accent #19BCC9 on dark and #157985 on light: badges, eyebrows, big technical values and thin borders only - never paragraphs, never a fill.
+- VALUE TILES: a tile value is a number with its unit or a short identifier of at most 14 characters (430 мм, 2×2.5″, USB-C 3.2, E-ATX). Never a sentence, a range of form factors, a country of origin, the product category ("Корпус") or a package that is only the product itself - such facts go into copy or are dropped. Each value is shown as a tile ONCE per page: blocks 05 and 08 never repeat a value already shown in block 02, and the Hero carries no value rows (the studio removes repeats).
 - Canvas rhythm: dark Hero -> light specs -> dark primary feature -> light second feature -> dark compatibility -> light trio -> dark visual accent -> light operating facts -> light FAQ. Image-background matching takes precedence over forced alternation.
 
 UNIVERSAL DESKTOP GRID - DEFAULT 9 BLOCKS, MAXIMUM 10 INCLUDING FAQ
@@ -1192,7 +1193,7 @@ UNIVERSAL DESKTOP GRID - DEFAULT 9 BLOCKS, MAXIMUM 10 INCLUDING FAQ
 05 COMPATIBILITY / LIMITS: dark canvas; image left / text right as block 03. Optional slot F03 = another GALLERY_IMAGES frame; 2-4 compact confirmed limit/compatibility tiles (value 26px/900 + caption 14px). Without a suitable frame use a full-width text/technical composition.
 06 CAPABILITY TRIO: light canvas, repeat(3,minmax(0,1fr)), gap 18px, align-items:stretch; three equal-height cards (display:flex;flex-direction:column;height:100%;overflow:hidden). Each card: photo slot on top, then h3 18px and one short paragraph. The photo slot is a WHITE neutral frame of height:250px including its 18px padding, without its own border-radius; its img uses width:100%;height:100%;object-fit:contain;object-position:center. Slots T01/T02/T03 = unique GALLERY_IMAGES frames. Two cards when only two topics or frames exist; three text-only cards are allowed when facts support three topics but frames do not. Never repeat a photo or invent a topic.
 07 SECOND VISUAL ACCENT: dark full-bleed closing banner in the last quarter before the FAQ. Its heading is 24px, not a second 30px Hero. Carry a new usage or design message and the brand/model mention. Slot H02 is allowed only for a GALLERY_IMAGES frame that is a genuine environment photograph filling the whole picture; otherwise (the usual case) build the banner on a brand gradient: background-color:#101010;background-image:linear-gradient(135deg,#101010 0%,#1A2128 100%) - the solid color first, so the white copy stays readable in an editor that drops gradients - without any img or background URL. Never reuse H01.
-08 OPERATING / SETUP FACTS: light canvas, 2-4 technical cards; no image. Remaining confirmed connections, dimensions, operating conditions, supplied items or warranty where Product JSON states them. No duplicate spec-strip filler and no generic ARTLINE services panel.
+08 OPERATING / SETUP FACTS: light canvas, 2-4 technical cards; no image. Remaining confirmed connections, dimensions, operating conditions, supplied items or warranty where Product JSON states them. Never the country of manufacture. No duplicate spec-strip filler and no generic ARTLINE services panel.
 09 FAQ: see FAQ IMPLEMENTATION. 4-6 useful questions normally, 2-3 for simple products.
 Optional block 10: one independent feature only with sufficient new information and a unique relevant frame. Insert before the closing accent and renumber; FAQ always stays last. Never add a photo-only section.
 
@@ -1210,6 +1211,8 @@ HERO IMPLEMENTATION
 - THE FIRST CHILD of the wrapper is <img src="HERO_URL" alt="localized product description" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;"> with the SAME URL. Background and img are one photo slot; no opacity on the img.
 - Next one overlay div: position:absolute;inset:0;background:linear-gradient(90deg,rgba(16,16,16,.92) 0%,rgba(16,16,16,.55) 52%,rgba(16,16,16,0) 100%). The product side stays transparent.
 - Content layer: position:relative;z-index:1;min-height:585px;padding:78px 46px 54px;display:flex;align-items:center;box-sizing:border-box. Copy frame width:58%;min-width:0;overflow-wrap:anywhere (not max-width). Badge 12-13px, h2 30px, subtitle 18px, paragraph 16px, all readable over the overlay.
+- The Hero copy frame holds ONLY the badge, h2, subtitle and one short paragraph of at most two sentences: no specification rows, value lists or number grids - key values belong to block 02.
+- When the supplied hero is a studio packshot rather than a scene, the studio re-lays the Hero into a text/photo split by itself; always write the structure above.
 - Closing banner (block 07) without a photo: the same wrapper without img and overlay, min-height:380px;padding:46px 36px.
 
 FAQ IMPLEMENTATION (the studio FAQ contract, adapted to this style)

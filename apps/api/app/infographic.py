@@ -22,11 +22,17 @@ _PACK = Path(__file__).resolve().parent / 'infographic'
 _ICONS_DIR = _PACK / 'icons'
 _INDEX = _PACK / 'icons.json'
 
-# Порядок пошуку шрифту: фірмовий Roboto, далі те, що точно є в образі.
+# Порядок пошуку шрифту: Montserrat - шрифт artline.ua (fonts-montserrat в
+# образі API), далі старий Roboto і те, що точно є в образі.
 _FONT_CANDIDATES = {
-    'bold': ('Roboto-Bold.ttf', 'Roboto-Black.ttf', 'DejaVuSans-Bold.ttf', 'LiberationSans-Bold.ttf'),
-    'regular': ('Roboto-Regular.ttf', 'DejaVuSans.ttf', 'LiberationSans-Regular.ttf'),
+    'bold': ('Montserrat-ExtraBold.otf', 'Montserrat-ExtraBold.ttf', 'Montserrat-Bold.otf', 'Montserrat-Bold.ttf',
+             'Roboto-Bold.ttf', 'Roboto-Black.ttf', 'DejaVuSans-Bold.ttf', 'LiberationSans-Bold.ttf'),
+    'regular': ('Montserrat-Medium.otf', 'Montserrat-Medium.ttf', 'Montserrat-Regular.otf', 'Montserrat-Regular.ttf',
+                'Roboto-Regular.ttf', 'DejaVuSans.ttf', 'LiberationSans-Regular.ttf'),
 }
+# Каталог пакета fonts-montserrat залежить від його редакції (opentype чи
+# truetype), тому шрифт шукаємо ще й обходом /usr/share/fonts.
+_FONT_ROOT = Path('/usr/share/fonts')
 _FONT_DIRS = (
     '/usr/share/fonts/truetype/roboto/unhinted/RobotoTTF',
     '/usr/share/fonts/truetype/roboto/hinted',
@@ -43,8 +49,10 @@ def _font(kind: str, size: int):
     if key in _font_cache:
         return _font_cache[key]
     for name in _FONT_CANDIDATES[kind]:
-        for folder in _FONT_DIRS:
-            path = Path(folder) / name
+        paths = [Path(folder) / name for folder in _FONT_DIRS]
+        if _FONT_ROOT.is_dir():
+            paths += sorted(_FONT_ROOT.rglob(name))
+        for path in paths:
             if path.is_file():
                 font = ImageFont.truetype(str(path), size)
                 _font_cache[key] = font

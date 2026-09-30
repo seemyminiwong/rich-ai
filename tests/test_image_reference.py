@@ -1,4 +1,5 @@
 import base64
+import re
 from io import BytesIO
 from unittest.mock import patch
 
@@ -1851,7 +1852,7 @@ def test_nginx_reresolves_the_api_container_after_it_is_recreated():
 
     # Змінна БЕЗ URI лишає оригінальний request_uri, змінна З URI його заміняє -
     # рівно та сама маршрутизація, що була зі статичними адресами.
-    assert targets.count('$api_upstream') == 2, '/api/ і /media/ мають ходити на корінь'
+    assert targets.count('$api_upstream') == 3, '/api/, /media/ і /p/ мають ходити на корінь'
     assert targets.count('$api_health') == 1
 
 
@@ -3090,7 +3091,7 @@ def test_master_style_is_seeded_and_recognised_by_the_faq_machinery():
     main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
     web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
 
-    assert MASTER_STYLE_NAME == 'ARTLINE Master' and BASE_STYLE_VERSION == '12.70'
+    assert MASTER_STYLE_NAME == 'ARTLINE Master' and BASE_STYLE_VERSION == '12.72'
     assert 'ARTLINE BLOCK 08' not in MASTER_STYLE_PROMPT, 'схема коментарів Showcase тут чужа'
     assert style_has_faq(MASTER_STYLE_PROMPT) and is_master_style(MASTER_STYLE_PROMPT)
     assert video_profile(MASTER_STYLE_PROMPT) == 'master' and surface_radius_cap(MASTER_STYLE_PROMPT) == 14
@@ -3201,3 +3202,147 @@ def test_master_mobile_relayout_may_regroup_blocks_but_never_the_copy():
     with patch('app.pipeline.text_ready', lambda: True), patch('app.pipeline._responses_create', fake([regrouped])):
         out, _, _, reason = relayout_html(desktop, 'm')
     assert out is None and 'STYLE MOBILE PLAN' not in calls[0]
+
+
+def test_every_style_and_page_uses_the_site_font_montserrat():
+    """Шрифт сайту artline.ua - Montserrat - у кожному стилі й на кожній сторінці.
+
+    Три рівні, бо кожен окремо підводить: промпти (модель пам'ятає Roboto зі
+    старих прикладів і стилів оператора), механіка на виході (будь-яке
+    font-family стає стеком сайту, корінь без шрифту його отримує) і самі
+    файли шрифту там, де сторінку показує НЕ магазин: прев'ю студії, публічний
+    лендінг, Chromium гейта верстки (Montserrat ширший за Arial - з чужим
+    шрифтом гейт пропустив би саме той перенос, що обріже рядок) та інфографіка.
+    """
+    from pathlib import Path
+    import app.prompts as prompts_module
+    from app.pipeline import enforce_site_font, SITE_FONT_STACK, _deterministic_html
+    root = Path(__file__).resolve().parents[1]
+    stack = "'Montserrat','Segoe UI',Arial,sans-serif"
+    assert SITE_FONT_STACK == stack
+
+    # 1. жоден стиль не несе чужого шрифту
+    for name in dir(prompts_module):
+        value = getattr(prompts_module, name)
+        if name.endswith('_STYLE_PROMPT') and isinstance(value, str):
+            assert 'Roboto' not in value and "'Inter'" not in value, name
+            for family in __import__('re').findall(r'font-family:([^;"]+)', value):
+                assert family.startswith("'Montserrat'"), (name, family)
+    landing = (root / 'apps/api/app/landing.py').read_text(encoding='utf-8')
+    assert 'Roboto' not in landing and "font-family:'Montserrat','Segoe UI',Arial,sans-serif - the artline.ua font" in landing
+    assert "font-family:'Montserrat'" in _deterministic_html({'name': 'X'}, None, 'ua', 'desktop', '', '')
+
+    # 2. механіка на виході
+    page = ('<section style="max-width:1240px;font-family:Roboto,Inter,Arial,sans-serif">'
+            '<h2 style="font-family:\'Inter\',sans-serif;font-size:30px">H</h2>'
+            '<code style="font-family:\'IBM Plex Mono\',monospace">SUN-12K</code></section>')
+    out = enforce_site_font(page)
+    assert out.count(f'font-family:{stack}') == 2 and 'Roboto' not in out and "'Inter'" not in out
+    assert "font-family:'IBM Plex Mono',monospace" in out, 'моноширинний - свідомий вибір'
+    assert enforce_site_font(out) == out, 'ідемпотентно'
+    bare = enforce_site_font('<section style="padding:0"><p>x</p></section>')
+    assert bare.startswith(f'<section style="padding:0;font-family:{stack}">')
+    doc = enforce_site_font('<html><head></head><body><section><p>x</p></section></body></html>')
+    assert f'<body style="font-family:{stack}">' in doc
+    pipeline = (root / 'apps/api/app/pipeline.py').read_text(encoding='utf-8')
+    tasks = (root / 'apps/api/app/tasks.py').read_text(encoding='utf-8')
+    assert 'output = enforce_site_font(output)' in pipeline and 'Site font rule:' in pipeline
+    assert 'rich_html = enforce_site_font(rich_html)' in tasks
+    assert 'html = enforce_site_font(str(soup))' in landing
+
+    # 3. файли шрифту там, де сторінку показує не магазин
+    web_docker = (root / 'apps/web/Dockerfile').read_text(encoding='utf-8')
+    assert 'fonts-montserrat' in web_docker and 'COPY --from=fonts /fonts /usr/share/nginx/html/fonts' in web_docker
+    assert 'exit 1' in web_docker, 'без ваги шрифту складання падає, а не тихо бреше'
+    css = (root / 'apps/web/montserrat.css').read_text(encoding='utf-8')
+    for weight in (400, 500, 600, 700, 800, 900):
+        assert f'font-weight:{weight}' in css
+    nginx = (root / 'apps/web/nginx.conf').read_text(encoding='utf-8')
+    assert 'location ^~ /fonts/' in nginx and 'font/otf otf;' in nginx
+    web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
+    assert '${SITE_FONT_LINK()}<style>' in web and "body{padding:0;font-family:'Montserrat','Segoe UI',Arial,sans-serif}" in web
+    assert 'function landingDocument(html){html=html||\'\';if(!html||html.includes(\'/fonts/montserrat.css\'))' in web
+    main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
+    assert 'font_link = \'<link rel="stylesheet" href="/fonts/montserrat.css">\'' in main
+    shots_docker = (root / 'apps/shots/Dockerfile').read_text(encoding='utf-8')
+    assert 'fonts-montserrat' in shots_docker and 'fc-list | grep -qi montserrat' in shots_docker
+    shots = (root / 'apps/shots/server.py').read_text(encoding='utf-8')
+    assert 'Roboto' not in shots
+    api_docker = (root / 'apps/api/Dockerfile').read_text(encoding='utf-8')
+    assert 'fonts-montserrat' in api_docker
+    infographic = (root / 'apps/api/app/infographic.py').read_text(encoding='utf-8')
+    assert infographic.index("'Montserrat-ExtraBold.otf'") < infographic.index("'Roboto-Bold.ttf'")
+    assert '_FONT_ROOT.rglob(name)' in infographic
+
+
+def test_master_hero_packshot_split_tiles_and_alt():
+    from app.pipeline import master_hero_layout, master_hero_title, dedupe_value_tiles, _translation_template
+    hero = 'https://cdn.example.com/x50.jpg?w=3840'
+    page = (
+        '<section style="width:100%"><!-- Блок 1. Hero START -->'
+        '<div style="position:relative;overflow:hidden;border-radius:14px;border:1px solid #35393F;'
+        'background:#101010 url(https://cdn.example.com/x50.jpg?w=3840) center/cover no-repeat">'
+        '<img alt="Корпус" src="https://cdn.example.com/x50.jpg?w=3840" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">'
+        '<div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(16,16,16,.92) 0%,rgba(16,16,16,0) 100%)"></div>'
+        '<div style="position:relative;z-index:1;min-height:585px;padding:78px 46px 54px"><div style="width:58%">'
+        '<div>HYTE · корпус</div><h2 style="font-size:30px">HYTE X50 Taro Milk (CS-HYTE-X50G-TM)</h2><p>Опис</p>'
+        '</div></div></div><!-- Блок 1. Hero END -->'
+        '<div><div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr))">'
+        '<div><div style="font-size:26px;font-weight:900">430 мм</div><div>Відеокарта</div></div>'
+        '<div><div style="font-size:26px;font-weight:900">170 мм</div><div>Кулер</div></div>'
+        '<div><div style="font-size:26px;font-weight:900">E-ATX</div><div>Плата</div></div></div></div>'
+        '<div><div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr))">'
+        '<div><div style="font-size:26px;font-weight:900">430 мм</div><div>Відеокарта</div></div>'
+        '<div><div style="font-size:26px;font-weight:900">223 мм</div><div>БЖ</div></div>'
+        '<div><div style="font-size:26px;font-weight:900">Китай</div><div>Країна виробництва</div></div>'
+        '<div><div style="font-size:26px;font-weight:900">48 міс.</div><div>Гарантія</div></div></div></div>'
+        '</section>'
+    )
+    with patch('app.pipeline._is_environment_photo', lambda src: False), \
+         patch('app.pipeline._photo_surface_color', lambda src: '#C9C3F0'):
+        desktop = master_hero_layout(page, hero, 'desktop')
+        again = master_hero_layout(desktop, hero, 'desktop')
+        mobile = master_hero_layout(desktop, hero, 'mobile')
+    soup = BeautifulSoup(desktop, 'html.parser')
+    wrapper = soup.section.find('div', recursive=False)
+    # one photo, no background image under it, no overlay, text beside the photo
+    assert 'url(' not in wrapper['style'] and 'background:#101010' in wrapper['style']
+    assert len(wrapper.find_all('img')) == 1 and 'position:absolute' not in desktop.split('Блок 1. Hero END')[0]
+    grid = wrapper.find('div', recursive=False)
+    assert 'grid-template-columns:minmax(0,1.04fr) minmax(0,.96fr)' in grid['style']
+    copy_col, photo_col = grid.find_all('div', recursive=False)
+    assert copy_col.find('h2') is not None and photo_col.find('img')['alt'] == 'Корпус'
+    assert 'background:#C9C3F0' in photo_col.div['style']
+    assert again == desktop, 'idempotent'
+    msoup = BeautifulSoup(mobile, 'html.parser').section.find('div', recursive=False)
+    inner = msoup.find('div', recursive=False)
+    first, second = inner.find_all('div', recursive=False)
+    assert first.find('img') is not None and second.find('h2') is not None, 'mobile: photo first, copy below'
+    with patch('app.pipeline._is_environment_photo', lambda src: True):
+        assert master_hero_layout(page, hero, 'desktop') == page, 'a scene keeps the full-bleed hero'
+
+    titled = master_hero_title(page)
+    assert '>HYTE X50 Taro Milk</h2>' in titled
+    assert master_hero_title(page.replace('(CS-HYTE-X50G-TM)', '(ARGB)')) == page.replace('(CS-HYTE-X50G-TM)', '(ARGB)')
+
+    tiles = dedupe_value_tiles(page)
+    assert tiles.count('430 мм') == 1 and 'Китай' not in tiles and '223 мм' in tiles and '48 міс.' in tiles
+    assert tiles.count('repeat(4,') == 1 and 'repeat(2,' in tiles, 'the thinned grid drops empty columns'
+    assert dedupe_value_tiles(tiles) == tiles
+
+    template, segments = _translation_template('<section><img alt="на тёмном фоне" src="/a.webp"><p>Текст</p></section>', with_alt=True)
+    assert segments == {'alt0': 'на тёмном фоне', '0': 'Текст'}
+    assert 'alt="__ARTLINE_ALT_alt0__"' in template and '__ARTLINE_TEXT_0__' in template
+    assert _translation_template('<section><img alt="x" src="/a.webp"><p>T</p></section>')[1] == {'0': 'T'}
+
+    source = '<section><h2>Мощное решение для ежедневной работы и игр</h2><img alt="Корпус &quot;X50&quot; на тёмном фоне" src="/media/p/g.webp"></section>'
+
+    class FakeResponses:
+        def create(self, **_kwargs):
+            return SimpleNamespace(output_text='{"alt0":"Корпус \\"X50\\" на темному тлі","0":"Потужне рішення для щоденної роботи і гри"}',
+                                   usage=SimpleNamespace(input_tokens=5, output_tokens=5))
+
+    with patch('app.pipeline.text_client', lambda: (SimpleNamespace(responses=FakeResponses()), 'openai')):
+        translated, _, _ = translate_html(source, 'ua', 'test-model')
+    img = BeautifulSoup(translated, 'html.parser').img
+    assert img['alt'] == 'Корпус "X50" на темному тлі' and img['src'] == '/media/p/g.webp'

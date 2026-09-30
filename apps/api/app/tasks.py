@@ -36,7 +36,11 @@ from app.pipeline import (
     PALETTE_TOKENS,
     palette_from_photo,
     render_gate,
+    enforce_site_font,
     is_master_style,
+    master_hero_layout,
+    master_hero_title,
+    dedupe_value_tiles,
     mobile_layout_rules,
     no_em_dash,
     surface_radius_cap,
@@ -682,6 +686,12 @@ def process_project(self, project_id, reuse_images=False):
                                 # reuse його ще й ніхто не перевіряв у цій гілці) -
                                 # монтуємо назад, кадр уже оплачено.
                                 relaid = ensure_feature_mounted(relaid, feature, mobile_hero or hero, 'mobile')
+                                if is_master_style(style.prompt or ''):
+                                    # Десктоп уже вирівняно; перекомпонування могло
+                                    # повернути текст на пекшот або дубль плиток.
+                                    relaid = master_hero_layout(relaid, mobile_hero or hero, 'mobile')
+                                    relaid = master_hero_title(relaid)
+                                    relaid = dedupe_value_tiles(relaid)
                                 video_link = getattr(project, 'video_url', '') or ''
                                 if video_link:
                                     # Перекомпонування могло зʼїсти iframe - повертаємо
@@ -826,6 +836,8 @@ def process_project(self, project_id, reuse_images=False):
                         # Переклад і перекомпонування повертають «—» за звичкою;
                         # контракт майстер-стилю - лише коротке тире.
                         rich_html = no_em_dash(rich_html)
+                    # Шрифт сайту - на кожному виході, після перекладу й перекомпонування.
+                    rich_html = enforce_site_font(rich_html)
                     rich_html = apply_palette(rich_html, _project_palette(project) or style_palette(style))
                     latest_version = db.scalar(select(func.max(Artifact.version)).where(
                         Artifact.project_id == project.id,
