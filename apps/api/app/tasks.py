@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import time
 from pathlib import Path
@@ -35,6 +36,11 @@ from app.pipeline import (
     PALETTE_TOKENS,
     palette_from_photo,
     render_gate,
+    is_master_style,
+    mobile_layout_rules,
+    no_em_dash,
+    surface_radius_cap,
+    video_profile,
     local_media_path,
     materialize_local_reference,
     fetch_bytes_capped,
@@ -502,6 +508,14 @@ def process_project(self, project_id, reuse_images=False):
                         'desktop': ('1536x1024', 1536, 1024, 'wide desktop composition; product on the right; protected text-safe space on the left'),
                         'mobile': ('1024x1536', 1024, 1536, 'portrait mobile composition; complete product in the upper area; protected text-safe space below it'),
                     }
+                    # Hero-кадри форматів НЕЗАЛЕЖНІ один від одного: різне полотно,
+                    # той самий референс, спільного стану нема. Раніше вони йшли
+                    # по черзі, і десктоп чекав, поки домалюється мобільний - на
+                    # gpt-image-2 це зайві півтори-дві хвилини на кожен проєкт.
+                    # Тепер вони летять разом; у базу результати лягають у
+                    # ДЕТЕРМІНОВАНОМУ порядку списку форматів, а не в порядку
+                    # завершення - інакше журнал і нумерація ассетів плавали б.
+                    pending_heroes = []
                     for offset, variant in enumerate(requested_variants):
                         adopted_hero = existing_images.get(f'hero-{variant}-generated') or existing_images.get('hero-custom')
                         if adopted_hero:
@@ -509,19 +523,41 @@ def process_project(self, project_id, reuse_images=False):
                             log(db, project, 'images', f'Hero {variant}: взято з попередньої генерації — без витрат', 24 + offset * 5)
                             continue
                         size, width, height, composition = hero_specs.get(variant, hero_specs['desktop'])
-                        log(db, project, 'images', f'Створення Hero {variant} · {project.image_model}', 24 + offset * 5)
                         hero_prompt = (
                             f"{style_hero}\nENVIRONMENT: {hero_environment(product)}\n{brand_accent}"
                             f"Canvas requirement: {composition}. "
                             f"Render specifically at {size}; do not crop important product parts.\n"
                             f"Negative requirements: {negative}\nProduct: {product_name}. Verified product facts: {facts}"
                         )
-                        hero_notes: dict = {}
-                        hero, hero_generated, hero_error = generate_image(
-                            hero_prompt, project.id, f'hero-{variant}', project.image_model,
-                            project.image_quality, fallback, reference_url=original_reference_url,
-                            reference_path=reference_path, size=size, composition=variant, notes=hero_notes,
-                        )
+                        pending_heroes.append({'variant': variant, 'offset': offset, 'size': size,
+                                               'width': width, 'height': height, 'prompt': hero_prompt,
+                                               'notes': {}})
+                    if pending_heroes:
+                        names = ', '.join(item['variant'] for item in pending_heroes)
+                        log(db, project, 'images',
+                            (f'Створення Hero ({names}) · {project.image_model}' if len(pending_heroes) == 1
+                             else f'Створення Hero одночасно: {names} · {project.image_model}'), 24)
+
+                        def _make_hero(item):
+                            # Один провал не має валити решту: помилка повертається
+                            # тим самим кортежем, що й у звичайного шляху.
+                            try:
+                                return generate_image(
+                                    item['prompt'], project.id, f"hero-{item['variant']}", project.image_model,
+                                    project.image_quality, fallback, reference_url=original_reference_url,
+                                    reference_path=reference_path, size=item['size'],
+                                    composition=item['variant'], notes=item['notes'])
+                            except Exception as exc:
+                                return fallback, False, f'{type(exc).__name__}: {exc}'
+
+                        with ThreadPoolExecutor(max_workers=min(3, len(pending_heroes))) as pool:
+                            outcomes = list(pool.map(_make_hero, pending_heroes))
+                    else:
+                        outcomes = []
+                    for item, (hero, hero_generated, hero_error) in zip(pending_heroes, outcomes):
+                        variant, offset = item['variant'], item['offset']
+                        width, height = item['width'], item['height']
+                        hero_prompt, hero_notes = item['prompt'], item['notes']
                         hero_by_variant[variant] = hero
                         if reference_path:
                             project.image_request_count += 1
@@ -628,7 +664,8 @@ def process_project(self, project_id, reuse_images=False):
                         added_input = added_output = 0
                         if variant == 'mobile' and desktop_master_html:
                             log(db, project, 'content', f'Мобільна верстка з десктопного макета · {project.text_model}', progress)
-                            relaid, relayout_in, relayout_out, relayout_reason = relayout_html(desktop_master_html, project.text_model)
+                            relaid, relayout_in, relayout_out, relayout_reason = relayout_html(
+                                desktop_master_html, project.text_model, style_rules=mobile_layout_rules(style.prompt or ''))
                             added_input += relayout_in
                             added_output += relayout_out
                             if relaid:
@@ -653,6 +690,7 @@ def process_project(self, project_id, reuse_images=False):
                                         relaid, video_link, master_language,
                                         dark=(style.name or '') in DARK_STYLE_NAMES,
                                         product_name=product_name,
+                                        profile=video_profile(style.prompt or ''), variant='mobile',
                                     )
                                 relaid = _fit_mobile_hero(relaid, mobile_hero or hero)
                                 relaid = _fit_photo_cards(relaid, 'mobile')
@@ -660,7 +698,7 @@ def process_project(self, project_id, reuse_images=False):
                                 relaid = _frame_contained_photos(relaid)
                                 if not style_has_faq(style.prompt):
                                     relaid = strip_faq(relaid)
-                                relaid = _clamp_surface_radii(relaid)
+                                relaid = _clamp_surface_radii(relaid, surface_radius_cap(style.prompt or ''))
                                 relaid = _harmonize_radii(relaid)
                                 if (style.name or '').startswith('ARTLINE Showcase'):
                                     relaid = _finalize_showcase_layout(
@@ -784,6 +822,10 @@ def process_project(self, project_id, reuse_images=False):
                     # НА ВИХОДІ, після будь-якого проходу. Повторне
                     # застосування безпечне: мапляться лише канонічні кольори,
                     # тож якщо їх уже підмінили, робити нема чого.
+                    if is_master_style(style.prompt or ''):
+                        # Переклад і перекомпонування повертають «—» за звичкою;
+                        # контракт майстер-стилю - лише коротке тире.
+                        rich_html = no_em_dash(rich_html)
                     rich_html = apply_palette(rich_html, _project_palette(project) or style_palette(style))
                     latest_version = db.scalar(select(func.max(Artifact.version)).where(
                         Artifact.project_id == project.id,
@@ -834,7 +876,8 @@ def process_project(self, project_id, reuse_images=False):
                     97, level)
             else:
                 log(db, project, 'review',
-                    'Верстку не перевірено: сервіс рендера вимкнено (docker compose --profile shots up -d shots)',
+                    f'Верстку не перевірено: {render_summary}. Перевірте службу: '
+                    'docker compose --profile shots up -d shots',
                     97, 'warning')
             known_urls = {a.url for a in db.scalars(select(Asset).where(Asset.project_id == project.id, Asset.kind == 'image')).all()}
             page_extra = [u for u in sorted(used_page_images) if u and u not in known_urls]

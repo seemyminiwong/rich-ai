@@ -56,6 +56,8 @@ from app.prompts import (
     PODIUM360DARK_STYLE_NAME,
     PODIUM360DARK_STYLE_PROMPT,
     LICENSE_COMMENT,
+    MASTER_STYLE_NAME,
+    MASTER_STYLE_PROMPT,
     SHOWCASE_FEATURE_PROMPT,
     SHOWCASE_HERO_PROMPT,
     SHOWCASE_NEGATIVE_PROMPT,
@@ -117,6 +119,20 @@ MANAGED_STYLES = [
         'values': {
             'description': 'Іміджевий формат на реальних фото галереї: темний Hero-кадр, великі числа, чергування темних і світлих секцій. Для флагманських товарів із багатою галереєю.',
             'prompt': SHOWCASE_STYLE_PROMPT,
+            'hero_prompt': SHOWCASE_HERO_PROMPT,
+            'feature_prompt': SHOWCASE_FEATURE_PROMPT,
+            'negative_prompt': SHOWCASE_NEGATIVE_PROMPT,
+        },
+    },
+    {
+        # Майстер-промпт власника (v1.0) у студійній редакції: Hero на фото,
+        # 4 ключові значення, три фото-переваги, трійка, закривальний банер,
+        # експлуатація і FAQ; відео сервер вставляє перед FAQ, як у Showcase.
+        'name': MASTER_STYLE_NAME,
+        'default': False,
+        'values': {
+            'description': 'Майстер-промпт ARTLINE v1.0: темний Hero на фото, ключові значення, фото-перевага за перевагою, трійка можливостей, закривальний банер, експлуатація і FAQ. Montserrat, шкала 30/24/18/16. Відео - перед FAQ.',
+            'prompt': MASTER_STYLE_PROMPT,
             'hero_prompt': SHOWCASE_HERO_PROMPT,
             'feature_prompt': SHOWCASE_FEATURE_PROMPT,
             'negative_prompt': SHOWCASE_NEGATIVE_PROMPT,

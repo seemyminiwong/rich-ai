@@ -2895,6 +2895,8 @@ def test_render_gate_measures_the_laid_out_page_not_the_markup():
         'image-broken': '<section style="padding:20px"><img src="http://web/nope.png" alt="x" style="width:200px;height:120px"><p style="color:#111">Текст</p></section>',
         'placeholder-copy': '<section style="padding:20px"><h2 style="color:#111;font-size:28px">Lorem ipsum dolor</h2></section>',
         'tiny-text': '<section style="padding:20px"><p style="color:#111;font-size:9px">Дрібний дисклеймер</p></section>',
+        # градієнт без картинки міряється за найгіршою точкою, а не пропускається
+        'low-contrast ': '<section style="padding:20px;background-image:linear-gradient(135deg,#FFFFFF 0%,#EEF1F4 100%)"><p style="color:#9AA3AB;font-size:15px">Сірий підпис на світлому градієнті</p></section>',
     }
     # Чиста сторінка: акцент на темному, згорнутий FAQ, схована мобільна панель,
     # напівпрозора плитка і капслок-лейбл - усе це НЕ дефекти.
@@ -2907,7 +2909,9 @@ def test_render_gate_measures_the_laid_out_page_not_the_markup():
         '<details><summary style="color:#101010;font-size:17px">Питання покупця</summary>'
         '<p style="color:#333;font-size:15px">Відповідь, яка живе у згорнутому блоці.</p></details>'
         '<div class="sticky" style="display:none"><a style="color:#101010;font-size:16px">Подзвонити</a></div>'
-        '<p style="color:#333;font-size:16px">Звичайний абзац опису товару.</p></section>'
+        '<p style="color:#333;font-size:16px">Звичайний абзац опису товару.</p>'
+        '<div style="background-color:#101010;background-image:linear-gradient(135deg,#101010 0%,#1A2128 100%);padding:30px">'
+        '<h2 style="color:#FFFFFF;font-size:24px">Закривальний банер на градієнті</h2></div></section>'
     )
 
     with sync_playwright() as pw:
@@ -2932,6 +2936,7 @@ def test_render_gate_measures_the_laid_out_page_not_the_markup():
 
             for code, html in defects.items():
                 report = audit(html, 1240 if code != 'tiny-text' else 390)
+                code = code.strip()
                 codes = {f['code'] for f in report['findings']}
                 assert code in codes, f'{code} не знайдено: {codes}'
                 sample = next(f for f in report['findings'] if f['code'] == code)
@@ -2972,7 +2977,16 @@ def test_render_gate_is_wired_as_a_free_critic_and_never_fails_the_run():
 
     assert 'def render_audit(' in pipeline and 'def render_gate(' in pipeline
     assert "RENDER_WIDTHS = {'desktop': 1240, 'mobile': 390}" in pipeline
-    assert 'return None' in pipeline.split('def render_audit(')[1].split('def render_gate(')[0], 'недоступний сервіс = None, не виняток'
+    audit_src = pipeline.split('def render_audit(')[1].split('def render_gate(')[0]
+    assert 'return None' in audit_src, 'недоступний сервіс = None, не виняток'
+    # Причина недоступності мусить доїжджати ДО ОПЕРАТОРА, а не лише в лог
+    # контейнера: «не перевірено» без причини - це глухий кут.
+    assert "return None, 'SHOTS_URL порожній" in audit_src
+    assert 'except httpx.TimeoutException' in audit_src and 'не відповів за' in audit_src
+    assert 'відповів {reply.status_code}' in audit_src
+    assert 'failure = failure or reason' in pipeline
+    assert "return 0.0, failure or 'сервіс рендера вимкнено'" in pipeline
+    assert "f'Верстку не перевірено: {render_summary}." in tasks
     assert 'from app.pipeline import' in main or 'render_gate' in main
 
     assert 'render_gate(latest)' in tasks and "critic_type='render'" in tasks
@@ -2982,3 +2996,208 @@ def test_render_gate_is_wired_as_a_free_critic_and_never_fails_the_run():
     assert "render:'Верстка у браузері'" in web
     assert 'Верстку у браузері не перевірено' in web
     assert 'profiles: ["shots"]' in compose and 'POST /audit' in compose
+
+
+def test_hero_variants_are_generated_in_parallel_and_stay_independent(tmp_path):
+    """Два Hero-кадри летять одночасно, але лягають у базу в порядку форматів.
+
+    Desktop і mobile - незалежні полотна з того самого референсу. Послідовно
+    вони коштували проєкту зайві півтори-дві хвилини: десктоп чекав, поки
+    домалюється мобільний. Тут перевіряємо саме те, що ламається при
+    розпаралелюванні: виклики мусять ПЕРЕКРИВАТИСЯ в часі, кожен - писати свій
+    файл і свій notes, а провал одного - не забирати з собою другий.
+    """
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    started, done = [], []
+    barrier_lock = threading.Lock()
+
+    class FakeImages:
+        def edit(self, **kwargs):
+            with barrier_lock:
+                started.append(time.time())
+            time.sleep(0.4)                     # «малювання»
+            with barrier_lock:
+                done.append(time.time())
+            size = tuple(int(v) for v in kwargs['size'].split('x'))
+            scene = Image.new('RGB', size, (90, 20, 20))
+            out = BytesIO(); scene.save(out, format='WEBP', quality=90)
+            return SimpleNamespace(data=[SimpleNamespace(b64_json=base64.b64encode(out.getvalue()).decode(), url=None)])
+
+    reference = tmp_path / 'reference.png'
+    reference.write_bytes(_packshot_bytes())
+    specs = [('hero-desktop', '1536x1024', 'desktop'), ('hero-mobile', '1024x1536', 'mobile')]
+    notes = {label: {} for label, _, _ in specs}
+
+    def run(spec):
+        label, size, variant = spec
+        return generate_image('Scene', 'project', label, 'gpt-image-1', 'medium', '/media/reference.png',
+                              reference_path=reference, size=size, composition=variant, notes=notes[label])
+
+    with patch('app.pipeline.image_client', lambda: SimpleNamespace(images=FakeImages())), \
+         patch('app.pipeline.settings.media_dir', str(tmp_path)):
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(run, specs))
+
+    assert all(generated for _, generated, _ in outcomes), outcomes
+    # перекриття в часі: другий стартував ДО того, як завершився перший
+    assert len(started) == 2 and started[1] < done[0], 'кадри пішли по черзі, а не разом'
+    # кожен кадр - свій файл потрібного розміру, свій запис у notes
+    assert Image.open(tmp_path / 'project' / 'hero-desktop.webp').size == (1536, 1024)
+    assert Image.open(tmp_path / 'project' / 'hero-mobile.webp').size == (1024, 1536)
+    assert notes['hero-desktop']['product_box'] != notes['hero-mobile']['product_box']
+    assert all(n['composition'] == 'locked' for n in notes.values())
+
+    # порядок у воркері - за списком форматів, а не за часом завершення
+    from pathlib import Path
+    tasks = (Path(__file__).resolve().parents[1] / 'apps/api/app/tasks.py').read_text(encoding='utf-8')
+    assert 'with ThreadPoolExecutor(max_workers=min(3, len(pending_heroes))) as pool:' in tasks
+    assert 'outcomes = list(pool.map(_make_hero, pending_heroes))' in tasks
+    assert 'for item, (hero, hero_generated, hero_error) in zip(pending_heroes, outcomes):' in tasks
+    assert 'return fallback, False, f\'{type(exc).__name__}: {exc}\'' in tasks, 'один провал не валить решту'
+
+
+_MASTER_SAMPLE = (
+    '<section style="width:100%;margin:0;padding:0;font-family:\'Montserrat\',\'Segoe UI\',Arial,sans-serif;color:#101010;box-sizing:border-box;">'
+    '<!-- Блок 1. Hero START --><div style="position:relative;border-radius:14px"><h2>ASUS TUF GAMING GT502</h2></div><!-- Блок 1. Hero END -->'
+    '<!-- Блок 3. Основна перевага START --><div style="display:grid"><div style="width:88%"><img src="/media/p/gallery-2.webp" alt="a"></div>'
+    '<div><h2>ПАНОРАМНИЙ ОГЛЯД</h2><p>Конструкція без передньої стійки відкриває компоненти з двох боків, і скло лишається чистим.</p></div></div>'
+    '<!-- Блок 3. Основна перевага END -->'
+    '<!-- Блок 8. Експлуатація START --><div><p>Роз\'єми: 2 × USB 3.2 — Type-A</p></div><!-- Блок 8. Експлуатація END -->'
+    '<!-- Блок 9. FAQ START --><!-- ARTLINE FAQ BLOCK START -->'
+    '<div style="background:#FFFFFF;border-radius:14px"><h2>FAQ</h2>'
+    '<details><summary>Яка максимальна довжина відеокарти?</summary><p>До 400 мм.</p></details></div>'
+    '<!-- ARTLINE FAQ BLOCK END --><!-- Блок 9. FAQ END -->'
+    '</section>'
+)
+
+
+def test_master_style_is_seeded_and_recognised_by_the_faq_machinery():
+    """ARTLINE Master: свій промпт, свої коментарі - і та сама механіка FAQ.
+
+    Стиль мусить мати FAQ «як в інших стилях»: чекбокс у діалозі, згорнуті
+    пункти з перемикачем, вимкнення перед запуском. Уся ця механіка ключувалась
+    на «ARTLINE BLOCK 08: FAQ» зі Showcase, якого в майстер-промпті немає (там
+    «Блок N. FAQ» + «ARTLINE FAQ BLOCK»). Тому сервер розпізнає обидві схеми.
+    """
+    from pathlib import Path
+    from app.prompts import MASTER_STYLE_NAME, MASTER_STYLE_PROMPT, BASE_STYLE_VERSION
+    from app.pipeline import (style_has_faq, prompt_without_faq, is_master_style, video_profile,
+                              surface_radius_cap, mobile_layout_rules, _style_text_for)
+    root = Path(__file__).resolve().parents[1]
+    main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
+    web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
+
+    assert MASTER_STYLE_NAME == 'ARTLINE Master' and BASE_STYLE_VERSION == '12.70'
+    assert 'ARTLINE BLOCK 08' not in MASTER_STYLE_PROMPT, 'схема коментарів Showcase тут чужа'
+    assert style_has_faq(MASTER_STYLE_PROMPT) and is_master_style(MASTER_STYLE_PROMPT)
+    assert video_profile(MASTER_STYLE_PROMPT) == 'master' and surface_radius_cap(MASTER_STYLE_PROMPT) == 14
+    assert video_profile('any other style') == 'default' and surface_radius_cap('any other style') == 12
+    # вимкнений FAQ: правило під нумерацію майстра, а не «сім блоків» Showcase
+    off = prompt_without_faq(MASTER_STYLE_PROMPT)
+    assert 'FAQ IS DISABLED' in off and 'Omit the FAQ block' in off and 'exactly seven blocks' not in off
+    # hero як перший img обгортки, галерея, заборона довгого тире
+    for marker in ('THE FIRST CHILD of the wrapper', 'GALLERY_IMAGES', 'NO EM DASH', 'Блок 3. Основна перевага'):
+        assert marker in MASTER_STYLE_PROMPT, marker
+    # мобільний план: лише для мобільної генерації і для перекомпонування
+    rules = mobile_layout_rules(MASTER_STYLE_PROMPT)
+    assert 'UNIVERSAL MOBILE GRID' in rules and 'Блок 7. FAQ' in rules
+    assert '[MOBILE_LAYOUT]' not in _style_text_for(MASTER_STYLE_PROMPT, 'desktop')
+    assert 'UNIVERSAL MOBILE GRID' not in _style_text_for(MASTER_STYLE_PROMPT, 'desktop')
+    assert 'UNIVERSAL MOBILE GRID' in _style_text_for(MASTER_STYLE_PROMPT, 'mobile')
+    # засів і блокування в UI
+    assert "'name': MASTER_STYLE_NAME," in main and "'prompt': MASTER_STYLE_PROMPT," in main
+    block = main.split("'name': MASTER_STYLE_NAME,")[1].split("'name':")[0]
+    assert "'hero_prompt': SHOWCASE_HERO_PROMPT" in block and "'default': False" in block
+    assert "'ARTLINE Master'" in web.split('MANAGED_STYLE_NAMES=')[1].split(']')[0]
+
+
+def test_master_video_block_goes_before_faq_and_renumbers_the_comments():
+    """Відео - блок N на місці FAQ, FAQ стає N+1; вигляд за шкалою стилю.
+
+    Нумерація коментарів у майстер-стилі йде за видимим порядком - вставлений
+    сервером блок мусить це поважати. Заголовок - великими літерами з коротким
+    тире (контракт стилю забороняє «—»), 24px, радіус 14px, відступ 22/16px.
+    """
+    from app.pipeline import inject_video_block, finalize_faq_html
+    url = 'https://youtu.be/dQw4w9WgXcQ'
+    page = finalize_faq_html(_MASTER_SAMPLE)
+    out = inject_video_block(page, url, 'ua', product_name='ASUS TUF Gaming GT502 Horizon ARGB Black (90DC0090)',
+                             profile='master', variant='desktop')
+    assert out.index('<!-- Блок 9. Відео START -->') < out.index('class="arvid"') < out.index('<!-- Блок 10. FAQ START -->')
+    assert '<!-- Блок 10. FAQ END -->' in out and 'Блок 9. FAQ' not in out
+    assert out.index('<!-- ARTLINE FAQ BLOCK START -->') > out.index('<!-- Блок 10. FAQ START -->')
+    video = out.split('class="arvid"')[1].split('<!-- Блок 9. Відео END -->')[0]
+    assert 'ВІДЕООГЛЯД – ASUS TUF Gaming GT502' in video and '—' not in video
+    assert 'font-size:24px' in video and 'border-radius:14px' in video and 'margin-top:22px' in video
+    assert 'max-width:860px' not in video
+    assert inject_video_block(out, url, 'ua', profile='master') == out, 'повторна вставка - no-op'
+
+    mobile = inject_video_block(page, url, 'ua', profile='master', variant='mobile')
+    assert 'margin-top:16px' in mobile.split('class="arvid"')[1] and 'padding:20px 16px' in mobile.split('class="arvid"')[1]
+    # інші стилі - як були
+    showcase = inject_video_block('<section><div>a</div><!-- ARTLINE BLOCK 08: FAQ START --><div><details><summary>q</summary><p>a</p></details></div><!-- ARTLINE BLOCK 08: FAQ END --></section>', url, 'ua', product_name='ASUS TUF Gaming GT502')
+    assert 'ARTLINE BLOCK 09: VIDEO START' in showcase and 'font-size:30px' in showcase and 'Відеоогляд —' in showcase
+
+
+def test_master_mechanics_radius_dash_feature_slot_and_faq_strip():
+    """Радіус 14px лише для майстра, тире лише в тексті, Feature у «Блок 3.», чистий strip."""
+    from app.pipeline import (_clamp_surface_radii, no_em_dash, core_feature_text, ensure_feature_mounted, strip_faq)
+    assert 'border-radius:14px' in _clamp_surface_radii('<div style="border-radius:14px">', 14)
+    assert 'border-radius:14px' in _clamp_surface_radii('<div style="border-radius:22px">', 14)
+    assert 'border-radius:12px' in _clamp_surface_radii('<div style="border-radius:14px">'), 'родина лишається на 12px'
+
+    dashed = no_em_dash('<p title="a — b">Двигун — тихий</p><!-- Блок 1 — коментар --><img src="/x—y.png">')
+    assert '<p title="a — b">Двигун – тихий</p>' in dashed and '<!-- Блок 1 — коментар -->' in dashed and '/x—y.png' in dashed
+
+    core = core_feature_text(_MASTER_SAMPLE)
+    assert core.startswith('ПАНОРАМНИЙ ОГЛЯД'), core
+    mounted = ensure_feature_mounted(_MASTER_SAMPLE, '/media/p/feature.webp', '/media/p/hero-desktop.webp', 'desktop')
+    slot = mounted.split('<!-- Блок 3. Основна перевага START -->')[1].split('<!-- Блок 3. Основна перевага END -->')[0]
+    assert '/media/p/feature.webp' in slot and 'gallery-2.webp' not in slot
+
+    stripped = strip_faq(_MASTER_SAMPLE)
+    assert '<details' not in stripped and 'Блок 9. FAQ' not in stripped and 'ARTLINE FAQ BLOCK' not in stripped
+    assert 'Блок 8. Експлуатація END' in stripped
+
+
+def test_master_mobile_relayout_may_regroup_blocks_but_never_the_copy():
+    """Мобільний план майстра переставляє блоки - текст і кадри лишаються ті самі.
+
+    Перекомпонування доводило однаковість копі рядком: будь-яка перестановка
+    блоків валила його в дорогу незалежну генерацію. Для стилю з власним
+    мобільним планом порівнюємо мультимножину текстових вузлів: порядок
+    вільний, а додане, втрачене чи переписане слово - так само відмова.
+    """
+    from unittest.mock import patch
+    from app.pipeline import relayout_html
+    desktop = ('<section><!-- Блок 1 --><div><p>Перший абзац</p><img src="/a.webp" alt=""></div>'
+               '<!-- Блок 2 --><div><p>Другий абзац</p></div><!-- Блок 3 --><div><p>Третій абзац</p></div></section>')
+    regrouped = ('<section><!-- Блок 1 --><div><img src="/a.webp" alt=""><p>Перший абзац</p></div>'
+                 '<!-- Блок 2 --><div><p>Третій абзац</p><p>Другий абзац</p></div></section>')
+    reworded = regrouped.replace('Третій абзац', 'Третій, переписаний абзац')
+    calls = []
+
+    def fake(answers):
+        def create(model, prompt, limit):
+            calls.append(prompt)
+            return SimpleNamespace(output_text=answers[min(len(calls) - 1, len(answers) - 1)], usage=None)
+        return create
+
+    with patch('app.pipeline.text_ready', lambda: True), patch('app.pipeline._responses_create', fake([regrouped])):
+        out, _, _, reason = relayout_html(desktop, 'm', style_rules='merge blocks 2 and 3')
+    assert reason == '' and out is not None and out.index('Третій абзац') < out.index('Другий абзац')
+    assert 'STYLE MOBILE PLAN' in calls[0] and 'merge blocks 2 and 3' in calls[0]
+
+    calls.clear()
+    with patch('app.pipeline.text_ready', lambda: True), patch('app.pipeline._responses_create', fake([reworded])):
+        out, _, _, reason = relayout_html(desktop, 'm', style_rules='merge blocks 2 and 3')
+    assert out is None and 'змінила текст' in reason
+
+    # стилі без плану - як раніше: перестановка = відмова
+    calls.clear()
+    with patch('app.pipeline.text_ready', lambda: True), patch('app.pipeline._responses_create', fake([regrouped])):
+        out, _, _, reason = relayout_html(desktop, 'm')
+    assert out is None and 'STYLE MOBILE PLAN' not in calls[0]

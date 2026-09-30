@@ -1674,7 +1674,8 @@ def core_feature_text(markup: str) -> str:
     except Exception:
         return ''
     for node in soup.find_all(string=lambda value: isinstance(value, Comment)):
-        if not str(node).strip().lower().startswith('3.'):
+        label = re.sub(r'^\s*блок\s+', '', str(node).strip(), flags=re.I).lower()
+        if not label.startswith('3.') or 'end' in label.split()[-1:]:
             continue
         block = node.find_next_sibling()
         if block is None:
@@ -2181,7 +2182,7 @@ def _first_px(value: str):
 _MAX_SURFACE_RADIUS = 12
 
 
-def _clamp_surface_radii(markup: str) -> str:
+def _clamp_surface_radii(markup: str, cap: int | None = None) -> str:
     """Єдиний базовий радіус: жодна поверхня не кругліша за 12px.
 
     Моделі тягнуться до «преміальних» 28-32px, і навіть точний контракт у
@@ -2191,11 +2192,13 @@ def _clamp_surface_radii(markup: str) -> str:
     ПЕРЕД _harmonize_radii, щоб концентрична формула рахувала від обрізаного
     зовнішнього значення.
     """
+    limit = cap or _MAX_SURFACE_RADIUS
+
     def repl(match):
         value = float(match.group(1))
-        if value >= 100 or value <= _MAX_SURFACE_RADIUS:
+        if value >= 100 or value <= limit:
             return match.group(0)
-        return f'border-radius:{_MAX_SURFACE_RADIUS}px'
+        return f'border-radius:{limit}px'
 
     return re.sub(r'border-radius\s*:\s*([\d.]+)px', repl, markup or '', flags=re.I)
 
@@ -2993,6 +2996,57 @@ _FAQ_CSS = (
 
 
 FAQ_BLOCK_MARKER = 'ARTLINE BLOCK 08: FAQ'
+# ARTLINE Master (майстер-промпт власника) має СВОЮ схему коментарів:
+# «Блок N. Назва START/END», а FAQ ще й обгорнутий маркерами джерела
+# «ARTLINE FAQ BLOCK». Сервер розпізнає обидві схеми.
+MASTER_FAQ_MARKER = 'ARTLINE FAQ BLOCK'
+MASTER_STYLE_MARKER = 'ARTLINE RICH CONTENT · ADAPTED MASTER PROMPT'
+_MASTER_FAQ_COMMENT_RE = re.compile(r'^\s*Блок\s+(\d+)\.\s*FAQ\s+(START|END)\s*$', re.I)
+_MASTER_MAX_SURFACE_RADIUS = 14
+
+
+def is_master_style(prompt: str) -> bool:
+    """Стиль за майстер-промптом (ARTLINE Master): своя механіка FAQ, відео, радіусів."""
+    return MASTER_STYLE_MARKER in (prompt or '')
+
+
+def video_profile(prompt: str) -> str:
+    """Як оформлювати серверний блок відео під стиль."""
+    return 'master' if is_master_style(prompt) else 'default'
+
+
+def surface_radius_cap(prompt: str) -> int:
+    """Стеля радіуса поверхонь: 12px для всієї родини, 14px - контракт майстер-стилю."""
+    return _MASTER_MAX_SURFACE_RADIUS if is_master_style(prompt) else _MAX_SURFACE_RADIUS
+
+
+def mobile_layout_rules(prompt: str) -> str:
+    """Мобільний план стилю ([MOBILE_LAYOUT]...) для перекомпонування, або ''."""
+    return style_image_prompt(prompt, 'MOBILE_LAYOUT')
+
+
+def strip_mobile_layout(prompt: str) -> str:
+    """Прибрати мобільний план із промпту десктопної генерації: там він лише шум."""
+    return re.sub(r'\[MOBILE_LAYOUT\].*?\[/MOBILE_LAYOUT\]', '', prompt or '', flags=re.S).strip()
+
+
+def no_em_dash(markup: str) -> str:
+    """Довге тире -> коротке у видимому тексті (контракт майстер-стилю).
+
+    Промпт забороняє «—», але модель і перекладач повертають його за звичкою.
+    Міняємо лише текстові вузли: атрибути, URL і коментарі не чіпаємо.
+    """
+    if '—' not in (markup or '') and '&mdash;' not in (markup or ''):
+        return markup
+    soup = BeautifulSoup(markup, 'html.parser')
+    changed = False
+    for node in soup.find_all(string=True):
+        if isinstance(node, Comment) or node.parent.name in ('script', 'style'):
+            continue
+        if '—' in node:
+            node.replace_with(str(node).replace('—', '–'))
+            changed = True
+    return str(soup) if changed else markup
 
 _YOUTUBE_ID_RE = re.compile(
     r'(?:youtube(?:-nocookie)?\.com/(?:watch\?(?:[^#\s]*&)?v=|embed/|shorts/|live/|v/)|youtu\.be/)'
@@ -3060,7 +3114,8 @@ def _youtube_poster(video_id: str) -> str:
     return poster
 
 
-def inject_video_block(markup: str, video_url: str, language: str = 'ua', dark: bool = False, product_name: str = '') -> str:
+def inject_video_block(markup: str, video_url: str, language: str = 'ua', dark: bool = False, product_name: str = '',
+                       profile: str = 'default', variant: str = 'desktop') -> str:
     """Блок відео (ARTLINE BLOCK 09): постер-посилання, що переживає будь-який редактор.
 
     Модель про відео не знає нічого - блок вставляє СЕРВЕР механічно, тому
@@ -3088,7 +3143,14 @@ def inject_video_block(markup: str, video_url: str, language: str = 'ua', dark: 
     heading = _VIDEO_HEADINGS.get(lang, _VIDEO_HEADINGS['en'])
     subline = _VIDEO_SUBLINES.get(lang, _VIDEO_SUBLINES['en'])
     name = _short_product_name(product_name)
-    title = f'{heading} — {name}' if name else heading
+    master = profile == 'master'
+    if master:
+        # Контракт майстер-стилю: головні заголовки великими літерами (імʼя
+        # товару - як є, ідентифікатори не чіпаємо) і жодного довгого тире.
+        title = f'{heading.upper()} – {name}' if name else heading.upper()
+        subline = subline.replace('—', '–')
+    else:
+        title = f'{heading} — {name}' if name else heading
     if dark:
         box = 'background:#1A2128;border:1px solid rgba(255,255,255,.08)'
         title_color, text_color = '#F5F7FA', '#AFB8C1'
@@ -3098,11 +3160,16 @@ def inject_video_block(markup: str, video_url: str, language: str = 'ua', dark: 
     watch_url = f'https://www.youtube.com/watch?v={video_id}'
     embed_url = f'https://www.youtube-nocookie.com/embed/{video_id}'
     poster = _youtube_poster(video_id)
+    mobile = (variant or '') == 'mobile'
+    shell = ({'radius': '14px', 'padding': '20px 16px' if mobile else '36px', 'gap': '16px' if mobile else '22px',
+              'h2': '24px', 'body': '16px', 'leading': '1.6', 'measure': '', 'inner': '12px'} if master else
+             {'radius': '12px', 'padding': '34px 30px', 'gap': '18px', 'h2': '30px', 'body': '15px',
+              'leading': '1.55', 'measure': ';max-width:860px', 'inner': '8px'})
     block_soup = BeautifulSoup(
-        f'<div class="arvid" style="{box};border-radius:12px;padding:34px 30px;margin-top:18px;box-sizing:border-box">'
-        f'<h2 style="font-size:30px;font-weight:900;margin:0 0 8px;color:{title_color}">{title}</h2>'
-        f'<p style="margin:0 0 18px;font-size:15px;line-height:1.55;color:{text_color};max-width:860px">{subline}</p>'
-        '<div style="position:relative;border-radius:8px;overflow:hidden;background:#101010">'
+        f'<div class="arvid" style="{box};border-radius:{shell["radius"]};padding:{shell["padding"]};margin-top:{shell["gap"]};box-sizing:border-box">'
+        f'<h2 style="font-size:{shell["h2"]};line-height:1.25;font-weight:900;margin:0 0 8px;color:{title_color}">{title}</h2>'
+        f'<p style="margin:0 0 18px;font-size:{shell["body"]};line-height:{shell["leading"]};color:{text_color}{shell["measure"]}">{subline}</p>'
+        f'<div style="position:relative;border-radius:{shell["inner"]};overflow:hidden;background:#101010">'
         f'<a href="{watch_url}" target="_blank" rel="noopener noreferrer" style="display:block;text-decoration:none">'
         f'<img src="{poster}" alt="{title}" loading="lazy" style="display:block;width:100%;height:auto">'
         '<div style="position:absolute;left:0;right:0;bottom:0;height:38%;'
@@ -3120,7 +3187,22 @@ def inject_video_block(markup: str, video_url: str, language: str = 'ua', dark: 
         '</div></div>', 'html.parser')
     block = block_soup.find('div')
     soup = BeautifulSoup(markup, 'html.parser')
-    faq_start = soup.find(string=lambda v: isinstance(v, Comment) and 'ARTLINE BLOCK 08: FAQ START' in str(v))
+    # Майстер-стиль: відео стає блоком N на місці FAQ, а FAQ посувається на N+1 -
+    # нумерація коментарів іде за видимим порядком, як вимагає контракт стилю.
+    numbered_faq = [c for c in soup.find_all(string=lambda v: isinstance(v, Comment))
+                    if _MASTER_FAQ_COMMENT_RE.match(str(c))]
+    faq_open = next((c for c in numbered_faq if _MASTER_FAQ_COMMENT_RE.match(str(c)).group(2).upper() == 'START'), None)
+    if faq_open is not None:
+        number = int(_MASTER_FAQ_COMMENT_RE.match(str(faq_open)).group(1))
+        faq_open.insert_before(block)
+        block.insert_before(Comment(f' Блок {number}. Відео START '))
+        block.insert_after(Comment(f' Блок {number}. Відео END '))
+        for comment in numbered_faq:
+            edge = _MASTER_FAQ_COMMENT_RE.match(str(comment)).group(2).upper()
+            comment.replace_with(Comment(f' Блок {number + 1}. FAQ {edge} '))
+        return str(soup)
+    faq_start = soup.find(string=lambda v: isinstance(v, Comment) and (
+        'ARTLINE BLOCK 08: FAQ START' in str(v) or f'{MASTER_FAQ_MARKER} START' in str(v)))
     if faq_start is not None:
         faq_start.insert_before(block)
     else:
@@ -3135,7 +3217,8 @@ def inject_video_block(markup: str, video_url: str, language: str = 'ua', dark: 
 
 def style_has_faq(prompt: str) -> bool:
     """Чи описує стиль блок FAQ. Єдине джерело істини - сам промпт стилю."""
-    return FAQ_BLOCK_MARKER in (prompt or '')
+    text = prompt or ''
+    return FAQ_BLOCK_MARKER in text or MASTER_FAQ_MARKER in text
 
 
 def prompt_without_faq(prompt: str) -> str:
@@ -3149,6 +3232,16 @@ def prompt_without_faq(prompt: str) -> str:
     text = prompt or ''
     if not style_has_faq(text):
         return text
+    if MASTER_FAQ_MARKER in text and FAQ_BLOCK_MARKER not in text:
+        # Майстер-стиль: блоки нумеруються за видимим порядком, тож «сім замість
+        # восьми» тут не працює - кажемо правило, а не число.
+        return text + (
+            '\n\nFAQ IS DISABLED FOR THIS RUN (this overrides every instruction above)\n'
+            '- Omit the FAQ block together with its numbered "Блок N. FAQ" comments and the ARTLINE FAQ BLOCK markers.\n'
+            '- The last major block is the operating facts block (the closing accent in the compact plan); '
+            'renumber the block comments sequentially.\n'
+            '- Never use a details or summary element.\n'
+        )
     text = re.sub(r'\n[ \t]*<!-- ARTLINE BLOCK 08: FAQ START -->[^\n]*', '', text)
     text = re.sub(r'\n\d+\. FAQ.*?(?=\n[A-Z][A-Z /]{4,}\n|\Z)', '\n', text, flags=re.S)
     text = re.sub(r'\n- the FAQ is block 08[^\n]*', '', text)
@@ -3184,6 +3277,11 @@ def strip_faq(markup: str) -> str:
     for style_tag in soup.find_all('style'):
         if '.arfaq' in (style_tag.string or style_tag.get_text() or ''):
             style_tag.decompose()
+    # Майстер-стиль: разом із блоком ідуть і його коментарі - інакше в редакторі
+    # лишаються «Блок 9. FAQ START/END» довкола порожнечі.
+    for comment in soup.find_all(string=lambda v: isinstance(v, Comment) and (
+            _MASTER_FAQ_COMMENT_RE.match(str(v)) or MASTER_FAQ_MARKER in str(v))):
+        comment.extract()
     return str(soup)
 
 
@@ -3473,6 +3571,12 @@ def _golden_example(style) -> str:
             'those must come from Product JSON for the NEW product):\n' + golden)
 
 
+def _style_text_for(prompt: str, variant: str) -> str:
+    """Текст стилю для моделі: без арт-дирекції зображень, мобільний план - лише мобільному."""
+    text = strip_image_blocks(prompt)
+    return text if variant == 'mobile' else strip_mobile_layout(text)
+
+
 def _prompt(product, style, language, variant, hero, feature, gallery=None):
     layout = 'single-column mobile layout with no horizontal overflow' if variant == 'mobile' else 'desktop layout up to 1240px'
     target_language_rule = language_rule(language)
@@ -3485,7 +3589,7 @@ Embedding rule: the rich content is displayed on a light ARTLINE product page. K
 Mandatory visual guardrails: use #101010 for headings and #555555 or #69737D for paragraphs on light surfaces; use #FFFFFF or #F7F8FA for headings and #D0D7DE or #AFB8C1 for paragraphs on dark surfaces. Use #19BCC9 only for compact badges, eyebrow labels, small specification values and subtle borders. Never use turquoise, green, blue, purple or orange for paragraphs or multi-line headings. At least 70 percent of the content area must remain light or transparent. Use 12px radii for sections and cards and 8px for badges. Do not use decorative colored strips, alternating card colors, checkerboard layouts, excessive gradients or repeated heavy shadows.
 The style prompt below is the primary design specification. Follow it precisely unless it conflicts with factual accuracy or HTML validity.
 STYLE PROMPT:
-{strip_image_blocks(style.prompt)}{_golden_example(style)}
+{_style_text_for(style.prompt, variant)}{_golden_example(style)}
 Mandatory factual rule: use only facts present in Product JSON. Never invent warranty, partnership, certification, compatibility, performance, contents or support claims.
 Images: hero={hero}; feature={feature}.{_gallery_line(style, gallery)}
 Product JSON: {json.dumps(product, ensure_ascii=False)}"""
@@ -3735,7 +3839,9 @@ def ensure_feature_mounted(html: str, feature: str, hero: str = '', variant: str
     soup = BeautifulSoup(html or '', 'html.parser')
     hero_path = (hero or '').split('?', 1)[0]
     feature_path = feature.split('?', 1)[0]
-    slot = _block_photo_slot(soup, 'ARTLINE BLOCK 04', hero_path)
+    # Showcase тримає Feature у блоці 04; майстер-стиль - у «Блок 3. Основна
+    # перевага» (слот F01): саме з тексту цього блока генерується Feature-кадр.
+    slot = _block_photo_slot(soup, 'ARTLINE BLOCK 04', hero_path) or _block_photo_slot(soup, 'Блок 3.', hero_path)
 
     if slot is not None:
         if feature_path and feature_path in (slot.get('src') or ''):
@@ -3808,7 +3914,20 @@ DESKTOP PAGE:
 """
 
 
-def relayout_html(desktop_html: str, model: str):
+def _visible_text_bag(html: str) -> list:
+    """Мультимножина видимих текстових вузлів: той самий текст, будь-який порядок."""
+    soup = BeautifulSoup(html or '', 'html.parser')
+    bag = []
+    for node in soup.find_all(string=True):
+        if isinstance(node, Comment) or node.parent.name in ('script', 'style'):
+            continue
+        value = ' '.join(str(node).split()).strip().lower()
+        if value:
+            bag.append(value)
+    return sorted(bag)
+
+
+def relayout_html(desktop_html: str, model: str, style_rules: str = ''):
     """Return (mobile_html, in_tokens, out_tokens, reason). '' reason on success.
 
     The mobile page is derived from the finished desktop page instead of being
@@ -3817,23 +3936,38 @@ def relayout_html(desktop_html: str, model: str):
     """
     if not text_ready():
         return None, 0, 0, 'Text provider is not configured'
-    want_text = _visible_text_signature(desktop_html)
+    # Стиль із власним мобільним планом (ARTLINE Master) переставляє й обʼєднує
+    # цілі блоки - порядок тексту змінюється за задумом. Тоді доводимо не
+    # «той самий рядок», а «ті самі текстові вузли й ті самі кадри»: жодне слово
+    # не додане, не зникло і не переписане.
+    if style_rules:
+        same_text = lambda html: _visible_text_bag(html) == _visible_text_bag(desktop_html)
+    else:
+        want_signature = _visible_text_signature(desktop_html)
+        same_text = lambda html: _visible_text_signature(html) == want_signature
     want_imgs = _image_urls_of(desktop_html)
-    prompt = RELAYOUT_PROMPT + desktop_html
+    head = RELAYOUT_PROMPT
+    if style_rules:
+        head = head.replace('DESKTOP PAGE:\n', (
+            'STYLE MOBILE PLAN (this style\'s own rules: they override ALLOWED CHANGES above where they conflict, '
+            'including block grouping, block order and the root width; they never override FORBIDDEN). '
+            'Wrapper divs may be merged or split and whole elements moved; every text-bearing element and every <img> '
+            'is kept exactly once:\n' + style_rules.strip() + '\n\nDESKTOP PAGE:\n'))
+    prompt = head + desktop_html
     total_in = total_out = 0
     try:
         response = _responses_create(model, prompt, 16000)
         output = _html_only(response.output_text)
         added_in, added_out = _usage_counts(response, prompt, response.output_text)
         total_in += added_in; total_out += added_out
-        if _visible_text_signature(output) != want_text or _image_urls_of(output) != want_imgs:
+        if not same_text(output) or _image_urls_of(output) != want_imgs:
             correction = ("Your previous mobile re-layout changed the copy or the images. Do it again. "
                           "The visible text and every URL must be byte-for-byte those of the desktop page; only layout may differ.\n\n" + prompt)
             retried = _responses_create(model, correction, 16000)
             output = _html_only(retried.output_text)
             ri, ro = _usage_counts(retried, correction, retried.output_text)
             total_in += ri; total_out += ro
-        if _visible_text_signature(output) != want_text:
+        if not same_text(output):
             return None, total_in, total_out, 'мобільна верстка змінила текст — застосовано незалежну генерацію'
         if _image_urls_of(output) != want_imgs:
             return None, total_in, total_out, 'мобільна верстка змінила зображення — застосовано незалежну генерацію'
@@ -3914,7 +4048,7 @@ HTML:
         output = _never_crop_product_photos(output)
         output = _fit_framed_images(output)
         output = _frame_contained_photos(output)
-        output = _clamp_surface_radii(output)
+        output = _clamp_surface_radii(output, surface_radius_cap(style.prompt))
         output = _harmonize_radii(output)
         prompt_text = style.prompt or ''
         if not style_has_faq(prompt_text):
@@ -3940,8 +4074,11 @@ HTML:
                 output, video, language,
                 dark=(getattr(style, 'name', '') or '') in DARK_STYLE_NAMES,
                 product_name=video_product or (product or {}).get('name', ''),
+                profile=video_profile(prompt_text), variant=variant,
             )
         output = latinize_units(output, language)
+        if is_master_style(prompt_text):
+            output = no_em_dash(output)
         # Кольорова схема - НАЙОСТАННІШИЙ прохід: сітка вже зафіксована всіма
         # гардами, підміна кольорів її гарантовано не чіпає. Схема, обрана при
         # запуску проєкту (palette), має пріоритет над схемою стилю.
@@ -4090,26 +4227,31 @@ RENDER_WIDTHS = {'desktop': 1240, 'mobile': 390}
 RENDER_AUDIT_LIMIT = 4
 
 
-def render_audit(html: str, width: int, label: str = '', timeout: float = 120.0) -> dict | None:
-    """Виміряти верстку в справжньому Chromium (сервіс shots). None = недоступний.
+def render_audit(html: str, width: int, label: str = '', timeout: float = 180.0) -> tuple:
+    """Виміряти верстку в справжньому Chromium (сервіс shots). -> (report, reason).
 
     Свідомо м'яко: аудит - це контроль якості, а не етап генерації. Якщо сервіс
-    вимкнено профілем або він не відповів, проєкт має завершитись як завершувався,
-    а оператор - побачити в журналі, що перевірки не було.
+    вимкнено профілем або він не відповів, проєкт має завершитись як завершувався.
+    Але «не перевірено» без причини - це глухий кут: reason несе конкретне слово
+    (немає адреси / не резолвиться / таймаут / 500), і воно доїжджає в журнал
+    проєкту, а не лише в лог контейнера, куди оператор не ходить.
     """
     base = (getattr(settings, 'shots_url', '') or '').rstrip('/')
     if not base:
-        return None
+        return None, 'SHOTS_URL порожній у налаштуваннях воркера'
     try:
         with httpx.Client(timeout=timeout) as http:
             reply = http.post(f'{base}/audit', json={'html': html, 'width': width, 'label': label})
             if reply.status_code >= 400:
-                logger.warning('Render audit %s failed: %s %s', label, reply.status_code, reply.text[:200])
-                return None
-            return reply.json()
+                logger.warning('Render audit %s failed: %s %s', label, reply.status_code, reply.text[:300])
+                return None, f'{base} відповів {reply.status_code}: {reply.text[:160]}'
+            return reply.json(), ''
+    except httpx.TimeoutException:
+        logger.warning('Render audit %s timed out after %ss', label, timeout)
+        return None, f'{base} не відповів за {timeout:.0f} с (сторінка {label})'
     except Exception as exc:
         logger.warning('Render audit %s unavailable (%s): %s', label, type(exc).__name__, exc)
-        return None
+        return None, f'{base} недоступний: {type(exc).__name__} - {str(exc)[:160]}'
 
 
 def render_gate(artifacts) -> tuple:
@@ -4121,8 +4263,8 @@ def render_gate(artifacts) -> tuple:
     сторінка укладається по-справжньому і міряється; знахідка несе фрагмент
     тексту, щоб її було де шукати.
 
-    checked - скільки сторінок реально виміряно; 0 означає «перевірки не було»
-    (сервіс вимкнено), і це НЕ те саме, що «дефектів немає».
+    checked - скільки сторінок реально виміряно; 0 означає «перевірки не було»,
+    і це НЕ те саме, що «дефектів немає»: у summary тоді лежить причина.
     """
     # Спершу по одній сторінці кожного формату, потім решта мов. Довший переклад
     # ламає сітку не гірше за помилку в стилі (німецьке слово в плитці), тому
@@ -4140,12 +4282,14 @@ def render_gate(artifacts) -> tuple:
     suggestions: list = []
     scores: list = []
     checked = 0
+    failure = ''
     for artifact in targets:
         variant = getattr(artifact, 'variant', 'desktop')
         language = getattr(artifact, 'language', '?')
         label = f'{language}/{variant}'
-        report = render_audit(getattr(artifact, 'html', ''), RENDER_WIDTHS.get(variant, 1240), label)
+        report, reason = render_audit(getattr(artifact, 'html', ''), RENDER_WIDTHS.get(variant, 1240), label)
         if not report:
+            failure = failure or reason
             continue
         checked += 1
         scores.append(float(report.get('score') or 0))
@@ -4157,7 +4301,7 @@ def render_gate(artifacts) -> tuple:
                 + (f' - «{where[:60]}»' if where else '')
                 + (f' (ще {count - 1})' if count > 1 else ''))
     if not checked:
-        return 0.0, 'Сторінки не перевірялись: сервіс рендера вимкнено', [], [], 0
+        return 0.0, failure or 'сервіс рендера вимкнено', [], [], 0
     if issues:
         suggestions = ['Виправляти згори вниз: обрізаний і перекритий текст важливіші за контраст',
                        'Кожна знахідка має фрагмент тексту - шукайте по ньому у прев\'ю']

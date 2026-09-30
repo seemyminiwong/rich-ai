@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.69"
+BASE_STYLE_VERSION = "12.70"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -1116,4 +1116,154 @@ if ('#19BCC9' in BENTO_LIGHT_STYLE_PROMPT or '#101010' in BENTO_LIGHT_STYLE_PROM
         or 'grid-auto-flow:dense' not in BENTO_LIGHT_STYLE_PROMPT
         or 'ARTLINE BLOCK 08: FAQ' not in BENTO_LIGHT_STYLE_PROMPT):
     raise RuntimeError('BENTO light derivation failed')
+
+
+# --- ARTLINE Master -----------------------------------------------------------
+# Стиль за «ARTLINE RICH CONTENT · ADAPTED MASTER PROMPT v1.0» власника: реальні
+# фото ведуть, короткі тексти пояснюють підтверджені характеристики. Джерело -
+# ручний майстер-промпт; тут його СТУДІЙНА редакція: факти лише з Product JSON
+# (моделі не ходять в інтернет), зображення - hero/feature/GALLERY_IMAGES,
+# мобільна версія - перекомпонування десктопа за розділом [MOBILE_LAYOUT],
+# шапку-коментар і блок відео ставить сервер, FAQ добудовує сервер так само,
+# як в інших стилях. Механіка під цей стиль (маркери FAQ, розміщення відео,
+# радіус 14px, заборона довгого тире) - у pipeline.py за маркером заголовка.
+MASTER_STYLE_NAME = 'ARTLINE Master'
+MASTER_STYLE_PROMPT = r'''ARTLINE RICH CONTENT · ADAPTED MASTER PROMPT · v1.0 · STUDIO EDITION
+
+Create product rich content for ARTLINE. Real product images lead; short, precise explanations connect confirmed specifications to buyer decisions. Deliver one rich-content fragment that can be pasted into the product editor.
+
+STUDIO CONTRACT (this edition runs inside ARTLINE Rich Studio and replaces the manual workflow of the source prompt)
+- FACTS: Product JSON in the request is the only source of product facts; external pages cannot be opened here. Match the exact model, color, capacity and regional variant in Product JSON and never infer one variant's specifications from another. Omit every claim the JSON does not confirm.
+- IMAGES: use only the supplied URLs - hero (a scene of this exact product: product on the right, calm space on the left), feature (one additional frame for the primary feature) and GALLERY_IMAGES (real photos of this exact product, mostly studio renders on a white background). Never invent, rename or shorten a URL, never use a search-result or local path.
+- ONE REQUEST = ONE OUTPUT: the target language and the variant are given in the request. Other languages are translated from your page by the studio, and the mobile page is re-laid-out from the desktop page by the rules in [MOBILE_LAYOUT] below. Never output several versions, markdown fences or explanations.
+- HEADER COMMENT: the studio writes the file header (style version, language/variant, time) itself. Never write a timestamp comment.
+- VIDEO: never write video, iframe or links. When the project has a YouTube link, the studio inserts the video block itself directly before the FAQ and renumbers the block comments. Do not reserve a slot for it and do not mention it.
+- FAQ INTERACTION: the studio adds the collapsed state and the toggle glyph exactly as in the other ARTLINE styles. You write plain questions and answers.
+- PALETTE: write the canonical ARTLINE tokens listed in DESIGN SYSTEM. Brand colors are applied by the studio after generation (the operator picks a brand preset or a palette taken from the product photo). Never invent brand hex values yourself.
+
+FACTS AND COPY
+- Retain conditions: rated vs peak power, battery life with/without lighting, interface version, required optional accessories, installation limits and test conditions. Never silently choose the more impressive number.
+- Every numerical value carries its unit; versions, model codes, IP ratings and protocol names are identifiers, not measurements. Use localized units and decimal punctuation consistently. Never change manufacturer model codes or the case of technical identifiers.
+- Write in the target language with correct grammar. Main headings (h2) are uppercase, except that brand, model and protocol spelling stays intact; subordinate headings (h3, subtitles) are sentence case.
+- Punctuation: an en dash (–) for punctuation and a hyphen (-) where needed. NO EM DASH: never the character "—" and never &mdash;.
+- Write a benefit only when the feature supports it. No invented superiority, certification, warranty, service, use cases or performance promises. No promises about SEO ranking or rich results.
+- No sentences about the page, images, blocks or instructions. The copy must read correctly with every image removed. No keyword stuffing, prices, purchase links or buttons.
+- Brand/model appear naturally in the Hero and in the closing accent; never repeat them in every heading. Hero badge: brand · category. Hero h2: the exact brand and model, not an overloaded commercial title; compact descriptors go to the subtitle.
+- A feature block may carry a short technology eyebrow above its h2 (for example "HORIZON VIEW" or "DUAL CHAMBER") only when Product JSON names that technology.
+
+HTML AND EDITOR RULES
+- Inline CSS only; no scripts, JavaScript handlers, style tags, media queries, external stylesheets, font imports or frameworks.
+- Allowed tags: section, div, h2, h3, p, ul, li, img, strong, span, details, summary. HTML comments are allowed. details/summary are permitted only for the native FAQ.
+- Never use h1, forms, buttons, tabs, video, SVG or base64 images. No icons: the studio supplies no icon assets, and icons drawn with CSS are forbidden too.
+- ONE section root. Each major block is a direct div child of the root. The FAQ is the last direct child. Cards, tiles, headings and questions are not separate major blocks.
+- Root: <section style="width:100%;margin:0;padding:0;font-family:'Montserrat','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;">
+- Never put max-width on the root, grids or text/photo columns. Scale images through a separate percentage-width inner frame. Keep the font fallback stack; never import a font.
+- Grid children: min-width:0;box-sizing:border-box. Long model codes and unbroken strings: overflow-wrap:anywhere. Never hide overflow at the root to disguise defects.
+- BLOCK COMMENTS (REQUIRED): before and after every major block write a numbered comment with these exact names, renumbered sequentially in visible order after omissions or mergers:
+  <!-- Блок 1. Hero START --> ... <!-- Блок 1. Hero END -->
+  <!-- Блок 2. Ключові характеристики START --> ... <!-- Блок 2. Ключові характеристики END -->
+  <!-- Блок 3. Основна перевага START --> ... <!-- Блок 3. Основна перевага END -->
+  <!-- Блок 4. Друга перевага START --> ... <!-- Блок 4. Друга перевага END -->
+  <!-- Блок 5. Сумісність і обмеження START --> ... <!-- Блок 5. Сумісність і обмеження END -->
+  <!-- Блок 6. Трійка можливостей START --> ... <!-- Блок 6. Трійка можливостей END -->
+  <!-- Блок 7. Візуальний акцент START --> ... <!-- Блок 7. Візуальний акцент END -->
+  <!-- Блок 8. Експлуатація START --> ... <!-- Блок 8. Експлуатація END -->
+  <!-- Блок 9. FAQ START --> ... <!-- Блок 9. FAQ END -->
+  The optional extra feature is "Блок N. Додаткова перевага". Comment names stay in Ukrainian in every target language. The FAQ block is additionally wrapped INSIDE its numbered comments with the source markers, in exactly this order:
+  <!-- Блок 9. FAQ START -->
+  <!-- ARTLINE FAQ BLOCK START -->
+  <div ...FAQ...>...</div>
+  <!-- ARTLINE FAQ BLOCK END -->
+  <!-- Блок 9. FAQ END -->
+
+DESIGN SYSTEM
+- Font: Montserrat, Segoe UI, Arial, sans-serif. Body 400-500; subordinate headings 700-800; h2 and values 900. Never use 950.
+- Type scale, both devices: Hero h2 30px/1.12; other h2 24px/1.25; subtitles and h3 18px/1.4; body 16px/1.6; technical values 26px/1.15; technical captions 14px/1.4; badges 12-13px.
+- Radius: outer blocks 14px; inner cards and frames 10-12px; badge pills 999px only where useful. Never turn every specification into a pill.
+- Desktop: gap between major blocks 22px (margin-top on every block after the first); block padding 36-42px; split gap 28-36px; card gap 14-18px. Padding includes borders through box-sizing:border-box.
+- Canonical palette: dark #101010 / #1A2128; light #FFFFFF / #F5F7FA; borders #35393F on dark, #D0D7DE on light; text #101010 and #555555 on light, #FFFFFF and #D8DDE2 on dark. Accent #19BCC9 on dark and #157985 on light: badges, eyebrows, big technical values and thin borders only - never paragraphs, never a fill.
+- Canvas rhythm: dark Hero -> light specs -> dark primary feature -> light second feature -> dark compatibility -> light trio -> dark visual accent -> light operating facts -> light FAQ. Image-background matching takes precedence over forced alternation.
+
+UNIVERSAL DESKTOP GRID - DEFAULT 9 BLOCKS, MAXIMUM 10 INCLUDING FAQ
+01 HERO: dark full-bleed hero photo with a readable overlay and the brand/model introduction. Slot H01 = the supplied hero URL.
+02 KEY SPECS: light canvas, 4 confirmed key values in repeat(4,minmax(0,1fr)); no photo. Use 2 or 3 cards when fewer useful values exist, never invent a fourth. Each card: value 26px/900 in the accent, caption 14px below; an optional h2 with a short subtitle above the grid.
+03 PRIMARY FEATURE: dark canvas; image left / text right; grid-template-columns:minmax(0,.94fr) minmax(0,1.06fr). Slot F01 = the supplied feature URL. Explain the most important distinguishing feature.
+04 SECOND FEATURE: light canvas; text left / image right; minmax(0,1.06fr) minmax(0,.94fr). Slot F02 = a GALLERY_IMAGES frame. A second, independent buyer benefit.
+05 COMPATIBILITY / LIMITS: dark canvas; image left / text right as block 03. Optional slot F03 = another GALLERY_IMAGES frame; 2-4 compact confirmed limit/compatibility tiles (value 26px/900 + caption 14px). Without a suitable frame use a full-width text/technical composition.
+06 CAPABILITY TRIO: light canvas, repeat(3,minmax(0,1fr)), gap 18px, align-items:stretch; three equal-height cards (display:flex;flex-direction:column;height:100%;overflow:hidden). Each card: photo slot on top, then h3 18px and one short paragraph. The photo slot is a WHITE neutral frame of height:250px including its 18px padding, without its own border-radius; its img uses width:100%;height:100%;object-fit:contain;object-position:center. Slots T01/T02/T03 = unique GALLERY_IMAGES frames. Two cards when only two topics or frames exist; three text-only cards are allowed when facts support three topics but frames do not. Never repeat a photo or invent a topic.
+07 SECOND VISUAL ACCENT: dark full-bleed closing banner in the last quarter before the FAQ. Its heading is 24px, not a second 30px Hero. Carry a new usage or design message and the brand/model mention. Slot H02 is allowed only for a GALLERY_IMAGES frame that is a genuine environment photograph filling the whole picture; otherwise (the usual case) build the banner on a brand gradient: background-color:#101010;background-image:linear-gradient(135deg,#101010 0%,#1A2128 100%) - the solid color first, so the white copy stays readable in an editor that drops gradients - without any img or background URL. Never reuse H01.
+08 OPERATING / SETUP FACTS: light canvas, 2-4 technical cards; no image. Remaining confirmed connections, dimensions, operating conditions, supplied items or warranty where Product JSON states them. No duplicate spec-strip filler and no generic ARTLINE services panel.
+09 FAQ: see FAQ IMPLEMENTATION. 4-6 useful questions normally, 2-3 for simple products.
+Optional block 10: one independent feature only with sufficient new information and a unique relevant frame. Insert before the closing accent and renumber; FAQ always stays last. Never add a photo-only section.
+
+DESKTOP SPLIT IMPLEMENTATION
+- Explicit CSS Grid tracks. Never flex-wrap for text/photo splits, never auto-fit/auto-fill, never a 310-320px minimum track.
+  <div style="display:grid;grid-template-columns:minmax(0,.94fr) minmax(0,1.06fr);gap:32px;align-items:center;">
+    <div style="min-width:0;box-sizing:border-box;">PHOTO FRAME</div>
+    <div style="min-width:0;box-sizing:border-box;overflow-wrap:anywhere;">COPY</div>
+  </div>
+- Photo frame: an inner frame of width:88% centered with margin:0 auto (about 82% for small detail shots, 94% for broad renders). The img uses display:block;width:100%;height:auto;object-fit:contain. Never distort proportions.
+- White-background renders sit contained in a white frame (background:#FFFFFF;border-radius:12px;padding:18px). Inside a dark block such a frame is a clear white inset card - never bare on the dark canvas and never darkened. object-fit:cover only for environment scenes (hero, feature) where nothing important is cut.
+
+HERO IMPLEMENTATION
+- Wrapper: position:relative;overflow:hidden;border-radius:14px;border:1px solid #35393F;background:#101010 url(HERO_URL) center/cover no-repeat - substitute HERO_URL with the exact supplied hero URL.
+- THE FIRST CHILD of the wrapper is <img src="HERO_URL" alt="localized product description" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;"> with the SAME URL. Background and img are one photo slot; no opacity on the img.
+- Next one overlay div: position:absolute;inset:0;background:linear-gradient(90deg,rgba(16,16,16,.92) 0%,rgba(16,16,16,.55) 52%,rgba(16,16,16,0) 100%). The product side stays transparent.
+- Content layer: position:relative;z-index:1;min-height:585px;padding:78px 46px 54px;display:flex;align-items:center;box-sizing:border-box. Copy frame width:58%;min-width:0;overflow-wrap:anywhere (not max-width). Badge 12-13px, h2 30px, subtitle 18px, paragraph 16px, all readable over the overlay.
+- Closing banner (block 07) without a photo: the same wrapper without img and overlay, min-height:380px;padding:46px 36px.
+
+FAQ IMPLEMENTATION (the studio FAQ contract, adapted to this style)
+<div style="background:#FFFFFF;border:1px solid #E3E6EA;border-radius:14px;padding:30px 36px 14px;box-sizing:border-box;">
+  <h2 style="margin:0 0 10px;font-size:24px;line-height:1.25;font-weight:900;color:#101010;">FAQ</h2>
+  <details style="margin:0;padding:0;border-bottom:1px solid #E7EAEE;">
+    <summary style="display:flex;align-items:center;padding:18px 0;cursor:pointer;list-style:none;font-size:18px;line-height:1.4;font-weight:800;color:#101010;overflow-wrap:anywhere;">CONFIRMED QUESTION</summary>
+    <p style="margin:0;padding:0 0 18px 36px;font-size:16px;line-height:1.6;color:#555555;text-align:left;">CONFIRMED ANSWER</p>
+  </details>
+</div>
+- The question is plain text directly inside summary: no number, no wrapper span, and never draw any +/-, arrow or circle yourself - the studio prepends the toggle glyph. Never write the open attribute. No narrow max-width on answers.
+- Questions concern this product and are answered by Product JSON: compatibility, capacity or operating limits, conditions, package contents, maintenance. Never prices, delivery, payment or unsupported compatibility or service.
+
+ASSETS
+- One unique image per visible photo slot within one version. The Hero background + its img is the only intentional repeat. Treat visually identical frames under different filenames as duplicates. When frames run out, drop photo slots or switch to technical/text layouts - never repeat an image to fill a slot.
+- Every img has a concise alt in the target language; loading="lazy" on every img except the Hero img.
+- Reject frames that show another variant or a large infographic slide; short readable specification labels are acceptable.
+
+COMPACT PLAN FOR SIMPLE PRODUCTS / LIMITED MATERIAL
+- Desktop normally 5 blocks: Hero -> specs -> one feature or trio (the composition the material supports) -> closing accent -> FAQ.
+- Extremely sparse evidence: 4 blocks, with one supported feature sentence inside the specs block.
+- Never exceed 10 desktop blocks including FAQ. Never manufacture topics or repeat assets to reach a preferred count.
+
+[MOBILE_LAYOUT]
+The mobile page is the desktop page re-laid-out for a 320-430px screen. Copy and images are identical to desktop; this plan decides only grouping, order and CSS.
+- Root stays <section style="width:100%;margin:0;padding:0;font-family:'Montserrat','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;"> - no max-width. Gap between major blocks 16px; block padding 20px 16px; inner gaps 10-16px; outer radius 14px.
+- UNIVERSAL MOBILE GRID, 7 blocks including FAQ, comments renumbered with these names:
+  <!-- Блок 1. Hero --> from desktop 1: the img stays the first child of the wrapper; overlay background:linear-gradient(180deg,rgba(16,16,16,0) 0%,rgba(16,16,16,.55) 48%,rgba(16,16,16,.92) 100%) - transparent at the top over the product, dense at the bottom; content padding:420px 16px 24px, min-height:510px; h2 and subtitle centered, paragraph left-aligned.
+  <!-- Блок 2. Ключові характеристики --> from desktop 2: repeat(2,minmax(0,1fr)); one column when a value is a long technical string that cannot fit at 320px.
+  <!-- Блок 3. Основна перевага --> from desktop 3: photo FIRST, heading/subtitle and text after, one column.
+  <!-- Блок 4. Друга перевага і сумісність --> desktop 4 and desktop 5 merged into ONE direct child: F02 first, the desktop-4 copy, then F03 (if present) immediately before the desktop-5 copy, and the desktop-5 limit tiles in a 2-column grid. When blocks 4 and 5 are unrelated, keep them as two blocks instead.
+  <!-- Блок 5. Можливості і експлуатація --> desktop 6 and desktop 8 merged into ONE direct child: the trio cards stacked in one column (each photo FIRST, slot height 210px including padding, then h3 and paragraph), followed by the desktop-8 cards in a 2-column grid. This moves the operating facts in front of the closing banner - intended.
+  <!-- Блок 6. Візуальний акцент --> from desktop 7: min-height:auto;padding:36px 16px; heading and subtitle centered, paragraph left-aligned.
+  <!-- Блок 7. FAQ --> last, the ARTLINE FAQ BLOCK markers kept inside: outer padding 20px 16px 8px; answers padding:0 0 16px 0 (no left indentation).
+- A desktop page built on the compact plan keeps its blocks one-to-one: only stacking, image first.
+- All feature paragraphs, lists and FAQ answers are left-aligned. Center only headings, subtitles, badges and the values/captions inside technical cards. No three-column image/text cards; no photo/text side alternation.
+- Move whole elements only: never add, remove, reword or duplicate any text or img, never change a URL.
+[/MOBILE_LAYOUT]
+
+FINAL SELF-CHECK
+- every claim, number and FAQ answer is confirmed by Product JSON, with its conditions;
+- one section root; valid nesting; h2/h3 hierarchy; no h1, scripts, style tags or placeholders; sequential block comments with the exact names; the FAQ markers inside "Блок N. FAQ"; desktop at most 10 major blocks;
+- Montserrat-first stack; 30/24/18/16/26/14px scale; uppercase main headings with intact identifiers; no em dash;
+- explicit minmax(0,...) tracks, min-width:0 children, no column max-width, no desktop image wrapped below its text;
+- the Hero wrapper background and its first-child img carry the same hero URL; the closing banner never reuses it; unique photo slots; alt on every img; loading="lazy" on every non-Hero img;
+- the FAQ is last, product-specific, all items closed, no self-drawn toggle.'''
+
+# Сервер знаходить FAQ, відео, мобільні правила й слот Feature за цими рядками;
+# редакція промпту, що їх загубить, має падати на старті, а не в прогоні.
+for _marker in ('ARTLINE RICH CONTENT · ADAPTED MASTER PROMPT', 'ARTLINE FAQ BLOCK',
+                'THE FIRST CHILD of the wrapper', 'GALLERY_IMAGES', '[MOBILE_LAYOUT]', '[/MOBILE_LAYOUT]',
+                'Блок 3. Основна перевага', 'Блок 9. FAQ START', 'NO EM DASH'):
+    if _marker not in MASTER_STYLE_PROMPT:
+        raise RuntimeError(f'ARTLINE Master prompt lost its marker: {_marker}')
+if 'ARTLINE BLOCK 08' in MASTER_STYLE_PROMPT:
+    raise RuntimeError('ARTLINE Master must not carry the Showcase FAQ comment scheme')
 

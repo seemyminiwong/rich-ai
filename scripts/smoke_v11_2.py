@@ -105,7 +105,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': '350-600 words' in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.69"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.70"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 3 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -116,7 +116,7 @@ checks = {
     'no nested feature islands left': 'padding:44px' not in prompts,
     'feature block lives in the main prompt': prompts.count('[FEATURE_IMAGE]') == 2 and prompts.count('[/FEATURE_IMAGE]') == 2,
     'feature image built from core feature text': 'def core_feature_text' in pipeline and 'core_feature_text(master_html)' in tasks and 'FEATURE DESCRIPTION FROM THE PAGE' in tasks,
-    'art direction never leaks to text model': 'def strip_image_blocks' in pipeline and 'strip_image_blocks(style.prompt)' in pipeline,
+    'art direction never leaks to text model': 'def strip_image_blocks' in pipeline and 'text = strip_image_blocks(prompt)' in pipeline and '{_style_text_for(style.prompt, variant)}' in pipeline,
     'feature url planned before text': "planned_feature_url = media_url(project.id, 'feature.webp')" in tasks,
     'feature falls back to real photo': 'def select_feature_photo' in pipeline and 'feature generation failed' in tasks,
     'key feature fallback kept': 'def select_key_feature' in pipeline and 'select_key_feature(product)' in tasks,
@@ -327,7 +327,7 @@ checks = {
         'def cutout_product' in raster and 'def compose_hero_canvas' in raster and 'def paste_product_back' in raster
         and 'def _locked_composition' in pipeline and "edit_options['mask'] = ('mask.png', locked['mask_png'], 'image/png')" in pipeline
         and pipeline.count('paste_product_back(Image.open(BytesIO(raw)), locked') == 2
-        and 'composition=variant, notes=hero_notes' in tasks
+        and "composition=item['variant'], notes=item['notes']" in tasks
         and 'def test_locked_hero_composition_guarantees_the_product_pixels' in tests
     ),
     'hero: lifestyle photos and silver products fall back to the reference edit': (
@@ -356,6 +356,22 @@ checks = {
         and pipeline.count('return _palette_from_hsv(h, sat, val)') == 2
     ),
     'no third-party brand scheme is shipped': 'BRELOKI' not in main and 'BRELOKI' not in prompts and 'breloki' not in prompts.lower() and 'reloki' not in brands,
+    'ARTLINE Master style seeded, locked and understood by the FAQ/video machinery': (
+        "MASTER_STYLE_NAME = 'ARTLINE Master'" in prompts and 'MASTER_STYLE_PROMPT' in main
+        and "'ARTLINE Master'" in web.split('MANAGED_STYLE_NAMES=')[1].split(']')[0]
+        and 'return FAQ_BLOCK_MARKER in text or MASTER_FAQ_MARKER in text' in pipeline
+        and "profile=video_profile(prompt_text), variant=variant" in pipeline
+        and "style_rules=mobile_layout_rules(style.prompt or '')" in tasks
+        and 'surface_radius_cap(style.prompt' in tasks and 'no_em_dash(rich_html)' in tasks
+        and 'def test_master_video_block_goes_before_faq_and_renumbers_the_comments' in tests
+        and 'def test_master_mobile_relayout_may_regroup_blocks_but_never_the_copy' in tests
+    ),
+    'hero variants render in parallel, results land in a deterministic order': (
+        'with ThreadPoolExecutor(max_workers=min(3, len(pending_heroes))) as pool:' in tasks
+        and 'outcomes = list(pool.map(_make_hero, pending_heroes))' in tasks
+        and 'zip(pending_heroes, outcomes)' in tasks
+        and 'def test_hero_variants_are_generated_in_parallel_and_stay_independent' in tests
+    ),
     'render gate measures the laid-out page, not the markup': (
         "@app.post('/audit')" in shots and 'def _audit(payload: AuditIn)' in shots
         and 'def render_gate(' in pipeline and 'def render_audit(' in pipeline
@@ -363,8 +379,10 @@ checks = {
         and "render:'Верстка у браузері'" in web
         and 'def test_render_gate_measures_the_laid_out_page_not_the_markup' in tests
     ),
-    'render gate is soft: a disabled service warns, never fails the run': (
+    'render gate is soft: a disabled service warns with a reason, never fails the run': (
         'Верстку не перевірено' in tasks and 'Верстку у браузері не перевірено' in web
+        and "f'Верстку не перевірено: {render_summary}." in tasks
+        and 'failure = failure or reason' in pipeline and 'except httpx.TimeoutException' in pipeline
         and 'checkVisibility' in shots and "el.closest('details:not([open])')" in shots
         and 'def test_render_gate_is_wired_as_a_free_critic_and_never_fails_the_run' in tests
     ),
@@ -514,7 +532,7 @@ checks.update({
         and 'border-bottom:1px solid #E7EAEE' in prompts
     ),
     'labels hug text, photo frames take photo backdrop': 'width:fit-content;max-width:100%;min-height:30px' in pipeline and 'width:280px' not in pipeline and '_photo_surface_color' in pipeline and 'width:280px' not in prompts,
-    'base radius is quiet and machine-enforced': '_MAX_SURFACE_RADIUS = 12' in pipeline and '_clamp_surface_radii(output)' in pipeline and '_clamp_surface_radii(relaid)' in (root / 'apps/api/app/tasks.py').read_text(encoding='utf-8') and 'radius 30px' not in prompts and 'border-radius:32px' not in prompts and 'radius 28px' not in prompts,
+    'base radius is quiet and machine-enforced': '_MAX_SURFACE_RADIUS = 12' in pipeline and '_clamp_surface_radii(output, surface_radius_cap(style.prompt))' in pipeline and "_clamp_surface_radii(relaid, surface_radius_cap(style.prompt or ''))" in (root / 'apps/api/app/tasks.py').read_text(encoding='utf-8') and 'radius 30px' not in prompts and 'border-radius:32px' not in prompts and 'radius 28px' not in prompts,
     'promo showcase style seeded and locked': "'ARTLINE Showcase Promo'" in web.split('MANAGED_STYLE_NAMES=')[1].split(']')[0] and 'SHOWCASE_PROMO_STYLE_NAME' in main and 'PROMO EDITION OVERRIDES' in prompts and 'BRAND + MODEL CODE' not in prompts.split('PROMO EDITION OVERRIDES')[1] and prompts.count('LOGOS, PLACEHOLDERS AND TEXT ON THE PRODUCT') == 2,
     'style ab/golden/usage counter': "@app.post('/api/styles/{style_id}/ab')" in main and "@app.post('/api/styles/{style_id}/golden')" in main and 'def _golden_example' in pipeline and 'usage_count' in main and 'function runStyleAB' in web and 'function pinGolden' in web and '0008_style_golden' in ' '.join(str(x) for x in (root / 'apps/api/alembic/versions').iterdir()),
     'style tooling: real stats, free dry-run, diff, real-product preview': "@app.get('/api/styles/{style_id}/stats')" in main and "@app.post('/api/styles/dry-run')" in main and 'def build_prompt' in pipeline and 'POST_GENERATION_GUARANTEES' in pipeline and 'function lineDiff' in web and 'function runStyleDryRun' in web and 'style.improve' not in web.split('applyImprove')[0][-1:] and "generated['current']" in main and 'sample_project_id' in main,
@@ -617,7 +635,7 @@ checks.update({
     'invented image urls are swapped or dropped': 'def _enforce_image_whitelist' in pipeline and 'spares=list(gallery or [])' in pipeline,
     'full product name never doubles in a section': 'NAME APPEARS ONCE PER SECTION' in prompts,
     'mobile derives from desktop by relayout': 'def relayout_html' in pipeline and 'desktop_master_html' in tasks and "sorted(variants, key=lambda v: 0 if v == 'desktop' else 1)" in tasks,
-    'relayout validated mechanically': '_visible_text_signature(output) != want_text' in pipeline and '_image_urls_of(output) != want_imgs' in pipeline,
+    'relayout validated mechanically': 'same_text = lambda html: _visible_text_signature(html) == want_signature' in pipeline and 'if not same_text(output) or _image_urls_of(output) != want_imgs:' in pipeline,
     'hero presence checked as src or css url, not substring': 'hero_used = bool(hero)' in pipeline,
     'white renders are never cropped': 'FITTING RULE' in prompts and 'object-fit:contain' in prompts,
     'backups live on the pool, not in a docker volume': './backups:/backups' in compose and 'backup_data' not in compose,

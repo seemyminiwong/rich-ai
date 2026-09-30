@@ -235,10 +235,21 @@ _PROBE = r"""
   // Тло, яке РЕАЛЬНО намальоване під елементом: піднімаємось предками, доки не
   // трапиться непрозорий колір. Дорогою відмічаємо, чи не лежить під текстом
   // картинка або градієнт - там гарантувати контраст математикою не можна.
+  // Градієнт без картинки - це не «невідоме тло», а набір відомих кольорів:
+  // текст мусить читатися на КОЖНІЙ точці градієнта, тож беремо найгіршу.
+  const gradientStops = (value) => {
+    if (!value || value === 'none' || value.includes('url(')) return null;
+    const stops = (value.match(/rgba?\([^)]+\)/g) || []).map(parseColor).filter(Boolean);
+    return stops.length ? stops : null;
+  };
   const backdrop = (el) => {
     let node = el, image = false, acc = null;
     while (node && node.nodeType === 1) {
       const st = getComputedStyle(node);
+      const stops = gradientStops(st.backgroundImage);
+      if (stops && stops.every(s => s.a >= 0.999) && !image) {
+        return {color: acc ? over(acc, stops[0]) : stops[0], image: false, stops: acc ? null : stops};
+      }
       if (st.backgroundImage && st.backgroundImage !== 'none') image = true;
       const c = parseColor(st.backgroundColor);
       if (c && c.a > 0) {
@@ -335,7 +346,7 @@ _PROBE = r"""
       // цифра тонула в плитці того ж відтінку.
       const large = size >= 24 || (size >= 18.66 && weight >= 700);
       const floor = large ? 3 : 4.5;
-      const value_ratio = ratio(color, back.color);
+      const value_ratio = back.stops ? Math.min(...back.stops.map(stop => ratio(color, stop))) : ratio(color, back.color);
       const hex = (c) => '#' + [c.r, c.g, c.b].map(x => Math.round(x).toString(16).padStart(2, '0')).join('').toUpperCase();
       const info = {contrast: +value_ratio.toFixed(2), color: hex(color), background: hex(back.color), font_size: size};
       if (back.image) {
