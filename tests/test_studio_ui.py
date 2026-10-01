@@ -231,3 +231,14 @@ def test_fact_research_tab_is_permission_driven_and_never_auto_regenerates():
     assert 'confirm(' in regen and 'reuse_images:true' in regen
     start = _body(js, 'startFactResearch')
     assert '/fact-research/estimate' in start and 'confirm(' in start
+
+
+def test_review_panes_fit_the_viewport_so_the_page_never_scrolls_them_away():
+    """Скарга власника (2026-10-01): при прокрутці вниз зникали вибір версії, формат,
+    масштаб і заголовок «Перевірки якості» - сторінка їхала під липку шапку проєкту."""
+    js = _js()
+    assert 'fitPanes()' in _body(js, 'afterRender') and 'function fitPanes' in js
+    review = _body(js, 'reviewTab')
+    assert 'review-side-scroll">${changesBanner}' in review and '${reviewHistory()}</div>' in review
+    assert "</aside></div>${reviewHistory()}" not in review
+    assert '.review-side-scroll section>.panel-tools:first-child{position:sticky' in _css()
