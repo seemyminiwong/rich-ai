@@ -165,7 +165,7 @@ checks = {
     'root admin protected': 'def is_root_admin' in main and 'Пароль головного адміністратора' in main and 'Головного адміністратора видалити не можна' in main and 'u.is_root' in web,
 
     # --- v12 foundation ---
-    'single version source': '__version__ = "12.9"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
+    'single version source': '__version__ = "12.11"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
     'no version in the product UI': all(s not in (root / 'apps/web/index.html').read_text(encoding='utf-8') for s in ('Studio v', 'v12')) and 'state.version' not in web and 'BASE_STYLE_VERSION' not in main,
     'cache busting kept': '?b=' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
     'openai retries': 'def _with_retry' in pipeline and '_with_retry(lambda: api.responses.create' in pipeline and '_with_retry(lambda: image_client().images.edit' in pipeline,
@@ -780,6 +780,9 @@ checks.update({
     'public url audit is a separate script, not part of generation': (root / 'scripts/audit_public_url.py').exists() and 'audit_public_url' not in tasks and 'lighthouse' not in tasks.lower(),
     'ci checks seo fixtures, lighthouse and lychee': 'lighthouse' in ci.lower() and 'lychee' in ci.lower() and 'build_seo_fixtures.py' in ci and 'check_no_hardcoded_claims.py' in ci,
     'seo tests exist': (root / 'tests/test_seo_geo.py').exists(),
+    'exhausted AI credits pause new runs and raise one alert': 'def is_quota_exhausted' in limits and 'flag_quota_exhausted(db, project, message)' in tasks and "@app.post('/api/providers/unblock')" in main and 'function quotaBanner' in web,
+    'garbled breadcrumbs are repaired, not cyrillicized': 'def looks_garbled' in (root / 'apps/api/app/category.py').read_text(encoding='utf-8') and '_jsonld_crumb_urls' in (root / 'apps/api/app/category.py').read_text(encoding='utf-8'),
+    'server-picked accent text on dark is lifted to 4.5:1': 'def server_accents' in pipeline and "palette.get('readable')" in pipeline and (root / 'tests/test_release_12_11.py').exists(),
     'fact research: strict by default, no network without explicit action': 'fact_research_enabled: bool = False' in config and "fact_search_provider: str = 'disabled'" in config and "default='strict'" in models and main.count('run_fact_research.delay(') == 1 and 'execute_research' not in tasks[tasks.index('def process_project'):tasks.index('def translate_project')],
     'fact research: candidates need a human, only approved_for_content reaches the prompt': "PROMPT_STATUSES = ('approved_for_content',)" in (root / 'apps/api/app/fact_research.py').read_text(encoding='utf-8') and 'APPROVED EXTERNAL PRODUCT FACTS' in (root / 'apps/api/app/fact_research.py').read_text(encoding='utf-8') and 'external_facts_block(external' in pipeline and "@app.post('/api/projects/{project_id}/fact-candidates/{candidate_id}/decision')" in main,
     'fact research: SSRF, redirects, size, MIME, robots and PDF limits': all(x in (root / 'apps/api/app/fact_sources.py').read_text(encoding='utf-8') for x in ('def validate_research_url', 'MAX_REDIRECTS', 'ALLOWED_MIME', 'RobotFileParser', 'apply_configuration', 'def match_identity')),

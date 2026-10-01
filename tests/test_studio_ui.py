@@ -242,3 +242,14 @@ def test_review_panes_fit_the_viewport_so_the_page_never_scrolls_them_away():
     assert 'review-side-scroll">${changesBanner}' in review and '${reviewHistory()}</div>' in review
     assert "</aside></div>${reviewHistory()}" not in review
     assert '.review-side-scroll section>.panel-tools:first-child{position:sticky' in _css()
+
+
+def test_project_seo_geo_tab_shows_brief_profile_and_is_routable():
+    """Скарга власника (2026-10-01): незрозуміло, де подивитись налаштування SEO/GEO проєкту."""
+    js = _js()
+    assert "['seo','SEO / GEO']" in js and "t.push('seo')" in _body(js, 'allowedTabs')
+    assert "'seo'" in js.split('const ROUTE_TABS=')[1].split(';')[0] and "'facts'" in js.split('const ROUTE_TABS=')[1].split(';')[0]
+    tab = _body(js, 'seoTab')
+    for text in ('SEO-бриф', 'Імпортовані запити', 'Publishing Profile проєкту', 'Походження фактів', 'Імпортувати GSC / DataForSEO'):
+        assert text in tab, text
+    assert '/seo-brief/import' in _body(js, 'saveSeoBrief') and '/publishing-profile' in _body(js, 'refreshProjectProfile')

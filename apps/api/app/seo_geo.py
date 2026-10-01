@@ -978,7 +978,9 @@ def audit_geo_copy(markup: str, product: dict | None, language: str, variant: st
             mk('entity_not_linked_early', 'warning', 'Бренд і модель не зв\'язані в одному ранньому реченні', block=0,
                evidence=f'{product.get("brand")} {model_token(product)}',
                suggestion='Перше речення: «<Бренд> <Модель> - це <категорія> для <кого/чого>»')
-        elif cat_stems and not any(stem in entity_sentence.lower() for stem in cat_stems):
+        elif cat_stems and not any(stem in entity_sentence.lower() for stem in cat_stems) \
+                and not any(stem in ' '.join(t['text'] for t in doc['texts'] if t['block'] == 0).lower() for stem in cat_stems):
+            # Категорію в першому блоці вже несе лейбл («QUBE · МОНІТОР») - це не дефект.
             mk('entity_without_category', 'info', 'У реченні з брендом і моделлю не названо категорію', block=0,
                evidence=entity_sentence, suggestion='Додати категорію до речення-визначення')
 
@@ -1064,17 +1066,22 @@ def audit_geo_copy(markup: str, product: dict | None, language: str, variant: st
         if question and (not question.rstrip().endswith('?') or len(words(question)) < 3):
             mk('faq_question_unnatural', 'warning', 'Питання FAQ сформульовано неприродно', evidence=question, segment=qkey,
                suggestion='Питання так, як його ставить покупець, зі знаком питання')
-        if question and len(words(answer)) < 8:
+        # Самодостатня відповідь - це конкретне значення або повне речення. Коротка
+        # відповідь із числом («Яскравість 350 cd/m², контраст 1 000:1») - добра.
+        has_value = bool(_VALUE_RE.search(answer) or re.search(r'\d', answer))
+        if question and (len(words(answer)) < 4 or (len(words(answer)) < 8 and not has_value)):
             mk('faq_answer_thin', 'warning', 'Відповідь FAQ не самодостатня', evidence=f'{question} → {answer}', segment=qkey,
                suggestion='Відповідь має бути зрозумілою окремо від сторінки: сутність + значення')
 
     # 7. Той самий факт у 4+ блоках
     values_by_block: dict = {}
     for t in doc['texts']:
+        if t['tag'] in ('span', 'text', 'label') and len(words(t['text'])) <= 4:
+            continue  # чипи й лейбли - навігація по значеннях, а не повтор тексту
         for match in _VALUE_RE.finditer(t['text']):
             values_by_block.setdefault(_norm_number(match.group(1)) + match.group(2).lower(), set()).add(t['block'])
     for value, blocks in values_by_block.items():
-        if len(blocks) >= 4:
+        if len(blocks) >= max(4, (doc['block_count'] + 1) // 2 + 1):
             mk('fact_repeated_across_blocks', 'info', f'Значення {value} повторюється у {len(blocks)} блоках',
                evidence=value, suggestion='Залишити в Hero і там, де воно пояснює користь')
             break
@@ -1151,7 +1158,13 @@ def run_rich_audits(artifacts: list, product: dict | None, brief: dict | None = 
         for row in rows:
             unique.setdefault(row['key'], row)
         rows = list(unique.values())
-        score, summary, issues, suggestions = report_from_findings(rows)
+        # Оцінка - за проблемами, а не за копіями: та сама знахідка на десктопі й
+        # мобільній одної мови рахується один раз (у звіті вони вже склеєні).
+        scored: dict = {}
+        for row in rows:
+            scored.setdefault((row['code'], row['language'], row.get('block'), row['message'], row['evidence']), row)
+        score, _summary, _issues, _suggestions = report_from_findings(list(scored.values()))
+        _score, summary, issues, suggestions = report_from_findings(rows)
         reports.append({'type': kind, 'score': score, 'summary': summary, 'issues': issues,
                         'suggestions': suggestions, 'findings': rows})
     return reports

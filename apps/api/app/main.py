@@ -25,7 +25,7 @@ from app.db import Base, SessionLocal, engine, ensure_schema, get_db, run_migrat
 from app.models import Artifact, Asset, AuditLog, CriticReport, Event, FactCandidate, FactResearchRun, FindingDecision, Invite, Landing, Palette, Project, PublishingProfile, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
 from app.tasks import bill_extra, candidate_dict_row, candidate_rows, image_rate, load_snapshot, mark_stale_candidates, process_landing, process_project, recategorize_projects, run_fact_research, search_provider, text_rate, translate_project
-from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
+from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, clear_provider_block, client_ip, provider_block, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
 from app.raster import flatten_to_white
 from app.pipeline import _is_reasoning_model, decode_entities, fetch_bytes_capped, fetch_html, gallery_urls, image_url_rejection, image_urls_in_html, is_public_http_url, is_publishable_image_url, palette_from_accent, parse_page, plain_text_from_html, replace_image_urls, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
@@ -967,7 +967,30 @@ def google_callback(request: Request, code: str = '', state: str = '', db: Sessi
 
 
 @app.get('/api/me')
-def me(user=Depends(current)): return user_dict(user)
+def me(user=Depends(current)):
+    # Банер «кредити AI вичерпано» бачать усі: генерація стоїть для всіх.
+    return user_dict(user) | {'provider_block': provider_block()}
+
+
+@app.post('/api/providers/unblock')
+def providers_unblock(db: Session = Depends(get_db), user=Depends(require_perm('settings.view'))):
+    """Баланс поповнено: зняти паузу і повернути в чергу проєкти, що стали на паузу через кредити."""
+    clear_provider_block()
+    resumed, to_dispatch = 0, []
+    for p in db.scalars(select(Project).where(Project.status == Status.paused, Project.stage == 'quota')).all():
+        style = db.get(Style, p.style_id)
+        if not style:
+            continue
+        p.status = Status.queued; p.stage = 'dispatch_pending'; p.progress = 0; p.error = ''
+        p.reserved_cost = 0
+        _reserve_project_run(db, user, p, style)
+        db.add(Event(project_id=p.id, stage='dispatch_pending', message=f'{user.email}: кредити поповнено - запуск продовжено'))
+        resumed += 1
+        to_dispatch.append(p)
+    audit(db, user, 'providers.unblock', 'settings', '', {'resumed': resumed}); db.commit()
+    for p in to_dispatch:
+        _dispatch_project_once(db, p)
+    return {'resumed': resumed}
 
 
 @app.get('/api/users')
@@ -2880,6 +2903,25 @@ def save_seo_brief(project_id: str, payload: SeoBriefIn, db: Session = Depends(g
     return brief
 
 
+class ProjectProfileIn(BaseModel):
+    profile_id: str | None = Field(default=None, max_length=200)
+
+
+@app.put('/api/projects/{project_id}/publishing-profile')
+def project_publishing_profile(project_id: str, payload: ProjectProfileIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
+    """Новий знімок Publishing Profile для проєкту. Готовий текст не змінюється -
+    знімок діє на наступну генерацію і на перевірки (вони перезапускаються)."""
+    p = db.get(Project, project_id)
+    if not p: raise HTTPException(404, 'Проєкт не знайдено')
+    require_project_edit(p, user)
+    p.publishing_profile_json = snapshot_for(db, payload.profile_id)
+    snap = _safe_map(p.publishing_profile_json)
+    audit(db, user, 'project.publishing_profile', 'project', p.id, {'profile': snap.get('name'), 'version': snap.get('version')})
+    _free_audit(db, p, user, note=f'{user.email}: знімок Publishing Profile оновлено ({snap.get("name")} v{snap.get("version")})')
+    db.commit()
+    return snap
+
+
 @app.post('/api/projects/{project_id}/seo-brief/import')
 def import_seo_brief(project_id: str, payload: SeoBriefImportIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
     """CSV/JSON з GSC, Keyword Planner або DataForSEO -> датований snapshot у брифі.
@@ -4446,6 +4488,8 @@ def put_secrets(body: SecretsIn, db: Session = Depends(get_db), user=Depends(req
     if not values:
         return _secrets_view()
     set_runtime(values, by=user.email)
+    if any(k.endswith('_api_key') for k in values):
+        clear_provider_block()  # новий ключ - нова спроба
     # Log which keys changed, never their values.
     audit(db, user, 'secrets.update', entity_type='settings', metadata={'keys': sorted(values)})
     db.commit()

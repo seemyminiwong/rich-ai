@@ -10,7 +10,7 @@ from app.celery_app import celery
 from app.config import DEFAULT_IMAGE_PRICING, DEFAULT_TEXT_PRICING, settings
 from app.db import SessionLocal
 from app.models import Artifact, Asset, CriticReport, Event, FactCandidate, FactResearchRun, Palette, Project, Status, Style
-from app.limits import add_spend, add_user_spend
+from app.limits import add_spend, add_user_spend, is_quota_exhausted, provider_block, set_provider_block
 from app.media import media_url
 from app.artline_standard import apply_artline_standard
 from app.master_theme import apply_master_theme, normalize_theme, theme_image_hint
@@ -93,6 +93,20 @@ def log(db, project, stage, message, progress=None, level='info'):
         project.progress = progress
     db.add(Event(project_id=project.id, stage=stage, message=message, level=level))
     db.commit()
+    if level in ('warning', 'error') and is_quota_exhausted(message):
+        flag_quota_exhausted(db, project, message)
+
+
+def flag_quota_exhausted(db, project, message: str) -> None:
+    """Кредити провайдера скінчились: червоний банер у студії, алерт один раз,
+    нові запуски стають на паузу, доки адміністратор не підтвердить поповнення."""
+    first = set_provider_block(message)
+    db.add(Event(project_id=project.id, stage='quota', level='error',
+                 message='Кредити AI-провайдера вичерпано. Нові запуски поставлено на паузу - поповніть баланс і натисніть «Продовжити» в банері студії.'))
+    db.commit()
+    if first:
+        send_alert('Rich Studio: кредити AI-провайдера вичерпано. Нові генерації на паузі до поповнення.\n'
+                   f'Проєкт: {project.name}\nПовідомлення провайдера: {str(message)[:300]}')
 
 
 def text_rate(model: str):
@@ -118,7 +132,10 @@ def _project_palette(project) -> dict | None:
         tokens = json.loads(getattr(project, 'palette_json', None) or '{}') or {}
     except Exception:
         tokens = {}
+    source = tokens.get('source')
     tokens = {k: v for k, v in tokens.items() if k in PALETTE_TOKENS or k == 'radius'}
+    if tokens and source in ('brand', 'photo'):
+        tokens['readable'] = True  # кольори підібрав сервер - він і відповідає за читабельність
     return tokens or None
 
 
@@ -555,6 +572,17 @@ def process_project(self, project_id, reuse_images=False):
             return {'skipped': True, 'status': project.status.value}
         if reclaim_after_worker_loss:
             logger.warning('Reclaiming redelivered project %s after worker loss', project_id)
+        block = provider_block()
+        if block and not reclaim_after_worker_loss:
+            # Кредити скінчились: не палимо проєкт аварійним шаблоном - чекаємо поповнення.
+            project.status = Status.paused
+            project.stage = 'quota'
+            project.finished_at = now()
+            project.reserved_cost = 0
+            db.add(Event(project_id=project.id, stage='quota', level='warning',
+                         message='Пауза: кредити AI-провайдера вичерпано. Запуск продовжиться після поповнення (банер у студії → «Продовжити»).'))
+            db.commit()
+            return {'paused': 'quota'}
         try:
             if reclaim_after_worker_loss:
                 recalculate_cost(project)

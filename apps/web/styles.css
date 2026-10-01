@@ -1168,3 +1168,9 @@ tr.is-updated td{animation:rowFlash 1.6s var(--ease-out)}
 /* Заголовок «Перевірки якості» з діями лишається зверху, поки прокручуються зауваження */
 .review-side-scroll section>.panel-tools:first-child{position:sticky;top:calc(-1 * var(--space-4));z-index:3;background:var(--color-surface);padding:var(--space-2) 0;margin:calc(-1 * var(--space-2)) 0 0;box-shadow:0 1px 0 var(--color-border)}
 .review-side-scroll .review-cta{margin:0}
+
+.seo-list{margin:0;padding-left:18px;display:grid;gap:2px}
+.seo-brief dd{min-width:0}
+
+.quota-banner{display:flex;align-items:center;gap:var(--space-3);margin:var(--space-3) var(--space-6) 0}
+.quota-banner>span{flex:1}

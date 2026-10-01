@@ -181,3 +181,46 @@ def check_user_budget(user) -> None:
     if spent + reserved >= cap:
         raise HTTPException(429, f'Ваш особистий денний ліміт вичерпано: витрачено ${spent:.2f}, зарезервовано ${reserved:.2f} із ${cap:.2f}. '
                                  'Нові генерації - завтра, або попросіть адміністратора підняти ліміт')
+
+
+# --- Вичерпані кредити провайдера -------------------------------------------------
+# 429 «You have no credits remaining» - не тимчасовий rate limit: кожна наступна
+# генерація теж впаде або збереться аварійним шаблоном, а пакетний імпорт спалить
+# десятки проєктів. Прапорець у Redis спільний для API і воркера; живе, доки його
+# не зніме адміністратор (після поповнення) або не мине TTL.
+QUOTA_MARKERS = ('insufficient_quota', 'no credits remaining', 'exceeded your current quota', 'credit balance is too low',
+                 'billing_hard_limit', 'add credits to continue', 'кредити провайдера вичерпано')
+PROVIDER_BLOCK_KEY = 'provider:block'
+PROVIDER_BLOCK_TTL = 6 * 3600
+
+
+def is_quota_exhausted(text: str) -> bool:
+    low = str(text or '').lower()
+    return any(marker in low for marker in QUOTA_MARKERS)
+
+
+def set_provider_block(reason: str) -> bool:
+    """True, якщо прапорець поставлено вперше (тоді треба надіслати алерт)."""
+    import json
+    try:
+        payload = json.dumps({'reason': str(reason)[:300], 'at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}, ensure_ascii=False)
+        return bool(_client().set(PROVIDER_BLOCK_KEY, payload, ex=PROVIDER_BLOCK_TTL, nx=True))
+    except Exception as exc:
+        logger.warning('Provider block storage unavailable: %s', exc)
+        return False
+
+
+def provider_block() -> dict | None:
+    import json
+    try:
+        raw = _client().get(PROVIDER_BLOCK_KEY)
+        return json.loads(raw) if raw else None
+    except Exception:
+        return None
+
+
+def clear_provider_block() -> None:
+    try:
+        _client().delete(PROVIDER_BLOCK_KEY)
+    except Exception as exc:
+        logger.warning('Provider block storage unavailable: %s', exc)

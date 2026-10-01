@@ -49,12 +49,76 @@ GENERIC_BUCKETS = {
 }
 
 
+_LAT_RE = re.compile(r'[A-Za-z]')
+_LATIN_DIACRITICS = re.compile(r'[ąćęłńóśźżĄĆĘŁŃÓŚŹŻäöüßÄÖÜáéíúýčďěňřšťžůÁÉÍÚÝČĎĚŇŘŠŤŽŮ]')
+
+
 def fix_homoglyphs(text: str) -> str:
-    """Латинські двійники -> кирилиця, але лише у словах, де кирилиця вже є."""
+    """Латинські двійники -> кирилиця, лише якщо слово переважно кириличне
+    («Комплектуючi»). Латинське слово з випадковою кирилицею - це не двійник, а
+    зіпсоване кодування («PamiЙ·»); його не «кириличимо», а відновлюємо окремо."""
     def repl(match):
         word = match.group(0)
-        return word.translate(_HOMOGLYPHS) if _CYR_RE.search(word) else word
+        cyr, lat = len(_CYR_RE.findall(word)), len(_LAT_RE.findall(word))
+        if cyr and cyr > lat and not _LATIN_DIACRITICS.search(word):
+            return word.translate(_HOMOGLYPHS)
+        return word
     return _WORD_RE.sub(repl, text or '')
+
+
+def looks_garbled(text: str) -> bool:
+    """Зіпсоване кодування: латинське слово з кирилицею всередині («GтЈwna»,
+    «PamiЙ·»), символ заміни або типові залишки UTF-8 у cp1252 («Ä™», «Ã³»)."""
+    value = str(text or '')
+    if '\ufffd' in value or re.search(r'[ÃÄÅÐÑ][\u0080-\u00bf\u2018-\u203a™]', value):
+        return True
+    for word in re.findall(r"[^\s,.;:()/|»>·-]+", value):
+        cyr, lat = len(_CYR_RE.findall(word)), len(_LAT_RE.findall(word))
+        if cyr and lat and lat >= cyr:
+            return True
+    return False
+
+
+def _jsonld_crumb_urls(page_html: str) -> list[str]:
+    """Адреси елементів BreadcrumbList у тому самому порядку, що й назви."""
+    import json
+    soup = BeautifulSoup(page_html or '', 'html.parser')
+    for tag in soup.select('script[type="application/ld+json"]'):
+        try:
+            data = json.loads(tag.string or tag.get_text() or '')
+        except Exception:
+            continue
+        stack = data if isinstance(data, list) else [data]
+        while stack:
+            node = stack.pop(0)
+            if isinstance(node, dict):
+                kinds = node.get('@type') if isinstance(node.get('@type'), list) else [node.get('@type')]
+                if 'BreadcrumbList' in kinds:
+                    urls = []
+                    for item in node.get('itemListElement') or []:
+                        target = item.get('item') if isinstance(item, dict) else None
+                        if isinstance(target, dict):
+                            target = target.get('@id') or target.get('url')
+                        urls.append(str(target or ''))
+                    return urls
+                stack.extend(v for v in node.values() if isinstance(v, (dict, list)))
+            elif isinstance(node, list):
+                stack.extend(node)
+    return []
+
+
+def _anchor_text(soup, url: str) -> str:
+    """Текст видимого посилання на ту саму адресу (абсолютну чи відносну)."""
+    if not url:
+        return ''
+    path = urlparse(url).path.rstrip('/') or '/'
+    for anchor in soup.find_all('a', href=True):
+        href = anchor['href'].strip()
+        if href == url or (urlparse(href).path.rstrip('/') or '/') == path and (not urlparse(href).netloc or urlparse(href).netloc == urlparse(url).netloc):
+            text = ' '.join(anchor.get_text(' ', strip=True).split())
+            if text and not looks_garbled(text) and len(text) <= 80:
+                return text
+    return ''
 
 
 def normalize_label(text: str) -> str:
@@ -99,9 +163,23 @@ def is_product_crumb(crumb: str, name: str) -> bool:
 
 
 def breadcrumbs(page_html: str) -> list[str]:
-    """Нормалізовані хлібні крихти з BreadcrumbList або розмітки."""
+    """Нормалізовані хлібні крихти з BreadcrumbList або розмітки.
+
+    Якщо сайт віддав у JSON-LD зіпсоване кодування (movecenter.eu: «PamiЙ· RAM»
+    замість «Pamięć RAM»), назва береться з видимого посилання на ту саму адресу;
+    не вдалось - крихта відкидається, а не потрапляє в категорію."""
     from app.pipeline import _html_breadcrumbs
-    return [normalize_label(x) for x in _html_breadcrumbs(page_html) if normalize_label(x)]
+    names = _html_breadcrumbs(page_html)
+    if any(looks_garbled(n) for n in names):
+        urls = _jsonld_crumb_urls(page_html)
+        soup = BeautifulSoup(page_html or '', 'html.parser')
+        repaired = []
+        for index, name in enumerate(names):
+            if looks_garbled(name):
+                name = _anchor_text(soup, urls[index] if index < len(urls) else '')
+            repaired.append(name)
+        names = repaired
+    return [normalize_label(x) for x in names if x and normalize_label(x)]
 
 
 def shop_category(page_html: str, product_name: str = '') -> str:

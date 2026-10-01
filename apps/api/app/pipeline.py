@@ -2316,6 +2316,18 @@ def _apply_radius_scale(markup: str, scale: float) -> str:
     return re.sub(r'border-radius:\s*([\d.]+)px', repl, markup)
 
 
+_SERVER_ACCENTS: set | None = None
+
+
+def server_accents() -> set:
+    """Акценти пресетів брендів, які студія вивела сама (palette_from_accent)."""
+    global _SERVER_ACCENTS
+    if _SERVER_ACCENTS is None:
+        from app.brand_palettes import BRAND_ACCENTS
+        _SERVER_ACCENTS = {palette_from_accent(accent)['accent'].upper() for _brand, accent in BRAND_ACCENTS}
+    return _SERVER_ACCENTS
+
+
 def apply_palette(markup: str, palette: dict | None) -> str:
     """Застосувати схему оформлення стилю: кольори + масштаб скруглень.
     Тільки заміна значень - жодного дотику до розмітки, зламати сітку неможливо."""
@@ -2353,6 +2365,23 @@ def apply_palette(markup: str, palette: dict | None) -> str:
         mapping['#F5F7FA'] = clean['light_soft']
         mapping['#F7F8FA'] = clean['light_soft']
     out = markup
+    if 'accent' in clean and (palette.get('readable') or clean['accent'].upper() in server_accents()):
+        # Лише для кольорів, які підібрав СЕРВЕР (пресети брендів, палітра за брендом
+        # чи з фото). Акцент, вписаний оператором руками, лишається як є - там рішення
+        # за людиною. Акцент ТЕКСТОМ лишився лише на темних поверхнях (на світлих стандарт уже
+        # замінив його на #157985). Фірмовий колір бренду на темній плитці часто дає
+        # 3.5:1 («300 Hz», «8 stref» - render gate ловив це в кожному проєкті з
+        # темно-червоною схемою). Тому для тексту - той самий відтінок, підсвітлений
+        # до 4.5:1 проти найсвітлішої темної поверхні; фон, рамки й бейджі лишаються
+        # фірмового кольору. Працює і на вже перефарбованих сторінках («Вирівняти оформлення»).
+        surfaces = [clean.get('dark') or PALETTE_TOKENS['dark'], clean.get('dark_soft') or PALETTE_TOKENS['dark_soft'],
+                    _mix(clean.get('dark_soft') or PALETTE_TOKENS['dark_soft'], '#FFFFFF', 0.05)]
+        text_on_dark = clean['accent']
+        for surface in surfaces:
+            text_on_dark = readable_on(text_on_dark, surface)
+        if text_on_dark.upper() != clean['accent'].upper():
+            pattern = r'(?<![-\w])color\s*:\s*(?:#19BCC9|' + re.escape(clean['accent']) + r')(?![0-9a-fA-F])'
+            out = re.sub(pattern, f'color:{text_on_dark}', out, flags=re.I)
     for canon, target in mapping.items():
         out = re.sub(re.escape(canon), target, out, flags=re.I)
     if 'accent' in clean:
@@ -4233,8 +4262,11 @@ def public_fallback_reason(exc: Exception) -> str:
         return 'провайдер не відповів вчасно (таймаут)'
     if any(k in text for k in ('api key', 'apikey', 'invalid_api_key', 'unauthorized', 'authentication')):
         return 'провайдер відхилив ключ API — перевірте ключ у налаштуваннях'
-    if any(k in text for k in ('insufficient_quota', 'quota', 'rate limit', 'too many requests')):
-        return 'вичерпано ліміт або квоту провайдера'
+    from app.limits import is_quota_exhausted
+    if is_quota_exhausted(text):
+        return 'кредити провайдера вичерпано - поповніть баланс'
+    if any(k in text for k in ('quota', 'rate limit', 'too many requests')):
+        return 'тимчасовий ліміт запитів провайдера'
     if isinstance(exc, httpx.HTTPError) or 'connection' in text:
         return 'мережева помилка при зверненні до провайдера'
     if 'language validation' in text:
