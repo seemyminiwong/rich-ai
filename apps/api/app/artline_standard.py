@@ -150,6 +150,81 @@ def _blocks(root):
     return blocks
 
 
+INNER_RADIUS = (10, 12)
+_RADIUS_DECL_RE = re.compile(
+    r'(?<![-\w])(border-radius|border-(?:top|bottom)-(?:left|right)-radius)\s*:\s*([^;!"]+?)\s*(!important)?\s*(?=;|$)', re.I)
+_LENGTH_RE = re.compile(r'^([\d.]+)(px|rem|em)?$', re.I)
+
+
+def _radius_token(token: str, is_outer: bool, scale: float = 1.0) -> str:
+    """Одне значення радіуса за стандартом. Капсули, відсотки, 0 і тонкі
+    смужки (<4px) лишаються як є."""
+    match = _LENGTH_RE.match(token.strip())
+    if not match:
+        return token  # %, calc(), var() - не наше
+    value = float(match.group(1)) * (16 if (match.group(2) or '').lower() in ('rem', 'em') else 1)
+    if value >= 100 or value < 4 * scale:
+        return token if (match.group(2) or 'px').lower() == 'px' else f'{value:g}px'
+    if is_outer:
+        target = OUTER_RADIUS * scale
+    else:
+        target = min(INNER_RADIUS[1] * scale, max(INNER_RADIUS[0] * scale, value))
+    return f'{round(target):g}px'
+
+
+def normalize_radii(style: str, is_outer: bool) -> str:
+    def repl(match):
+        prop, value, important = match.group(1), match.group(2), match.group(3) or ''
+        parts = re.split(r'(\s*/\s*|\s+)', value.strip())
+        fixed = ''.join(part if (not part.strip() or part.strip() == '/') else _radius_token(part, is_outer) for part in parts)
+        return f'{prop}:{fixed}{important}'
+    return _RADIUS_DECL_RE.sub(repl, style or '')
+
+
+def radius_deviations(markup: str) -> list[str]:
+    """Радіуси, що не відповідають стандарту, - для рецензента, з місцем.
+
+    Масштаб скруглень зі схеми (повзунок) законний, тому норма рахується від
+    фактичного радіуса зовнішніх блоків: якщо вони 7px (масштаб 0.5), внутрішні
+    мають бути 5-6px, а не 10-12."""
+    if not markup or '<section' not in markup:
+        return []
+    soup = BeautifulSoup(markup, 'html.parser')
+    root = soup.find('section')
+    if root is None:
+        return []
+    blocks = _blocks(root)
+    block_ids = {id(b) for b in blocks}
+    outer_values = []
+    for block in blocks:
+        m = _RADIUS_RE.search(block.get('style') or '')
+        if m and 4 <= float(m.group(1)) < 100:
+            outer_values.append(float(m.group(1)))
+    scale = (max(set(outer_values), key=outer_values.count) / OUTER_RADIUS) if outer_values else 1.0
+    out = []
+    for tag in root.find_all(style=True):
+        style = tag.get('style') or ''
+        if 'radius' not in style.lower():
+            continue
+        is_outer = id(tag) in block_ids
+        for match in _RADIUS_DECL_RE.finditer(style):
+            for token in re.split(r'\s*/\s*|\s+', match.group(2).strip()):
+                if not token or _radius_token(token, is_outer, scale) == token:
+                    continue
+                m = _LENGTH_RE.match(token)
+                if m and (m.group(2) or 'px').lower() == 'px':
+                    value = float(m.group(1))
+                    lo, hi = (OUTER_RADIUS * scale, OUTER_RADIUS * scale) if is_outer else (INNER_RADIUS[0] * scale, INNER_RADIUS[1] * scale)
+                    if lo - 1 <= value <= hi + 1:
+                        continue  # округлення масштабу, не дефект
+                text = ' '.join(tag.get_text(' ', strip=True).split())[:40]
+                role = 'зовнішній блок' if is_outer else ('зображення' if tag.name == 'img' else 'внутрішній елемент')
+                norm = f'{OUTER_RADIUS * scale:g}' if is_outer else f'{INNER_RADIUS[0] * scale:g}-{INNER_RADIUS[1] * scale:g}'
+                out.append(f'<{tag.name}> {role} {token}, норма {norm}px' + (f' «{text}»' if text else ''))
+                break
+    return out
+
+
 def apply_artline_standard(markup: str, product_name: str = '') -> str:
     if not markup or '<section' not in markup:
         return markup
@@ -235,20 +310,13 @@ def apply_artline_standard(markup: str, product_name: str = '') -> str:
             if target and (size != target[0]):
                 changed |= _apply_size(tag, *target)
 
-        # 5. Радіуси: зовнішні блоки 14px, стеля 14px (пігулки 999px - лише бейджі)
+        # 5. Радіуси: зовнішні блоки 14px, внутрішні картки, рамки й лейбли 10-12px,
+        #    пігулки 999px. Обробляються і скорочені записи «14px 14px 0 0», і
+        #    окремі кути (border-top-left-radius), і rem/em - раніше їх пропускали,
+        #    і на сторінці сусідили 14, 8 і 20.
         style = tag.get('style') or ''
         if style:
-            is_outer = id(tag) in block_ids
-            def radius(m):
-                v = float(m.group(1))
-                if v >= 100:
-                    return m.group(0)
-                if is_outer and 8 <= v < OUTER_RADIUS:
-                    return f'border-radius:{OUTER_RADIUS}px'
-                if v > MAX_RADIUS:
-                    return f'border-radius:{MAX_RADIUS}px'
-                return m.group(0)
-            new = _RADIUS_RE.sub(radius, style)
+            new = normalize_radii(style, id(tag) in block_ids)
             if new != style:
                 tag['style'] = style = new
                 changed = True

@@ -704,9 +704,10 @@ def test_nested_radii_are_concentric_in_every_style():
             '<div style="border-radius:18px;background:#fff"><p style="border-radius:12px">без падінга - не чіпаємо</p></div>'
             '</section>')
     out = _harmonize_radii(html)
-    # 24 - 8 = 16 (вже правильно), 32 - 46 -> мінімум 8px (пол концентрики)
-    assert 'border-radius:16px;background:#eee' in out
-    assert 'border-radius:8px;padding:6px 12px' in out
+    # Концентрика в межах стандарту ARTLINE для внутрішніх карток (10-12px):
+    # 24 - 8 = 16 -> стеля 12, 32 - 46 -> підлога 10
+    assert 'border-radius:12px;background:#eee' in out
+    assert 'border-radius:10px;padding:6px 12px' in out
     # картка без падінга лишається як була
     assert 'border-radius:12px">без падінга' in out
     assert _harmonize_radii(out) == out, 'повторне застосування - no-op'
@@ -3390,7 +3391,8 @@ def test_artline_standard_unifies_every_style():
     assert 'font-size:18px' in soup.h3['style']
     assert '—' not in soup.get_text() and '–' in soup.get_text()
     assert '950' not in out and 'border-radius:28px' not in out and 'border-radius:20px' not in out
-    assert out.count('border-radius:14px') == 3 and 'border-radius:999px' in out, 'пігулки лишаються'
+    # Зовнішні блоки 14px, внутрішня картка 20px -> 12px (стандарт: 10-12), пігулки лишаються
+    assert out.count('border-radius:14px') == 2 and 'border-radius:12px;background:#F5F7FA' in out and 'border-radius:999px' in out, 'пігулки лишаються'
     value = soup.find(string='100 Гц').parent
     assert 'font-size:26px' in value['style'] and 'color:#157985' in value['style'], 'акцент на світлому - темніший'
     assert 'color:#19BCC9' in hero_h2.find_next('p')['style'], 'на темному Hero акцент лишається'

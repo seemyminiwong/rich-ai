@@ -1013,7 +1013,13 @@ def audit_geo_copy(markup: str, product: dict | None, language: str, variant: st
         allowed_groups.add('warranty')
     if company_facts({'service_text': profile.get('service_text')}, lang):
         allowed_groups.update({'support', 'support_24_7'})
+    # Те, що є в характеристиках самого товару (гарантія виробника 36 міс.,
+    # комплект поставки), - факт товару, а не обіцянка магазину: його підтверджує
+    # Product JSON, а не Publishing Profile.
+    product_text = json.dumps({k: product.get(k) for k in ('specs', 'features', 'description')}, ensure_ascii=False).lower()
     for code, pattern, severity in COMMERCIAL_CLAIMS:
+        if re.search(pattern, product_text, re.I):
+            continue
         for t in doc['texts']:
             if not re.search(pattern, t['text'], re.I):
                 continue
@@ -1079,7 +1085,10 @@ def audit_geo_copy(markup: str, product: dict | None, language: str, variant: st
 # ---------------------------------------------------------------------------
 
 def audit_variant_consistency(artifacts: list) -> list[dict]:
-    """Десктоп і мобільна версія однієї мови мають нести той самий текст."""
+    """Десктоп і мобільна версія однієї мови мають нести той самий зміст.
+
+    Різні цифри - попередження (одна з версій каже інше). Інше формулювання тих
+    самих речень - інфо: це не помилка факту і не блокує схвалення."""
     findings: list[dict] = []
     by_lang: dict = {}
     for a in artifacts:
@@ -1090,19 +1099,23 @@ def audit_variant_consistency(artifacts: list) -> list[dict]:
     for lang, variants in by_lang.items():
         if 'desktop' not in variants or 'mobile' not in variants:
             continue
-        desk = {_norm_sentence(s) for t in parse_fragment(variants['desktop'])['texts'] for s in sentences(t['text']) if len(words(s)) >= 4}
-        mob = {_norm_sentence(s) for t in parse_fragment(variants['mobile'])['texts'] for s in sentences(t['text']) if len(words(s)) >= 4}
-        if not desk or not mob:
-            continue
-        missing = desk - mob
-        extra = mob - desk
-        ratio = (len(missing) + len(extra)) / max(1, len(desk | mob))
-        if missing or extra:
-            sample = next(iter(missing or extra))
-            findings.append(finding('variant_text_mismatch', 'warning' if ratio < 0.3 else 'critical',
-                                    f'Десктоп і мобільна різняться: {len(missing)} речень лише на десктопі, {len(extra)} лише на мобільній',
+        desk_doc, mob_doc = parse_fragment(variants['desktop']), parse_fragment(variants['mobile'])
+        desk_values = {_norm_number(m.group(1)) + m.group(2).lower() for t in desk_doc['texts'] for m in _VALUE_RE.finditer(t['text'])}
+        mob_values = {_norm_number(m.group(1)) + m.group(2).lower() for t in mob_doc['texts'] for m in _VALUE_RE.finditer(t['text'])}
+        if desk_values != mob_values:
+            only = sorted(desk_values ^ mob_values)
+            findings.append(finding('variant_values_mismatch', 'warning',
+                                    f'Десктоп і мобільна називають різні значення: {", ".join(only[:6])}',
+                                    language=norm_lang(lang), variant='mobile', evidence=', '.join(only[:6]), source='seo',
+                                    suggestion='Обидві версії мають називати ті самі підтверджені значення'))
+        desk = {_norm_sentence(s) for t in desk_doc['texts'] for s in sentences(t['text']) if len(words(s)) >= 4}
+        mob = {_norm_sentence(s) for t in mob_doc['texts'] for s in sentences(t['text']) if len(words(s)) >= 4}
+        if desk and mob and (desk - mob or mob - desk):
+            sample = next(iter((desk - mob) or (mob - desk)))
+            findings.append(finding('variant_text_mismatch', 'info',
+                                    f'Десктоп і мобільна сформульовані по-різному: {len(desk - mob)} речень лише на десктопі, {len(mob - desk)} лише на мобільній',
                                     language=norm_lang(lang), variant='mobile', evidence=sample, source='seo',
-                                    suggestion='Мобільна - перекомпонування десктопу з тим самим текстом'))
+                                    suggestion='Перегенерувати переклад: мобільна бере переклад десктопа дослівно'))
     return findings
 
 

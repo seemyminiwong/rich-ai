@@ -2257,7 +2257,9 @@ def _harmonize_radii(markup: str) -> str:
         pad = _first_px(padding.group(1))
         if pad is None or pad <= 0 or outer_value < 8:
             continue
-        inner_value = max(8.0, round(outer_value - pad))
+        # Стандарт ARTLINE: внутрішні картки 10-12px, тож концентрична формула
+        # не може дати 8px, як раніше (сусідство 14 і 8 видно оком).
+        inner_value = min(12.0, max(10.0, round(outer_value - pad)))
         for child in outer.find_all(recursive=False):
             child_style = child.get('style') or ''
             child_radius = _RADIUS_RE.search(child_style)
@@ -4373,27 +4375,51 @@ def _translation_template(markup: str, with_alt: bool = False):
     return str(soup), segments
 
 
-def translate_html(source_html: str, language: str, model: str):
-    """Translate copy only; layout, styles, media URLs and element order stay fixed."""
+def translate_html(source_html: str, language: str, model: str, memory: dict | None = None):
+    """Translate copy only; layout, styles, media URLs and element order stay fixed.
+
+    memory - пам'ять перекладу однієї мови в межах прогону ({'text': {}, 'alt': {}}).
+    Мобільна версія має той самий текст, що й десктопна, але перекладалась окремим
+    викликом і виходила іншими словами: десктоп і мобільна на одній картці
+    розходились. Тепер сегмент, уже перекладений для десктопа, береться з пам'яті
+    дослівно, а в модель ідуть лише нові сегменти (і токенів менше).
+    """
     if not text_ready():
         return None, 0, 0
     template, segments = _translation_template(source_html, with_alt=True)
     if not segments:
         return source_html, 0, 0
+    memory = memory if memory is not None else {}
+    text_memory = memory.setdefault('text', {})
+    alt_memory = memory.setdefault('alt', {})
+    known = {}
+    for key, original in segments.items():
+        bank = alt_memory if key.startswith('alt') else text_memory
+        if original in bank:
+            known[key] = bank[original]
+    pending = {k: v for k, v in segments.items() if k not in known}
+    if not pending:
+        translated = {}
+        response = None
+    else:
+        translated = None
     prompt = f"""Translate the supplied ecommerce copy segments into the target language.
 TARGET LANGUAGE CODE: {language}. {language_rule(language)}
 Return one JSON object only. Preserve every input key and return exactly one translated string for it.
 Keep product names, brands, model IDs, technology names and numbers unchanged. Convert units, unit abbreviations and period words into the target language and script (examples: В→V, Вт→W, мс→ms, кВт·год→kWh, мес→the target-language month abbreviation); a Latin-script language must keep no Cyrillic characters except verbatim brand or model names.
 Do not add facts, HTML, markdown, explanations or extra keys.
 SEGMENTS:
-{json.dumps(segments, ensure_ascii=False)}"""
-    response = _responses_create(model, prompt, 12000)
-    translated = _extract_json(response.output_text)
+{json.dumps(pending, ensure_ascii=False)}"""
+    if pending:
+        response = _responses_create(model, prompt, 12000)
+        translated = _extract_json(response.output_text)
     result = template
     for key, original in segments.items():
-        value = translated.get(key)
+        value = known.get(key) if key in known else translated.get(key)
         if not isinstance(value, str) or not value.strip():
             value = original
+        elif key not in known:
+            (alt_memory if key.startswith('alt') else text_memory)[original] = value
         if key.startswith('alt'):
             result = result.replace(f'__ARTLINE_ALT_{key}__', html_lib.escape(value.strip(), quote=True))
             continue
@@ -4402,6 +4428,8 @@ SEGMENTS:
     result = latinize_units(result, language)
     if not _language_matches(result, language):
         raise RuntimeError(f'Translated content did not pass language validation for {language}')
+    if response is None:
+        return result, 0, 0
     input_tokens, output_tokens = _usage_counts(response, prompt, response.output_text)
     return result, input_tokens, output_tokens
 
@@ -4682,6 +4710,13 @@ def critic_html(artifacts, critic_type: str, product: dict, brief: dict | None =
             issues.append('Expected at least one H2 per artifact'); score -= 10
         if len(html) > 700000:
             issues.append('HTML payload is unusually large'); score -= 10
+        from app.artline_standard import radius_deviations
+        for artifact in artifacts:
+            deviations = radius_deviations(getattr(artifact, 'html', ''))
+            if deviations:
+                where = f'{getattr(artifact, "language", "?")}/{getattr(artifact, "variant", "?")}'
+                sample = '; '.join(deviations[:3])
+                issues.append(f'Радіуси поза стандартом ARTLINE ({where}): {len(deviations)} - {sample}'); score -= min(10, 2 * len(deviations))
         suggestions = ['Validate markup before publishing', 'Do not add H1 inside embedded rich content']
     elif critic_type == 'accessibility':
         images = len(re.findall(r'<img\b', html, re.I))

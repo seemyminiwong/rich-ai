@@ -798,6 +798,9 @@ def process_project(self, project_id, reuse_images=False):
             # page by a layout-only transform, so the two variants cannot drift.
             variants = sorted(variants, key=lambda v: 0 if v == 'desktop' else 1)
             desktop_master_html = None
+            # Пам'ять перекладу на мову: мобільна версія бере ті самі переклади,
+            # що й десктопна, - тексти двох форматів однієї мови не розходяться.
+            translation_memory: dict = {}
             for variant in variants:
                 # Generate one master layout per viewport. Every other language is a
                 # text-node-only translation of this master, so DOM, inline CSS,
@@ -952,7 +955,7 @@ def process_project(self, project_id, reuse_images=False):
                             recalculate_cost(project)
                     else:
                         log(db, project, 'content', f'Переклад макета {language.upper()} / {variant} без зміни дизайну', progress)
-                        translated = translate_html(master_html, language, project.text_model)
+                        translated = translate_html(master_html, language, project.text_model, memory=translation_memory.setdefault(language, {}))
                         if translated[0] is None:
                             # Offline/no-key fallback still uses the deterministic
                             # template, whose structure is identical for all languages.
@@ -1135,6 +1138,8 @@ def translate_project(project_id: str, language: str):
         variants = [v.strip() for v in (project.variants or 'desktop').split(',') if v.strip()]
         log(db, project, 'translate', f'Переклад наявних версій на {language.upper()} (з {source_language.upper()})')
         added_any = False
+        translation_memory: dict = {}
+        variants = sorted(variants, key=lambda v: 0 if v == 'desktop' else 1)
         for variant in variants:
             source = db.scalar(select(Artifact).where(
                 Artifact.project_id == project.id,
@@ -1145,7 +1150,7 @@ def translate_project(project_id: str, language: str):
                 log(db, project, 'translate', f'{variant}: немає вихідної версії {source_language.upper()} — пропущено', level='warning')
                 continue
             try:
-                translated, added_input, added_output = translate_html(source.html, language, project.text_model) or (None, 0, 0)
+                translated, added_input, added_output = translate_html(source.html, language, project.text_model, memory=translation_memory) or (None, 0, 0)
             except Exception as exc:
                 log(db, project, 'translate', f'{variant}: переклад не вдався: {str(exc)[:180]}', level='error')
                 continue

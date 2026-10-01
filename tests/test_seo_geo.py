@@ -130,8 +130,57 @@ def test_desktop_and_mobile_must_carry_the_same_text():
     same = SimpleNamespace(html=GOOD_UK.replace('<div>', '<div style="padding:4px">'), language='ua', variant='mobile')
     assert audit_variant_consistency([desk, same]) == []
     other = SimpleNamespace(html=_page(['ASUS ESC8000A-E12 - GPU-сервер. Зовсім інший текст про щось ще.', 'Ще один інший абзац для мобільної.']), language='ua', variant='mobile')
-    rows = audit_variant_consistency([desk, other])
-    assert rows and rows[0]['code'] == 'variant_text_mismatch'
+    rows = {r['code']: r['severity'] for r in audit_variant_consistency([desk, other])}
+    # Інші цифри - попередження; інше формулювання - лише інфо, ніколи не блокує схвалення
+    assert rows == {'variant_values_mismatch': 'warning', 'variant_text_mismatch': 'info'}
+
+
+def test_warranty_from_product_specs_is_a_product_fact_not_a_shop_promise():
+    product = dict(PRODUCT, specs=PRODUCT['specs'] + [{'name': 'Гарантія', 'value': '36 міс.'}])
+    html = _page(['ASUS ESC8000A-E12 - GPU-сервер з 8 × NVIDIA B300.', 'Гарантія 36 міс. від виробника.'])
+    geo = audit_geo_copy(html, product, 'ua', 'desktop', None, None, PROFILE)
+    assert not any(f['code'] == 'unsupported_commercial_claim' for f in geo)
+    # без гарантії в характеристиках - як і раніше критично
+    assert any(f['code'] == 'unsupported_commercial_claim' and f['severity'] == 'critical'
+               for f in audit_geo_copy(html, PRODUCT, 'ua', 'desktop', None, None, PROFILE))
+
+
+def test_mobile_translation_reuses_the_desktop_translation():
+    from app.pipeline import translate_html
+    desktop = '<section><h2>Корпус для ПК</h2><p>Гарантия 36 мес.</p><img src="/a.webp" alt="Корпус спереди"></section>'
+    mobile = '<section><div style="padding:8px"><h2>Корпус для ПК</h2><p>Гарантия 36 мес.</p><img src="/a.webp" alt="Корпус спереди"></div></section>'
+    calls = []
+
+    class Reply:
+        def __init__(self, text):
+            self.output_text = text
+            self.usage = SimpleNamespace(input_tokens=100, output_tokens=20)
+
+    def fake(model, prompt, cap):
+        calls.append(prompt)
+        return Reply(json.dumps({'alt0': 'Корпус спереду', '0': 'Корпус для ПК', '1': 'Гарантія 36 міс.'}, ensure_ascii=False))
+
+    memory = {}
+    with patch('app.pipeline._responses_create', fake), patch('app.pipeline.text_ready', lambda: True):
+        first, ti, _ = translate_html(desktop, 'ua', 'm', memory=memory)
+        second, ti2, to2 = translate_html(mobile, 'ua', 'm', memory=memory)
+    assert len(calls) == 1 and ti == 100 and (ti2, to2) == (0, 0), 'мобільна не перекладається вдруге'
+    assert 'Гарантія 36 міс.' in second and 'alt="Корпус спереду"' in second
+
+
+def test_radius_audit_reports_deviations_relative_to_the_scheme_scale():
+    from app.artline_standard import apply_artline_standard, normalize_radii, radius_deviations
+    page = ('<section><div style="border-radius:14px;padding:20px"><div style="border-radius:8px;padding:10px">Картка</div></div>'
+            '<div style="border-radius:24px 24px 0 0;padding:20px"><span style="border-top-left-radius:1.25rem">Лейбл</span></div></section>')
+    found = radius_deviations(page)
+    assert len(found) == 3 and any('8px' in f for f in found) and any('1.25rem' in f for f in found)
+    fixed = apply_artline_standard(page)
+    assert radius_deviations(fixed) == []
+    assert 'border-radius:14px 14px 0 0' in fixed and 'border-top-left-radius:12px' in fixed and 'border-radius:10px' in fixed
+    assert normalize_radii('border-radius:999px', False) == 'border-radius:999px' and normalize_radii('border-radius:50%', False) == 'border-radius:50%'
+    # повзунок скруглень 0.5: зовнішні 7px, внутрішні 5-6px - це не дефект
+    scaled = '<section><div style="border-radius:7px;padding:20px"><div style="border-radius:5px">Картка</div></div><div style="border-radius:7px">Б</div></section>'
+    assert radius_deviations(scaled) == []
 
 
 def test_facts_have_provenance_and_derived_values_never_reach_the_prompt():
