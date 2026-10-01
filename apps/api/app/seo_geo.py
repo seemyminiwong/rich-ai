@@ -1016,7 +1016,7 @@ def audit_geo_copy(markup: str, product: dict | None, language: str, variant: st
     # Те, що є в характеристиках самого товару (гарантія виробника 36 міс.,
     # комплект поставки), - факт товару, а не обіцянка магазину: його підтверджує
     # Product JSON, а не Publishing Profile.
-    product_text = json.dumps({k: product.get(k) for k in ('specs', 'features', 'description')}, ensure_ascii=False).lower()
+    product_text = json.dumps({k: product.get(k) for k in ('specs', 'features', 'description', 'external_facts')}, ensure_ascii=False).lower()
     for code, pattern, severity in COMMERCIAL_CLAIMS:
         if re.search(pattern, product_text, re.I):
             continue

@@ -150,6 +150,12 @@ class Project(Base):
     publishing_profile_json: Mapped[str] = mapped_column(Text, default='{}')
     # Історія оцінок SEO/GEO/human/language за прогонами й версіями (порівняння).
     seo_history_json: Mapped[str] = mapped_column(Text, default='[]')
+    # Режим пошуку фактів: strict (типово, без інтернету) | official_research | research_only.
+    fact_research_mode: Mapped[str] = mapped_column(String, default='strict')
+    # Незмінний знімок УТВЕРДЖЕНИХ людиною зовнішніх фактів (approved_for_content).
+    # Окремо від product_json: генератор отримує його окремим розділом промпту,
+    # повторний запуск бере саме цей знімок і не шукає в інтернеті знову.
+    approved_external_facts_json: Mapped[str] = mapped_column(Text, default='{}')
     error: Mapped[str] = mapped_column(Text, default='')
     duration_seconds: Mapped[float] = mapped_column(Float, default=0)
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
@@ -287,6 +293,75 @@ class FindingDecision(Base):
     user_id: Mapped[str | None] = mapped_column(ForeignKey(f'{settings.db_schema}.users.id'), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class FactResearchRun(Base):
+    """Один запуск дослідження фактів: що шукали, скільки документів, вартість."""
+    __tablename__ = 'fact_research_runs'
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey(f'{settings.db_schema}.projects.id'), index=True)
+    mode: Mapped[str] = mapped_column(String, default='official_research')
+    provider: Mapped[str] = mapped_column(String, default='disabled')
+    status: Mapped[str] = mapped_column(String, default='queued', index=True)
+    queries_json: Mapped[str] = mapped_column(Text, default='[]')
+    domains_json: Mapped[str] = mapped_column(Text, default='[]')
+    # Вхідні параметри запуску (URL оператора, домени, AI-екстрактор) і нотатки
+    # (пропущені документи, виявлені інʼєкції) - без вмісту сторінок.
+    params_json: Mapped[str] = mapped_column(Text, default='{}')
+    notes_json: Mapped[str] = mapped_column(Text, default='{}')
+    pages_found: Mapped[int] = mapped_column(Integer, default=0)
+    pages_fetched: Mapped[int] = mapped_column(Integer, default=0)
+    candidate_count: Mapped[int] = mapped_column(Integer, default=0)
+    estimated_cost: Mapped[float] = mapped_column(Float, default=0)
+    actual_cost: Mapped[float] = mapped_column(Float, default=0)
+    started_by: Mapped[str | None] = mapped_column(ForeignKey(f'{settings.db_schema}.users.id'), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    error: Mapped[str] = mapped_column(Text, default='')
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class FactCandidate(Base):
+    """Кандидат факту з доказом. У контент іде лише після рішення людини."""
+    __tablename__ = 'fact_candidates'
+    __table_args__ = (UniqueConstraint('project_id', 'candidate_key'),)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    research_run_id: Mapped[str] = mapped_column(ForeignKey(f'{settings.db_schema}.fact_research_runs.id'), index=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey(f'{settings.db_schema}.projects.id'), index=True)
+    candidate_key: Mapped[str] = mapped_column(String, default='')
+    fact_path: Mapped[str] = mapped_column(String, default='')
+    label: Mapped[str] = mapped_column(Text, default='')
+    value: Mapped[str] = mapped_column(Text, default='')
+    normalized_value: Mapped[str] = mapped_column(Text, default='')
+    unit: Mapped[str] = mapped_column(String, default='')
+    original_value: Mapped[str] = mapped_column(Text, default='')
+    kind: Mapped[str] = mapped_column(String, default='spec')
+    product_brand: Mapped[str] = mapped_column(String, default='')
+    product_model: Mapped[str] = mapped_column(String, default='')
+    sku: Mapped[str] = mapped_column(String, default='')
+    revision: Mapped[str] = mapped_column(String, default='')
+    region: Mapped[str] = mapped_column(String, default='')
+    source_url: Mapped[str] = mapped_column(Text, default='')
+    source_domain: Mapped[str] = mapped_column(String, default='')
+    source_type: Mapped[str] = mapped_column(String, default='')
+    source_tier: Mapped[str] = mapped_column(String, default='C')
+    source_title: Mapped[str] = mapped_column(Text, default='')
+    source_date: Mapped[str] = mapped_column(String, default='')
+    retrieved_at: Mapped[str] = mapped_column(String, default='')
+    evidence_excerpt: Mapped[str] = mapped_column(Text, default='')
+    evidence_locator: Mapped[str] = mapped_column(String, default='')
+    page_content_hash: Mapped[str] = mapped_column(String, default='')
+    identity_status: Mapped[str] = mapped_column(String, default='')
+    identity_score: Mapped[float] = mapped_column(Float, default=0)
+    identity_notes_json: Mapped[str] = mapped_column(Text, default='[]')
+    extractor: Mapped[str] = mapped_column(String, default='table')
+    confidence: Mapped[str] = mapped_column(String, default='low')
+    status: Mapped[str] = mapped_column(String, default='candidate', index=True)
+    conflict_group: Mapped[str] = mapped_column(String, default='')
+    decision_comment: Mapped[str] = mapped_column(Text, default='')
+    decided_by: Mapped[str | None] = mapped_column(ForeignKey(f'{settings.db_schema}.users.id'), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
 class PublishingProfile(Base):

@@ -220,3 +220,14 @@ def test_open_dialog_never_scrolls_the_page_behind_it():
     contain = css.split('{overscroll-behavior:contain}')[0].rsplit('\n', 1)[-1]
     for selector in ('dialog', 'dialog form', '.wiz-body', '.dd-list'):
         assert selector in contain.split(','), selector
+
+
+def test_fact_research_tab_is_permission_driven_and_never_auto_regenerates():
+    js = _js()
+    assert "['facts','Факти']" in js and "can('fact_research.run')||can('fact_research.review')" in _body(js, 'allowedTabs')
+    tab = _body(js, 'factsTab')
+    assert 'не підтверджує факт автоматично' in tab and 'Підтвердити' in tab and 'Відхилити' in tab
+    regen = _body(js, 'regenerateWithFacts')
+    assert 'confirm(' in regen and 'reuse_images:true' in regen
+    start = _body(js, 'startFactResearch')
+    assert '/fact-research/estimate' in start and 'confirm(' in start

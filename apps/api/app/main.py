@@ -22,9 +22,9 @@ from sqlalchemy import delete as sa_delete, func, select, text
 from sqlalchemy.orm import Session
 from app.config import DEFAULT_IMAGE_PRICING, DEFAULT_TEXT_PRICING, settings
 from app.db import Base, SessionLocal, engine, ensure_schema, get_db, run_migrations
-from app.models import Artifact, Asset, AuditLog, CriticReport, Event, FindingDecision, Invite, Landing, Palette, Project, PublishingProfile, Review, Role, Status, Style, StyleVersion, User
+from app.models import Artifact, Asset, AuditLog, CriticReport, Event, FactCandidate, FactResearchRun, FindingDecision, Invite, Landing, Palette, Project, PublishingProfile, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
-from app.tasks import bill_extra, image_rate, process_landing, process_project, recategorize_projects, text_rate, translate_project
+from app.tasks import bill_extra, candidate_dict_row, candidate_rows, image_rate, load_snapshot, mark_stale_candidates, process_landing, process_project, recategorize_projects, run_fact_research, search_provider, text_rate, translate_project
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
 from app.raster import flatten_to_white
@@ -475,6 +475,7 @@ class SecretsIn(BaseModel):
     gemini_api_key: str | None = None
     openrouter_api_key: str | None = None
     openrouter_text_model: str | None = None
+    firecrawl_api_key: str | None = None
 class UserCreate(BaseModel):
     email: str
     name: str = Field(min_length=2, max_length=120)
@@ -715,6 +716,8 @@ def project_dict(p, full=False, style_name=''):
          'image_count': p.image_count, 'text_request_count': p.text_request_count, 'image_request_count': p.image_request_count, 'text_cost': p.text_cost, 'image_cost': p.image_cost, 'estimated_cost': p.estimated_cost,
          'created_at': p.created_at, 'started_at': p.started_at, 'finished_at': p.finished_at,
          'seo_brief': _safe_map(getattr(p, 'seo_brief_json', '')),
+         'fact_research_mode': getattr(p, 'fact_research_mode', '') or 'strict',
+         'external_facts_count': len(_safe_map(getattr(p, 'approved_external_facts_json', '')).get('facts') or []),
          'facts_provenance': public_facts_summary(product),
          'seo_history': _safe_list(getattr(p, 'seo_history_json', '')),
          'photo_palette': _palette_raw(p).get('source') == 'photo',
@@ -766,7 +769,7 @@ def _free_audit(db, p, user=None, note: str = '') -> list:
     product = json.loads(p.product_json or '{}')
     brief = _safe_map(getattr(p, 'seo_brief_json', ''))
     profile = _safe_map(getattr(p, 'publishing_profile_json', ''))
-    reports = free_critic_reports(latest, product, brief, profile)
+    reports = free_critic_reports(latest, product, brief, profile, external=load_snapshot(p), candidates=candidate_rows(db, p.id))
     db.execute(sa_delete(CriticReport).where(CriticReport.project_id == p.id, CriticReport.critic_type.notin_(('llm', 'render'))))
     for report in reports:
         db.add(CriticReport(project_id=p.id, critic_type=report['type'], score=report['score'], summary=report['summary'],
@@ -2584,6 +2587,234 @@ def project_restyle(project_id: str, db: Session = Depends(get_db), user=Depends
     return {'updated': updated}
 
 
+# --- Дослідження фактів про товар ---------------------------------------------
+# Інтернет-пошук знаходить документи, але не підтверджує факт автоматично: у
+# контент потрапляють лише факти, утверджені людиною, через незмінний знімок.
+
+class FactResearchIn(BaseModel):
+    mode: str = Field(default='official_research', max_length=24)
+    urls: list[str] = Field(default_factory=list, max_length=20)
+    official_domains: list[str] = Field(default_factory=list, max_length=10)
+    distributor_domains: list[str] = Field(default_factory=list, max_length=10)
+    use_llm: bool = False
+
+
+class FactModeIn(BaseModel):
+    mode: str = Field(max_length=24)
+
+
+class FactDecisionIn(BaseModel):
+    decision: str = Field(max_length=16)       # approve | confirm | reject
+    comment: str = Field(default='', max_length=2000)
+
+
+class FactCancelIn(BaseModel):
+    run_id: str = Field(default='', max_length=64)
+
+
+def _project_or_404(db, project_id: str) -> Project:
+    p = db.get(Project, project_id)
+    if not p:
+        raise HTTPException(404, 'Проєкт не знайдено')
+    return p
+
+
+def _clean_domains(values: list[str]) -> list[str]:
+    out = []
+    for value in values or []:
+        host = re.sub(r'^https?://', '', str(value or '').strip().lower()).split('/')[0].lstrip('.')
+        if host.startswith('www.'):
+            host = host[4:]
+        if host and re.fullmatch(r'[a-z0-9.-]+\.[a-z]{2,}', host) and host not in out:
+            out.append(host)
+    return out[:10]
+
+
+def _research_estimate(p: Project, mode: str, urls: list, use_llm: bool) -> dict:
+    from app.fact_research import ProductIdentity, analyze_gaps, estimate_cost, plan_queries
+    from app.fact_sources import manufacturer_domains
+    product = json.loads(p.product_json or '{}') or {}
+    identity = ProductIdentity.from_product(product)
+    gaps = analyze_gaps(product, product.get('evidence'), _safe_map(getattr(p, 'seo_brief_json', '')))
+    provider = search_provider(urls)
+    available, reason = provider.available()
+    domains = manufacturer_domains(identity.brand)
+    queries = plan_queries(identity, gaps, domains if mode == 'official_research' else [], settings.fact_research_max_queries) \
+        if available and provider.name not in ('manual', 'disabled') else []
+    pages = min(settings.fact_research_max_pages, len(urls) + len(queries) * 5)
+    model = p.text_model or settings.openai_text_model
+    return {'gaps': [g.__dict__ for g in gaps], 'identity': identity.__dict__ | {'tiers': sorted(identity.tiers)},
+            'queries': queries, 'domains': domains, 'provider': provider.name, 'provider_ready': available,
+            'provider_note': reason, 'estimate': estimate_cost(len(queries), pages, provider, use_llm, text_rate(model)),
+            'llm_model': model}
+
+
+@app.get('/api/projects/{project_id}/fact-research')
+def fact_research_state(project_id: str, db: Session = Depends(get_db), user=Depends(require_perm('fact_research.run', 'fact_research.review'))):
+    p = _project_or_404(db, project_id)
+    if mark_stale_candidates(db, p.id):
+        db.commit()
+    runs = db.scalars(select(FactResearchRun).where(FactResearchRun.project_id == p.id).order_by(FactResearchRun.created_at.desc()).limit(20)).all()
+    snapshot = load_snapshot(p)
+    candidates = candidate_rows(db, p.id)
+    out = {
+        'enabled': bool(settings.fact_research_enabled), 'mode': getattr(p, 'fact_research_mode', '') or 'strict',
+        'limits': {'max_queries': settings.fact_research_max_queries, 'max_pages': settings.fact_research_max_pages,
+                   'timeout_seconds': settings.fact_research_timeout_seconds, 'max_page_bytes': settings.fact_research_max_page_bytes,
+                   'ttl_days': settings.fact_research_ttl_days},
+        'runs': [{'id': r.id, 'mode': r.mode, 'provider': r.provider, 'status': r.status, 'queries': json.loads(r.queries_json or '[]'),
+                  'domains': json.loads(r.domains_json or '[]'), 'notes': json.loads(r.notes_json or '{}'), 'pages_found': r.pages_found,
+                  'pages_fetched': r.pages_fetched, 'candidate_count': r.candidate_count, 'estimated_cost': r.estimated_cost,
+                  'actual_cost': r.actual_cost, 'error': r.error, 'created_at': r.created_at, 'finished_at': r.finished_at} for r in runs],
+        'snapshot': snapshot,
+        'snapshot_pending': sorted(c['id'] for c in candidates if c['status'] == 'approved_for_content') != sorted(
+            f.get('candidate_id') for f in snapshot.get('facts') or []),
+        'counts': {status: sum(1 for c in candidates if c['status'] == status) for status in
+                   ('discovered', 'candidate', 'conflict', 'confirmed', 'approved_for_content', 'rejected', 'stale', 'research_only')},
+    }
+    out.update(_research_estimate(p, 'official_research', [], False))
+    return out
+
+
+@app.put('/api/projects/{project_id}/fact-research/mode')
+def fact_research_mode(project_id: str, payload: FactModeIn, db: Session = Depends(get_db), user=Depends(require_perm('fact_research.run'))):
+    from app.fact_research import MODES
+    p = _project_or_404(db, project_id)
+    require_project_edit(p, user)
+    if payload.mode not in MODES:
+        raise HTTPException(400, 'Режим: strict, official_research або research_only')
+    p.fact_research_mode = payload.mode
+    audit(db, user, 'fact_research.mode', 'project', p.id, {'mode': payload.mode}); db.commit()
+    return {'mode': p.fact_research_mode}
+
+
+@app.post('/api/projects/{project_id}/fact-research/estimate')
+def fact_research_estimate(project_id: str, payload: FactResearchIn, db: Session = Depends(get_db), user=Depends(require_perm('fact_research.run'))):
+    p = _project_or_404(db, project_id)
+    return _research_estimate(p, payload.mode, [u for u in payload.urls if u.strip()], payload.use_llm)
+
+
+@app.post('/api/projects/{project_id}/fact-research')
+def fact_research_start(project_id: str, payload: FactResearchIn, db: Session = Depends(get_db), user=Depends(require_perm('fact_research.run'))):
+    """Лише явна дія оператора. Без FACT_RESEARCH_ENABLED і в режимі strict - відмова."""
+    from app.fact_sources import FetchBlocked, validate_research_url
+    if not settings.fact_research_enabled:
+        raise HTTPException(409, 'Дослідження фактів вимкнено адміністратором (FACT_RESEARCH_ENABLED=false)')
+    if payload.mode not in ('official_research', 'research_only'):
+        raise HTTPException(400, 'Режим strict не використовує інтернет - оберіть official_research або research_only')
+    p = _project_or_404(db, project_id)
+    require_project_edit(p, user)
+    if not (p.product_json or '').strip('{} '):
+        raise HTTPException(409, 'Спершу дочекайтесь витягу характеристик зі сторінки товару')
+    urls = []
+    for raw in payload.urls:
+        if not raw.strip():
+            continue
+        try:
+            urls.append(validate_research_url(raw))
+        except FetchBlocked as exc:
+            raise HTTPException(400, f'URL відхилено: {exc}')
+    check_action(user.id, 'fact_research', 3)
+    db.scalar(select(Project.id).where(Project.id == p.id).with_for_update())
+    active = db.scalar(select(FactResearchRun.id).where(FactResearchRun.project_id == p.id, FactResearchRun.status.in_(('queued', 'running'))))
+    if active:
+        raise HTTPException(409, 'Дослідження вже виконується - дочекайтесь завершення або скасуйте його')
+    plan = _research_estimate(p, payload.mode, urls, payload.use_llm)
+    if not plan['provider_ready'] and not urls:
+        raise HTTPException(409, plan['provider_note'] or 'Пошуковий провайдер недоступний - додайте офіційні URL вручну')
+    if plan['estimate']['total_usd'] > 0:
+        check_budget(); check_user_budget(user)
+    run = FactResearchRun(project_id=p.id, mode=payload.mode, provider=plan['provider'] if plan['provider_ready'] else 'manual',
+                          status='queued', estimated_cost=plan['estimate']['total_usd'], started_by=user.id,
+                          domains_json=json.dumps(plan['domains']),
+                          params_json=json.dumps({'urls': urls, 'official_domains': _clean_domains(payload.official_domains),
+                                                  'distributor_domains': _clean_domains(payload.distributor_domains),
+                                                  'use_llm': bool(payload.use_llm)}))
+    p.fact_research_mode = payload.mode
+    db.add(run); db.flush()
+    audit(db, user, 'fact_research.run', 'project', p.id, {'run': run.id, 'mode': payload.mode, 'provider': run.provider,
+                                                           'urls': len(urls), 'estimate': run.estimated_cost})
+    db.add(Event(project_id=p.id, stage='facts', message=f'{user.email}: дослідження фактів ({payload.mode}) поставлено в чергу, '
+                                                         f'оцінка ${run.estimated_cost:.4f}'))
+    db.commit()
+    run_fact_research.delay(run.id)
+    return {'id': run.id, 'status': run.status, 'estimate': plan['estimate']}
+
+
+@app.post('/api/projects/{project_id}/fact-research/cancel')
+def fact_research_cancel(project_id: str, payload: FactCancelIn, db: Session = Depends(get_db), user=Depends(require_perm('fact_research.run'))):
+    p = _project_or_404(db, project_id)
+    query = select(FactResearchRun).where(FactResearchRun.project_id == p.id, FactResearchRun.status.in_(('queued', 'running')))
+    if payload.run_id:
+        query = query.where(FactResearchRun.id == payload.run_id)
+    rows = db.scalars(query.with_for_update()).all()
+    for run in rows:
+        run.status = 'cancelled'
+        run.finished_at = datetime.utcnow()
+    audit(db, user, 'fact_research.cancel', 'project', p.id, {'runs': [r.id for r in rows]}); db.commit()
+    return {'cancelled': len(rows)}
+
+
+@app.get('/api/projects/{project_id}/fact-candidates')
+def fact_candidates(project_id: str, run_id: str = '', db: Session = Depends(get_db), user=Depends(require_perm('fact_research.run', 'fact_research.review'))):
+    p = _project_or_404(db, project_id)
+    if mark_stale_candidates(db, p.id):
+        db.commit()
+    rows = candidate_rows(db, p.id)
+    return [r for r in rows if not run_id or r['research_run_id'] == run_id]
+
+
+@app.post('/api/projects/{project_id}/fact-candidates/{candidate_id}/decision')
+def fact_candidate_decision(project_id: str, candidate_id: str, payload: FactDecisionIn, db: Session = Depends(get_db),
+                            user=Depends(require_perm('fact_research.review'))):
+    """approve -> approved_for_content; confirm -> confirmed (перевірено, але не для контенту); reject."""
+    from app.fact_research import can_decide
+    p = _project_or_404(db, project_id)
+    c = db.scalar(select(FactCandidate).where(FactCandidate.id == candidate_id, FactCandidate.project_id == p.id).with_for_update())
+    if not c:
+        raise HTTPException(404, 'Кандидата не знайдено')
+    error = can_decide(candidate_dict_row(c), payload.decision, payload.comment)
+    if error:
+        raise HTTPException(400, error)
+    previous = c.status
+    c.status = {'approve': 'approved_for_content', 'confirm': 'confirmed', 'reject': 'rejected'}[payload.decision]
+    c.decision_comment, c.decided_by, c.decided_at = payload.comment.strip(), user.id, datetime.utcnow()
+    resolved = 0
+    if payload.decision == 'approve' and c.conflict_group:
+        # Конфлікт розвʼязує людина: інші значення тієї ж групи відхиляються з поясненням.
+        for other in db.scalars(select(FactCandidate).where(FactCandidate.project_id == p.id, FactCandidate.conflict_group == c.conflict_group,
+                                                             FactCandidate.id != c.id, FactCandidate.status.in_(('conflict', 'candidate', 'confirmed', 'discovered')))).all():
+            other.status, other.decided_by, other.decided_at = 'rejected', user.id, datetime.utcnow()
+            other.decision_comment = f'Конфлікт розвʼязано на користь «{c.value}» ({c.source_domain}): {payload.comment.strip()[:200]}'
+            resolved += 1
+    audit(db, user, 'fact_research.decision', 'project', p.id, {'candidate': c.id, 'decision': payload.decision, 'from': previous,
+                                                                'fact_path': c.fact_path, 'resolved': resolved})
+    db.add(Event(project_id=p.id, stage='facts', message=f'{user.email}: «{c.label}: {c.value}» - {c.status}'
+                                                         + (f' ({payload.comment.strip()[:120]})' if payload.comment.strip() else '')))
+    db.commit()
+    return candidate_dict_row(c) | {'resolved_conflicts': resolved}
+
+
+@app.post('/api/projects/{project_id}/fact-research/apply')
+def fact_research_apply(project_id: str, db: Session = Depends(get_db), user=Depends(require_perm('fact_research.review'))):
+    """Знімок approved_for_content -> project. Генерація не запускається - це окрема платна дія."""
+    from app.fact_research import ProductIdentity, build_snapshot
+    p = _project_or_404(db, project_id)
+    mark_stale_candidates(db, p.id)
+    rows = candidate_rows(db, p.id)
+    open_conflicts = [r for r in rows if r['status'] == 'conflict' and not r['decided_at']]
+    if open_conflicts:
+        raise HTTPException(409, f'Спершу розвʼяжіть конфлікти фактів ({len(open_conflicts)})')
+    product = json.loads(p.product_json or '{}') or {}
+    snapshot = build_snapshot(rows, ProductIdentity.from_product(product), by=user.email, ttl_days=settings.fact_research_ttl_days)
+    p.approved_external_facts_json = json.dumps(snapshot, ensure_ascii=False)
+    audit(db, user, 'fact_research.apply', 'project', p.id, {'version': snapshot['version'], 'facts': len(snapshot['facts'])})
+    db.add(Event(project_id=p.id, stage='facts', message=f'{user.email}: знімок утверджених фактів v{snapshot["version"]} - {len(snapshot["facts"])} фактів'))
+    _free_audit(db, p)
+    db.commit()
+    return snapshot
+
+
 class FindingDecisionIn(BaseModel):
     state: str = Field(default='open', max_length=16)
     comment: str = Field(default='', max_length=2000)
@@ -4121,6 +4352,10 @@ def _secrets_view():
         'local_base_url': cfg.get('local_base_url', ''),
         'local_api_key': mask(cfg.get('local_api_key', '')),
         'local_text_models': cfg.get('local_text_models', ''),
+        'firecrawl_api_key': mask(cfg.get('firecrawl_api_key', '')),
+        'firecrawl_api_key_source': cfg.get('firecrawl_api_key_source', 'none'),
+        'fact_research_enabled': bool(settings.fact_research_enabled),
+        'fact_search_provider': settings.fact_search_provider,
     }
 
 
@@ -4199,7 +4434,7 @@ def put_secrets(body: SecretsIn, db: Session = Depends(get_db), user=Depends(req
         values['local_base_url'] = url
     if body.local_text_models is not None:
         values['local_text_models'] = body.local_text_models.strip()[:500]
-    for field in ('openai_api_key', 'gemini_api_key', 'openrouter_api_key', 'local_api_key'):
+    for field in ('openai_api_key', 'gemini_api_key', 'openrouter_api_key', 'local_api_key', 'firecrawl_api_key'):
         raw = getattr(body, field)
         if raw is None:
             continue

@@ -9,7 +9,7 @@ from sqlalchemy import delete, func, select, update
 from app.celery_app import celery
 from app.config import DEFAULT_IMAGE_PRICING, DEFAULT_TEXT_PRICING, settings
 from app.db import SessionLocal
-from app.models import Artifact, Asset, CriticReport, Event, Palette, Project, Status, Style
+from app.models import Artifact, Asset, CriticReport, Event, FactCandidate, FactResearchRun, Palette, Project, Status, Style
 from app.limits import add_spend, add_user_spend
 from app.media import media_url
 from app.artline_standard import apply_artline_standard
@@ -367,6 +367,158 @@ def recategorize_projects(project_ids: list[str] | None = None) -> dict:
     return {'changed': changed, 'skipped': skipped, 'failed': failed}
 
 
+def load_snapshot(project) -> dict:
+    try:
+        value = json.loads(getattr(project, 'approved_external_facts_json', '') or '{}')
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+
+def candidate_dict_row(c) -> dict:
+    return {k: getattr(c, k) for k in (
+        'id', 'research_run_id', 'fact_path', 'label', 'value', 'normalized_value', 'unit', 'original_value', 'kind',
+        'product_brand', 'product_model', 'sku', 'revision', 'region', 'source_url', 'source_domain', 'source_type',
+        'source_tier', 'source_title', 'source_date', 'retrieved_at', 'evidence_excerpt', 'evidence_locator',
+        'page_content_hash', 'identity_status', 'identity_score', 'extractor', 'confidence', 'status', 'conflict_group',
+        'decision_comment', 'decided_by', 'decided_at', 'created_at')} | {'identity_notes': json.loads(c.identity_notes_json or '[]')}
+
+
+def candidate_rows(db, project_id: str) -> list[dict]:
+    rows = db.scalars(select(FactCandidate).where(FactCandidate.project_id == project_id).order_by(FactCandidate.created_at)).all()
+    return [candidate_dict_row(c) for c in rows]
+
+
+def mark_stale_candidates(db, project_id: str) -> int:
+    """TTL: старі докази стають stale і без повторного підтвердження в контент не йдуть."""
+    from app.fact_research import is_stale
+    count = 0
+    for c in db.scalars(select(FactCandidate).where(FactCandidate.project_id == project_id,
+                                                     FactCandidate.status.in_(('candidate', 'confirmed', 'approved_for_content', 'conflict', 'discovered')))).all():
+        if is_stale(c.retrieved_at, settings.fact_research_ttl_days):
+            c.status = 'stale'
+            count += 1
+    return count
+
+
+def search_provider(manual_urls: list | None = None):
+    """Провайдер за налаштуваннями. Ключ - з runtime (шифрований), у логи не потрапляє."""
+    from app.fact_research import DisabledSearchProvider, FirecrawlSearchProvider, ManualUrlProvider
+    from app.runtime import runtime_config
+    name = (settings.fact_search_provider or 'disabled').lower()
+    if name == 'firecrawl':
+        return FirecrawlSearchProvider(runtime_config().get('firecrawl_api_key', ''), settings.firecrawl_usd_per_credit,
+                                       settings.fact_research_timeout_seconds)
+    if name == 'manual':
+        return ManualUrlProvider(manual_urls or [])
+    return DisabledSearchProvider()
+
+
+@celery.task(bind=True, max_retries=0, acks_late=True)
+def run_fact_research(self, run_id: str):
+    """Окрема задача дослідження. Не чіпає process_project і готові артефакти:
+    пише лише запуск і кандидатів. Ідемпотентна: повторна доставка не створює
+    дублікатів (ключ кандидата унікальний у проєкті), скасований запуск зупиняється."""
+    from app.fact_research import PageFetcher, execute_research
+    with SessionLocal() as db:
+        run = db.scalar(select(FactResearchRun).where(FactResearchRun.id == run_id).with_for_update())
+        if not run:
+            return
+        delivery = getattr(self.request, 'delivery_info', None) or {}
+        redelivered = bool(delivery.get('redelivered'))
+        if run.status != 'queued' and not (run.status == 'running' and redelivered):
+            logger.info('Fact research %s skipped in status %s', run_id, run.status)
+            return {'skipped': run.status}
+        project = db.get(Project, run.project_id)
+        if not project:
+            run.status, run.error = 'failed', 'Проєкт не знайдено'
+            db.commit()
+            return
+        run.status = 'running'
+        run.started_at = now()
+        db.commit()
+        params = json.loads(run.params_json or '{}')
+        product = json.loads(project.product_json or '{}') or {}
+        brief = json.loads(project.seo_brief_json or '{}') or {}
+        provider = search_provider(params.get('urls'))
+        existing = {c.candidate_key for c in db.scalars(select(FactCandidate).where(FactCandidate.project_id == project.id)).all()}
+        known_hashes = {}
+        for c in db.scalars(select(FactCandidate).where(FactCandidate.project_id == project.id)).all():
+            known_hashes.setdefault(c.source_url, c.page_content_hash)
+
+        def cancelled() -> bool:
+            db.expire(run, ['status'])
+            return run.status == 'cancelled'
+
+        fetcher = PageFetcher(max_bytes=settings.fact_research_max_page_bytes, timeout=settings.fact_research_timeout_seconds)
+        llm_model = (project.text_model or settings.openai_text_model) if params.get('use_llm') else ''
+        try:
+            outcome = execute_research(product, run.mode, provider, fetcher, brief=brief,
+                                       official_domains=params.get('official_domains'), distributor_domains=params.get('distributor_domains'),
+                                       manual_urls=params.get('urls'), max_queries=settings.fact_research_max_queries,
+                                       max_pages=settings.fact_research_max_pages, existing_keys=set(existing),
+                                       known_hashes=known_hashes, llm_model=llm_model, cancelled=cancelled)
+        except Exception as exc:
+            db.rollback()
+            run = db.get(FactResearchRun, run_id)
+            run.status, run.finished_at = 'failed', now()
+            secret = getattr(provider, '_key', '')
+            from app.fact_research import scrub_secret
+            run.error = scrub_secret(str(exc), secret)[:500]
+            db.commit()
+            logger.warning('Fact research %s failed: %s', run_id, type(exc).__name__)
+            return
+        if cancelled():
+            run.finished_at = now()
+        for url in outcome.changed_pages:
+            for c in db.scalars(select(FactCandidate).where(FactCandidate.project_id == project.id, FactCandidate.source_url == url,
+                                                             FactCandidate.status != 'rejected')).all():
+                c.status = 'stale'
+                c.decision_comment = 'Документ джерела змінився після отримання доказу - потрібне повторне підтвердження'
+        added = 0
+        for cand in outcome.candidates:
+            key = cand.key()
+            if key in existing:
+                continue
+            existing.add(key)
+            db.add(FactCandidate(
+                research_run_id=run.id, project_id=project.id, candidate_key=key, fact_path=cand.fact_path, label=cand.label,
+                value=cand.value, normalized_value=cand.normalized_value, unit=cand.unit, original_value=cand.original_value,
+                kind=cand.kind, product_brand=cand.product_brand, product_model=cand.product_model, sku=cand.sku,
+                revision=cand.revision, region=cand.region, source_url=cand.source_url, source_domain=cand.source_domain,
+                source_type=cand.source_type, source_tier=cand.source_tier, source_title=cand.source_title,
+                retrieved_at=cand.retrieved_at, evidence_excerpt=cand.evidence_excerpt, evidence_locator=cand.evidence_locator,
+                page_content_hash=cand.page_content_hash, identity_status=cand.identity_status, identity_score=cand.identity_score,
+                identity_notes_json=json.dumps(cand.identity_notes, ensure_ascii=False), extractor=cand.extractor,
+                confidence=cand.confidence, status=cand.status, conflict_group=cand.conflict_group,
+                decision_comment=cand.decision_comment))
+            added += 1
+        rate_in, rate_out = text_rate(llm_model) if llm_model else (0, 0)
+        credits = getattr(provider, 'credits_used', 0)
+        cost = round(credits * getattr(provider, 'usd_per_credit', 0)
+                     + (outcome.llm_input_tokens * rate_in + outcome.llm_output_tokens * rate_out) / 1_000_000, 6)
+        run.queries_json = json.dumps(outcome.queries, ensure_ascii=False)
+        run.domains_json = json.dumps(outcome.domains, ensure_ascii=False)
+        run.notes_json = json.dumps({'skipped': outcome.skipped[:40], 'injection_pages': outcome.injection_pages[:20],
+                                     'changed_pages': list(outcome.changed_pages)[:20]}, ensure_ascii=False)
+        run.pages_found, run.pages_fetched, run.candidate_count = outcome.pages_found, outcome.pages_fetched, added
+        run.actual_cost = cost
+        if run.status != 'cancelled':
+            run.status = 'review' if added else 'completed'
+        run.finished_at = now()
+        if cost:
+            add_spend(cost, operation_id=f'fact-research:{run.id}')
+            add_user_spend(run.started_by or '', cost, operation_id=f'fact-research:{run.id}')
+            bill_extra(db, project, cost)
+        db.add(Event(project_id=project.id, stage='facts',
+                     message=f'Дослідження фактів ({run.mode}): документів {outcome.pages_fetched} із {outcome.pages_found}, '
+                             f'нових кандидатів {added}, вартість ${cost:.4f}'
+                             + (f'; інструкції в джерелах проігноровано ({len(outcome.injection_pages)})' if outcome.injection_pages else ''),
+                     level='warning' if outcome.injection_pages else 'info'))
+        db.commit()
+        return {'candidates': added, 'cost': cost}
+
+
 def record_seo_history(project, reports: list, version: int = 0, limit: int = 60) -> None:
     """Історія оцінок SEO/GEO/human/language: порівняння між прогонами й версіями."""
     try:
@@ -485,6 +637,11 @@ def process_project(self, project_id, reuse_images=False):
                                             source='auto', manual={k: v for k, v in seo_brief.items() if k in ('market', 'audience', 'search_intent', 'forbidden_claims', 'publishing_profile_id') and v})
                 seo_brief['source'] = 'auto'
             project.seo_brief_json = json.dumps(seo_brief, ensure_ascii=False)
+            # Утверджені людиною зовнішні факти - лише зі збереженого знімка. Повторний
+            # запуск НЕ шукає в інтернеті і не змінює факти; застарілі (TTL) відсіює промпт.
+            external_snapshot = load_snapshot(project)
+            if (external_snapshot or {}).get('facts'):
+                log(db, project, 'extract', f'Утверджених зовнішніх фактів у знімку: {len(external_snapshot["facts"])} (версія {external_snapshot.get("version")})', 16)
             detected_name = str(product.get('name') or title or '').strip()
             if detected_name:
                 project.name = decode_entities(detected_name)[:200]
@@ -889,7 +1046,7 @@ def process_project(self, project_id, reuse_images=False):
                             rich_html, generated_in, generated_out, fallback_reason = generate_html(
                                 product, style, master_language, variant, hero, feature, project.text_model, gallery=page_gallery, rotation=rotation_frames,
                                 palette=_project_palette(project), video=getattr(project, 'video_url', '') or '', video_product=product_name,
-                                theme=page_theme, brief=seo_brief, company=company_profile,
+                                theme=page_theme, brief=seo_brief, company=company_profile, external=external_snapshot,
                             )
                             added_input += generated_in
                             added_output += generated_out
@@ -961,7 +1118,7 @@ def process_project(self, project_id, reuse_images=False):
                             # template, whose structure is identical for all languages.
                             rich_html, added_input, added_output, fallback_reason = generate_html(
                                 product, style, language, variant, hero, feature, project.text_model, gallery=page_gallery, rotation=rotation_frames,
-                                palette=_project_palette(project), theme=page_theme, brief=seo_brief, company=company_profile,
+                                palette=_project_palette(project), theme=page_theme, brief=seo_brief, company=company_profile, external=external_snapshot,
                             )
                             if fallback_reason and settings.openai_api_key:
                                 fallback_hits.append(f'{language.upper()}/{variant}: {fallback_reason}')
@@ -1024,7 +1181,8 @@ def process_project(self, project_id, reuse_images=False):
             # Безкоштовна перша лінія: html/facts/accessibility/marketing + нові
             # детерміновані seo/geo/human/language зі структурованими знахідками.
             log(db, project, 'review', 'Перевірка тексту: факти, SEO, GEO, людський текст, мова', 95)
-            free_reports = free_critic_reports(latest, product, seo_brief, company_profile)
+            free_reports = free_critic_reports(latest, product, seo_brief, company_profile,
+                                               external=external_snapshot, candidates=candidate_rows(db, project.id))
             for report in free_reports:
                 db.add(CriticReport(project_id=project.id, critic_type=report['type'], score=report['score'], summary=report['summary'],
                                     issues_json=json.dumps(report['issues'], ensure_ascii=False),

@@ -28,12 +28,14 @@ PERMISSIONS = {
     'settings.view': 'Бачити налаштування',
     'users.manage': 'Керувати користувачами та доступами',
     'profile.manage': 'Керувати Publishing Profile (перевірені факти компанії для публічних сторінок)',
+    'fact_research.run': 'Запускати пошук фактів про товар в інтернеті (платно, лише кандидати)',
+    'fact_research.review': 'Підтверджувати або відхиляти знайдені факти про товар',
 }
 
 ROLE_DEFAULTS = {
     Role.admin: set(PERMISSIONS),
-    Role.editor: {'project.create', 'project.delete', 'project.edit_html', 'review.request_changes', 'style.manage', 'media.view', 'usage.view', 'settings.view', 'profile.manage'},
-    Role.reviewer: {'review.request_changes', 'review.approve'},
+    Role.editor: {'project.create', 'project.delete', 'project.edit_html', 'review.request_changes', 'style.manage', 'media.view', 'usage.view', 'settings.view', 'profile.manage', 'fact_research.run', 'fact_research.review'},
+    Role.reviewer: {'review.request_changes', 'review.approve', 'fact_research.review'},
     Role.viewer: {'media.view'},
 }
 

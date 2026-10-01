@@ -1154,3 +1154,13 @@ tr.is-updated td{animation:rowFlash 1.6s var(--ease-out)}
 .seo-history th,.seo-history td{padding:4px 6px;border-bottom:1px solid var(--color-border);text-align:left}
 .seo-history td.num{text-align:right}
 .check.sm{font-size:var(--fs-xs)}
+
+/* --- Дослідження фактів ------------------------------------------------------- */
+.fact-gaps{display:grid;gap:4px;margin:6px 0 12px;padding-left:18px}
+.fact-form{display:grid;gap:10px;margin-top:12px}
+.fact-table td{vertical-align:top;font-size:var(--fs-sm)}
+.fact-table .finding-quote{margin:0;max-width:340px}
+.fact-table tr.fact-conflict{background:var(--color-danger-soft,#FDECEC)}
+.fact-table tr.fact-approved_for_content{background:var(--color-success-soft,#EAF7EF)}
+.fact-table tr.fact-rejected,.fact-table tr.fact-stale,.fact-table tr.fact-research_only{opacity:.7}
+.fact-status{display:inline-block;padding:1px 8px;border-radius:var(--radius-pill);border:1px solid var(--color-border);font-size:var(--fs-xs);font-weight:700}

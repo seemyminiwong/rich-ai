@@ -3771,9 +3771,9 @@ POST_GENERATION_GUARANTEES = [
 ]
 
 
-def build_prompt(product, style, language='ua', variant='desktop', hero='', feature='', gallery=None, theme='mixed', brief=None, company=None):
+def build_prompt(product, style, language='ua', variant='desktop', hero='', feature='', gallery=None, theme='mixed', brief=None, company=None, external=None):
     """Публічна обгортка _prompt для dry-run: точний текст, що піде в модель."""
-    return _prompt(product, style, language, variant, hero, feature, gallery, theme, brief, company)
+    return _prompt(product, style, language, variant, hero, feature, gallery, theme, brief, company, external)
 
 
 def _golden_example(style) -> str:
@@ -3805,12 +3805,13 @@ def _style_text_for(prompt: str, variant: str) -> str:
     return text if variant == 'mobile' else strip_mobile_layout(text)
 
 
-def _prompt(product, style, language, variant, hero, feature, gallery=None, theme='mixed', brief=None, company=None):
+def _prompt(product, style, language, variant, hero, feature, gallery=None, theme='mixed', brief=None, company=None, external=None):
     """Промпт генерації. Три джерела передаються ОКРЕМО і не змішуються:
     PRODUCT FACTS (лише підтверджені характеристики), SEO BRIEF (пошуковий
     контекст, не факти), VERIFIED COMPANY FACTS (про продавця, не про товар)."""
     from app.prompts import HUMAN_COPY_CONTRACT, SOURCE_BOUNDARY_RULES
     from app.seo_geo import company_facts_block, confirmed_only, seo_brief_block
+    from app.fact_research import external_facts_block
     facts = confirmed_only(product or {})
     layout = 'single-column mobile layout with no horizontal overflow' if variant == 'mobile' else 'desktop layout up to 1240px'
     target_language_rule = language_rule(language)
@@ -3832,7 +3833,8 @@ Images: hero={hero}; feature={feature}.{_gallery_line(style, gallery)}
 {seo_brief_block(brief)}
 {company_facts_block(company, language)}
 PRODUCT FACTS
-Product JSON: {json.dumps(facts, ensure_ascii=False)}"""
+Product JSON: {json.dumps(facts, ensure_ascii=False)}
+{external_facts_block(external, settings.fact_research_ttl_days)}"""
 
 
 def _deterministic_html(product, style, language, variant, hero, feature):
@@ -4240,7 +4242,7 @@ def public_fallback_reason(exc: Exception) -> str:
     return f'внутрішня помилка генерації ({type(exc).__name__})'
 
 
-def generate_html(product, style, language, variant, hero, feature, model: str, gallery=None, rotation=None, palette: dict | None = None, video: str = '', video_product: str = '', theme: str = 'mixed', brief: dict | None = None, company: dict | None = None):
+def generate_html(product, style, language, variant, hero, feature, model: str, gallery=None, rotation=None, palette: dict | None = None, video: str = '', video_product: str = '', theme: str = 'mixed', brief: dict | None = None, company: dict | None = None, external: dict | None = None):
     """Return (html, input_tokens, output_tokens, fallback_reason).
 
     fallback_reason is '' when the AI response was used, otherwise a short reason
@@ -4253,7 +4255,7 @@ def generate_html(product, style, language, variant, hero, feature, model: str, 
     theme = normalize_theme(theme) if master else 'mixed'
     # Темна тема майстра вмикає ті самі темні FAQ і блок відео, що й темні стилі.
     dark_page = (getattr(style, 'name', '') or '') in DARK_STYLE_NAMES or theme == 'dark'
-    base_prompt = _prompt(product, style, language, variant, hero, feature, gallery, theme, brief, company)
+    base_prompt = _prompt(product, style, language, variant, hero, feature, gallery, theme, brief, company, external)
     try:
         response = _responses_create(model, base_prompt, 16000)
         output = _html_only(response.output_text)
@@ -4665,7 +4667,8 @@ def render_gate(artifacts) -> tuple:
 FREE_CRITIC_TYPES = ('html', 'facts', 'accessibility', 'marketing', 'seo', 'geo', 'human', 'language')
 
 
-def free_critic_reports(artifacts, product: dict, brief: dict | None = None, profile: dict | None = None) -> list:
+def free_critic_reports(artifacts, product: dict, brief: dict | None = None, profile: dict | None = None,
+                        external: dict | None = None, candidates: list | None = None) -> list:
     """Усі БЕЗКОШТОВНІ детерміновані перевірки одним списком звітів
     {type, score, summary, issues, suggestions, findings}. Перша лінія перед
     платним LLM-рецензентом і render gate; та сама функція для генерації,
@@ -4676,8 +4679,31 @@ def free_critic_reports(artifacts, product: dict, brief: dict | None = None, pro
         score, summary, issues, suggestions = critic_html(artifacts, kind, product)
         reports.append({'type': kind, 'score': score, 'summary': summary, 'issues': issues,
                         'suggestions': suggestions, 'findings': legacy_findings(kind, issues)})
-    reports.extend(run_rich_audits(artifacts, product, brief, profile))
+    # Утверджені зовнішні факти - такі самі підтверджені числа для GEO, як і Product JSON.
+    from app.fact_research import audit_external_facts
+    audit_product = with_external_facts(product, external)
+    reports.extend(run_rich_audits(artifacts, audit_product, brief, profile))
+    if (external or {}).get('facts') or candidates:
+        from app.seo_geo import report_from_findings
+        rows = audit_external_facts(artifacts, product, external, candidates or [], settings.fact_research_ttl_days)
+        score, summary, issues, suggestions = report_from_findings(rows)
+        reports.append({'type': 'external', 'score': score, 'summary': summary, 'issues': issues,
+                        'suggestions': suggestions, 'findings': rows})
     return reports
+
+
+def with_external_facts(product: dict, external: dict | None) -> dict:
+    """Product для перевірок: утверджені зовнішні факти додаються як evidence
+    (джерело - документ виробника) і як external_facts для комерційних правил."""
+    facts = (external or {}).get('facts') or []
+    if not facts:
+        return product
+    merged = dict(product or {})
+    merged['evidence'] = list((product or {}).get('evidence') or []) + [
+        {'id': f.get('id'), 'label': f.get('label'), 'value': f.get('value'), 'source_url': f.get('source_url'),
+         'source_type': f.get('source_type'), 'evidence': f.get('evidence_excerpt'), 'confidence': 'confirmed'} for f in facts]
+    merged['external_facts'] = [{'label': f.get('label'), 'value': f.get('value'), 'kind': f.get('kind')} for f in facts]
+    return merged
 
 
 def critic_html(artifacts, critic_type: str, product: dict, brief: dict | None = None, profile: dict | None = None):

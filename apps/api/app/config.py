@@ -102,6 +102,18 @@ class Settings(BaseSettings):
     daily_budget_usd: float = 25.0
     # Optional failure alerts. Telegram: token + chat id. Webhook: any URL that
     # accepts a JSON POST {"text": ...}. Empty values disable alerts silently.
+    # Пошук фактів про товар в інтернеті (вкладка «Факти»). Типово вимкнено:
+    # без явного дозволу адміністратора контур не робить жодного мережевого запиту.
+    fact_research_enabled: bool = False
+    # disabled | manual | firecrawl. manual - лише URL, які додав оператор.
+    fact_search_provider: str = 'disabled'
+    firecrawl_api_key: str = ''
+    firecrawl_usd_per_credit: float = 0.0025
+    fact_research_max_queries: int = 6
+    fact_research_max_pages: int = 12
+    fact_research_timeout_seconds: int = 30
+    fact_research_max_page_bytes: int = 8_000_000
+    fact_research_ttl_days: int = 180
     telegram_bot_token: str = ''
     telegram_chat_id: str = ''
     alert_webhook_url: str = ''

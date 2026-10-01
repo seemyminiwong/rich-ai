@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # Values with these keys are encrypted at rest. Non-secret settings (provider
 # choice, model name) stay readable - encrypting them buys nothing and makes
 # debugging blind.
-SECRET_KEYS = ('openai_api_key', 'gemini_api_key', 'openrouter_api_key', 'local_api_key')
+SECRET_KEYS = ('openai_api_key', 'gemini_api_key', 'openrouter_api_key', 'local_api_key', 'firecrawl_api_key')
 _ENC_PREFIX = 'enc:v1:'
 
 
@@ -67,6 +67,8 @@ RUNTIME_KEYS = {
     'local_base_url': 'local_llm_base_url',
     'local_api_key': None,
     'local_text_models': 'local_llm_models',
+    # Ключ пошукового провайдера фактів: секрет, шифрується, назовні лише маска.
+    'firecrawl_api_key': 'firecrawl_api_key',
 }
 
 DEFAULTS = {
