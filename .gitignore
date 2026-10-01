@@ -10,3 +10,4 @@ backups/
 graphify-out/
 _clone/
 build/
+.lighthouseci/

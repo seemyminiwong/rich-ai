@@ -2885,7 +2885,10 @@ def test_render_gate_measures_the_laid_out_page_not_the_markup():
         shutil.which('chromium'), shutil.which('chromium-browser')) if p and Path(p).exists()), None)
     if not chrome:
         return  # без браузера перевіряємо лише контракт (див. тест нижче)
-    from playwright.sync_api import sync_playwright
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return  # Chromium є, а Playwright ні (job checks у CI): лише контракт, як і без браузера
 
     defects = {
         'low-contrast': '<section style="background:#FFFFFF;padding:20px"><p style="color:#9AA3AB;font-size:15px">Сірий підпис</p></section>',

@@ -10,6 +10,9 @@ on:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    env:
+      # app.main створює MEDIA_DIR при імпорті; типовий /app/media на раннері недоступний.
+      MEDIA_DIR: /tmp/ci-media
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -47,18 +50,18 @@ jobs:
         run: python scripts/check_no_hardcoded_claims.py
       - name: Build fixtures and check head, JSON-LD, UA/PL/EN metadata, draft noindex, published canonical/hreflang
         run: python scripts/build_seo_fixtures.py --check
+      # Lychee ставиться напряму: архів v0.24.x кладе бінарник у підкаталог,
+      # і lychee-action його не знаходить. Версія зафіксована тут і в SOURCES.lock.
+      - name: Install Lychee v0.24.2
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz --strip-components=1 -C "$HOME/.local/bin" lychee-x86_64-unknown-linux-gnu/lychee
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Lychee - documentation links
-        uses: lycheeverse/lychee-action@v2.4.1
-        with:
-          lycheeVersion: v0.24.2
-          args: "--config lychee.toml README.md CHANGELOG.md SECURITY.md docs/*.md scripts/seo_research/README.md"
-          fail: true
-      - name: "Lychee - exported landing fixtures (offline, local links only)"
-        uses: lycheeverse/lychee-action@v2.4.1
-        with:
-          lycheeVersion: v0.24.2
-          args: "--config lychee.toml --offline 'build/seo-fixtures/**/*.html'"
-          fail: true
+        run: lychee --config lychee.toml README.md CHANGELOG.md SECURITY.md docs/*.md scripts/seo_research/README.md
+      - name: Lychee - exported landing fixtures (offline, local links only)
+        run: lychee --config lychee.toml --offline 'build/seo-fixtures/**/*.html'
       - uses: actions/setup-node@v4
         with:
           node-version: '20'

@@ -228,6 +228,6 @@ PYTHONPATH=apps/api pytest -q tests
 
 ## Контакти
 
-- Питання й ідеї — [Discussions](https://github.com/seemyminiwong/rich-ai/discussions).
+- Питання й ідеї — [Issues](https://github.com/seemyminiwong/rich-ai/issues).
 - Комерційна ліцензія та співпраця — через профіль автора: [github.com/seemyminiwong](https://github.com/seemyminiwong).
 - Знайшли вразливість — не створюйте публічний issue: [SECURITY.md](SECURITY.md).
