@@ -105,7 +105,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': 'Length is a guide, not a rule' in prompts and '250-450 words' in prompts and '400-700' in prompts and '350-600 words' not in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.74"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.75"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 3 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -165,7 +165,7 @@ checks = {
     'root admin protected': 'def is_root_admin' in main and 'Пароль головного адміністратора' in main and 'Головного адміністратора видалити не можна' in main and 'u.is_root' in web,
 
     # --- v12 foundation ---
-    'single version source': '__version__ = "12.11"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
+    'single version source': '__version__ = "12.12"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
     'no version in the product UI': all(s not in (root / 'apps/web/index.html').read_text(encoding='utf-8') for s in ('Studio v', 'v12')) and 'state.version' not in web and 'BASE_STYLE_VERSION' not in main,
     'cache busting kept': '?b=' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
     'openai retries': 'def _with_retry' in pipeline and '_with_retry(lambda: api.responses.create' in pipeline and '_with_retry(lambda: image_client().images.edit' in pipeline,

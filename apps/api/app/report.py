@@ -148,7 +148,7 @@ def build_problem_report(project: dict, *, critics: list[dict], decisions: dict,
     if radius:
         lines += ['## Радіуси поточних версій', '']
         if not any(radius.values()):
-            lines.append('Усі радіуси відповідають стандарту ARTLINE (зовнішні 14px, внутрішні 10-12px, пігулки 999px, з урахуванням масштабу схеми).')
+            lines.append('Усі радіуси відповідають стандарту ARTLINE (зовнішні 14px, внутрішні 10-12px, лейбли й чипи 8px, з урахуванням масштабу схеми).')
         for label, deviations in radius.items():
             if deviations:
                 lines.append(f'**{label}** - поза стандартом: {len(deviations)}')

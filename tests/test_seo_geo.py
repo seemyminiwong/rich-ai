@@ -541,8 +541,8 @@ def test_stacked_cards_in_a_transparent_wrapper_get_the_outer_radius():
     assert 'border-radius:14px;background:#1A2128;padding:20px">M.2' in out
     assert 'border-radius:14px;background:#FFFFFF' in out
     assert 'border-radius:12px;background:#fff">Внутрішня' in out          # картка в картці - 10-12
-    assert 'border-radius:999px;padding:6px 14px' in out                    # лейбл - бейдж-пігулка, не зовнішня поверхня
-    assert 'border-radius:999px' in out and 'src="/h.webp" style="border-radius:12px"' in out
+    assert 'border-radius:8px;padding:6px 14px' in out                      # лейбл - бейдж 8px, не зовнішня поверхня
+    assert 'border-radius:999px;background:#fff">M.2' in out and 'src="/h.webp" style="border-radius:12px"' in out  # без падінга - не бейдж
 
 
 def test_problem_report_is_markdown_for_triage_and_merges_variants():
@@ -577,9 +577,9 @@ def test_problem_report_is_markdown_for_triage_and_merges_variants():
     assert len(rows) == 3, rows                                            # 2 копії alt склеєно в одну
 
 
-def test_badges_and_chips_share_one_pill_shape():
-    """Скарга власника (2026-10-01, Qube G25F240S): лейбл «QUBE · МОНІТОР» був
-    прямокутником 8-10px поруч із круглими чипами «240Hz». Стандарт: бейджі - пігулки."""
+def test_badges_and_chips_share_one_8px_shape():
+    """Скарги власника (2026-10-01): спершу прямокутний лейбл поруч із круглими чипами,
+    потім - пігулки скрізь. Рішення: лейбли й чипи - один прямокутник 8px."""
     from app.artline_standard import apply_artline_standard, radius_deviations
     from app.pipeline import _finalize_showcase_layout
     page = ('<section><div style="border-radius:14px;background:#1A2128;padding:20px">'
@@ -587,14 +587,16 @@ def test_badges_and_chips_share_one_pill_shape():
             '<span style="display:inline-block;padding:7px 14px;border-radius:999px;background:#fff">240Hz</span>'
             '<div style="border-radius:12px;background:#fff;padding:12px"><h3>240Hz</h3><p>Плавність руху без розривів.</p></div></div>'
             '<div style="border-radius:14px;background:#F5F7FA;padding:20px"><h2>Яскравість</h2><p>400 cd/m² для денного світла.</p></div></section>')
-    assert any('бейдж 8px' in d for d in radius_deviations(page))
+    found = radius_deviations(page)
+    assert any('бейдж 999px' in d and '240Hz' in d for d in found)        # чип-пігулка - відхилення
+    assert not any('QUBE' in d for d in found)                            # лейбл 8px - уже норма
     out = apply_artline_standard(page)
-    assert 'border-radius:999px">QUBE' in out and radius_deviations(out) == []
+    assert 'border-radius:8px">QUBE' in out and 'border-radius:8px;background:#fff">240Hz' in out and radius_deviations(out) == []
     assert 'border-radius:12px;background:#fff;padding:12px' in out     # картка не стає пігулкою
     from app.prompts import SHOWCASE_STYLE_PROMPT
-    assert 'border:1px solid #19BCC9;border-radius:999px' in SHOWCASE_STYLE_PROMPT
+    assert 'border:1px solid #19BCC9;border-radius:8px' in SHOWCASE_STYLE_PROMPT and 'chips and badges 999px' not in SHOWCASE_STYLE_PROMPT
     pipeline = (Path(__file__).resolve().parents[1] / 'apps/api/app/pipeline.py').read_text(encoding='utf-8')
-    assert "'border:1px solid #19BCC9;border-radius:999px;box-sizing:border-box;'" in pipeline
+    assert "'border:1px solid #19BCC9;border-radius:8px;box-sizing:border-box;'" in pipeline
 
 
 def test_brand_model_label_repeated_by_design_is_not_a_duplicate_sentence():

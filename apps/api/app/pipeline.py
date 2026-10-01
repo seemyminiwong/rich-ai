@@ -2891,9 +2891,8 @@ def _finalize_showcase_layout(
 
     # Hero, feature eyebrows and Final Recap badge are one visual component.
     # Лейбл обіймає СВІЙ текст: фіксована ширина розтягувала капсулу і ламали
-    # текст на два рядки (жива скарга - бейдж героя). Форма - пігулка 999px, як
-    # чипи значень поруч: стандарт ARTLINE «badge pills 999px»; прямокутний лейбл
-    # біля круглих чипів власник двічі позначив як дефект радіусів (2026-10-01).
+    # текст на два рядки (жива скарга - бейдж героя). Форма - та сама, що в чипів
+    # значень поруч: заокруглений прямокутник 8px (рішення власника 2026-10-01).
     for index in (0, 2, 3, 6):
         if index >= len(blocks):
             continue
@@ -2904,7 +2903,7 @@ def _finalize_showcase_layout(
         label['style'] = (
             'display:inline-flex;align-items:center;justify-content:center;'
             'width:fit-content;max-width:100%;min-height:30px;padding:6px 14px;'
-            'border:1px solid #19BCC9;border-radius:999px;box-sizing:border-box;'
+            'border:1px solid #19BCC9;border-radius:8px;box-sizing:border-box;'
             'font-size:12px;line-height:1.3;font-weight:900;letter-spacing:.08em;text-transform:uppercase;'
             + ('color:#C9F0F4;background:rgba(26,33,40,.72)'
                if dark else 'color:#157985;background:#FFFFFF')
@@ -3716,7 +3715,7 @@ def _shrink_pills(markup: str) -> str:
             continue
         # Радіус уніфікуємо ЗАВЖДИ: раніше лейбл із власною шириною пропускався
         # цілком, і на одній сторінці сусідили капсула і прямокутник.
-        cleaned = _RADIUS_RE.sub('border-radius:999px', style, count=1)
+        cleaned = _RADIUS_RE.sub('border-radius:8px', style, count=1)
         has_width = bool(re.search(r'(?:^|;)\s*(?:max-|min-)?width\s*:', cleaned, flags=re.I))
         if not has_width:
             cleaned = re.sub(r'display\s*:[^;]+;?', '', cleaned, flags=re.I).rstrip().rstrip(';')

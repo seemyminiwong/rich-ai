@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.74"
+BASE_STYLE_VERSION = "12.75"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -24,7 +24,7 @@ ARTLINE_STANDARD = r'''ARTLINE STANDARD (shared by every ARTLINE style; it overr
 - Root: <section style="width:100%;margin:0;padding:0;font-family:'Montserrat','Segoe UI',Arial,sans-serif;color:#101010;box-sizing:border-box;"> - no max-width on the root; each major block carries its own padding.
 - Type scale, both devices: Hero h2 30px/1.12; every other h2 24px/1.25; h3 and subtitles 18px/1.4; body 16px/1.6; big technical values 26px/1.15; captions 14px/1.4; badges 12-13px. Nothing below 12px.
 - Weights: body 400-500; h3 and subtitles 700-800; h2 and values 900. Never 950.
-- Radius: outer blocks 14px; inner cards and frames 10-12px; badge pills 999px only where useful. Nothing rounder than 14px except pills.
+- Radius: outer blocks 14px; inner cards and frames 10-12px; badges, labels and chips 8px - one shape for all of them, never pills. Nothing rounder than 14px.
 - Canonical palette: dark #101010 / #1A2128; light #FFFFFF / #F5F7FA; borders #35393F on dark, #D0D7DE on light; text #101010 and #555555 on light, #FFFFFF and #D8DDE2 on dark. Accent #19BCC9 on dark and #157985 on light: badges, eyebrows, big values and thin borders only - never paragraphs, never a fill.
 - Casing: every h2 except the Hero title is uppercase, while brand, model and protocol spelling stays intact; h3 and subtitles are sentence case.
 - Punctuation: en dash (–) and hyphen (-) only. Never the em dash character and never &mdash;.
@@ -658,13 +658,13 @@ SHOWCASE DESIGN SYSTEM
 - Dark surfaces: #101010, #1A2128, #252525; dark border #35393F. Light surfaces: #FFFFFF, #F5F7FA; light border #D0D7DE.
 - Accent is ARTLINE cyan. For TEXT: #19BCC9 on dark surfaces, #157985 on light. For thin 1px borders and small glyphs (label borders, the FAQ toggle): #19BCC9 on any surface. Use it ONLY for eyebrow labels, big numeric values, label borders and the FAQ toggle. Never for paragraphs, never as a fill.
 - Body text: #555555 on light, #D0D7DE on dark. Headings: #101010 on light, #FFFFFF on dark.
-- Radii: one quiet base radius everywhere - outer sections 12px, inner cards 8-10px; chips and badges 999px (pills are part of this style). Generous padding, not big radii, carries the premium feel; apart from pills, a corner rounder than 12px is a defect.
+- Radii: one quiet base radius everywhere - outer sections 12px, inner cards 8-10px; chips and badges 8px (one shape for every label and chip, never pills). Generous padding, not big radii, carries the premium feel; apart from pills, a corner rounder than 12px is a defect.
 - Weights are heavy: h2 900-950, numeric values 950, chips 850-900. Section gap 18px, big-section padding 40-48px desktop / 22-26px mobile.
 - RHYTHM RULE: use this explicit full-width canvas sequence: Hero dark; Spec Strip neutral transition; Light Feature light; Dark Feature dark; Capability Trio light; Trust Split light outer canvas with one dark inner panel; Final Recap dark; FAQ light. Nested cards do not redefine the section canvas. Never improvise a different tone sequence.
 - Photography works only next to copy: every frame sits in a split or a card with text. When GALLERY_IMAGES offers fewer frames, drop photo slots instead of repeating an image.
 - FITTING RULE for gallery frames: most are studio renders of the product on a white background. Such frames must NEVER be cropped: use object-fit:contain inside a white card (background:#FFFFFF; border:1px solid #D0D7DE; radius 8-12px; padding:18-24px) with a fixed height, so the whole product stays visible. object-fit:cover is allowed only for frames that show a real environment filling the whole picture. An amputated product edge is a defect.
 - Inside dark sections a white-background frame still sits in a WHITE framed card - never bare on the dark canvas and never darkened.
-- SHARED SECTION LABEL: the Hero brand/category badge, every feature eyebrow and the Final Recap brand/model badge are one reusable component, never three improvised styles. Use display:inline-flex;align-items:center;justify-content:center;width:fit-content;max-width:100%;min-height:30px;padding:6px 14px;border:1px solid #19BCC9;border-radius:999px;box-sizing:border-box;font-size:12px;line-height:1.3;font-weight:900;letter-spacing:.08em;text-transform:uppercase. The label hugs its text and is NEVER stretched by the parent grid nor given a fixed width; long text stays on one line where the container allows it. On dark use color:#C9F0F4;background:rgba(26,33,40,.72); on light use color:#157985;background:#FFFFFF. Labels such as "QUBE · Монітор 23.8″", "Екранні характеристики" and "QUBE · V24F100-PLUS" must therefore have identical height, padding, border and typography.
+- SHARED SECTION LABEL: the Hero brand/category badge, every feature eyebrow and the Final Recap brand/model badge are one reusable component, never three improvised styles. Use display:inline-flex;align-items:center;justify-content:center;width:fit-content;max-width:100%;min-height:30px;padding:6px 14px;border:1px solid #19BCC9;border-radius:8px;box-sizing:border-box;font-size:12px;line-height:1.3;font-weight:900;letter-spacing:.08em;text-transform:uppercase. The label hugs its text and is NEVER stretched by the parent grid nor given a fixed width; long text stays on one line where the container allows it. On dark use color:#C9F0F4;background:rgba(26,33,40,.72); on light use color:#157985;background:#FFFFFF. Labels such as "QUBE · Монітор 23.8″", "Екранні характеристики" and "QUBE · V24F100-PLUS" must therefore have identical height, padding, border and typography.
 - EQUAL DESKTOP CARDS: every multi-column grid uses align-items:stretch. Its direct card children use height:100%;box-sizing:border-box. Capability cards additionally use display:flex;flex-direction:column, with equal-height image slots and copy padding below. Never let one text card float at a different height from its neighbours.
 
 SECTION SET, IN ORDER
@@ -673,17 +673,17 @@ SECTION SET, IN ORDER
 - THE FIRST CHILD of the wrapper is the hero asset as <img style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center"> - NO opacity on this img: the overlay below is the only darkening. Dimming the photo as well crushes a dark scene into a black rectangle - an IMG element, never a CSS background (background images do not survive the artline editor). A Hero without this img is an invalid page.
 - Above it one overlay div: position:absolute;inset:0;background:linear-gradient(90deg,rgba(16,16,16,.92) 0%,rgba(16,16,16,.55) 52%,rgba(16,16,16,0) 100%) - it must fade to FULLY TRANSPARENT on the side where the product stands, so the photo is plainly visible there. Mobile: same ramp at 180deg, dense at the bottom, transparent at the top over the product.
 - Content layer: position:relative;z-index:1;min-height:585px (mobile ~600px);padding:78px 46px 54px (mobile 420px 18px 26px);display:flex;align-items:center.
-- Inside, max-width:720px: the SHARED SECTION LABEL as the badge, one h2 60-64px/950 line-height .94 (mobile 34-38px), one bold subtitle 24-27px in #C9F0F4, one paragraph 16-17px #D0D7DE of 1-2 sentences (at most 220 characters), then a chip row of 3 white pills with the three strongest confirmed values.
+- Inside, max-width:720px: the SHARED SECTION LABEL as the badge, one h2 60-64px/950 line-height .94 (mobile 34-38px), one bold subtitle 24-27px in #C9F0F4, one paragraph 16-17px #D0D7DE of 1-2 sentences (at most 220 characters), then a chip row of 3 white 8px-radius chips with the three strongest confirmed values.
 - NAME APPEARS ONCE PER SECTION: the badge carries only the brand and product category (for example "DEYE · Гібридний інвертор"), the h2 carries the model exactly once. Badge text duplicating the h2 is a defect. The same rule applies to the final recap badge.
 - HERO TYPOGRAPHY: the h2 is BRAND + MODEL CODE only (for example "DEYE SUN-12K-SG05LP3-EU-SM2") - never the full commercial name with units, phase counts and connectivity suffixes: a four-line all-caps wall is a defect. Those descriptors move to the subtitle as compact specs separated by " · " (for example "12 кВт · 48 В · 2 MPPT · Wi-Fi · трифазний 220/380 В"). The paragraph below stays a fluent sentence, not a spec list.
 2. SPEC STRIP - four value cards
 - Grid repeat(4,1fr) desktop / 1fr mobile, gap 14px. Each card: radius 12px, padding 24px; value first at 34px/950 in the accent, then h3 19px, then one short line.
 - Exactly one card is dark (#1A2128, border #35393F, cyan value) - the single most decision-critical number; the rest are white with #157985 values.
-3. LIGHT FEATURE SPLIT = THE PRIMARY REASON TO BUY: the one feature a buyer in this category cares about most. #F5F7FA, radius 12px, padding 44px; grid .92fr/1.08fr with align-items:stretch (mobile stacked): left - the SHARED SECTION LABEL, h2 40-42px/950, one paragraph of 2-3 sentences (at most 320 characters), chip row of dark pills (#1A2128, color:#FFFFFF) with confirmed materials/facts; right - one gallery frame in a white 12px-radius card. The image slot is height:420px desktop / 300px mobile; its img is display:block;width:100%;height:100%;object-fit:contain;object-position:center.
+3. LIGHT FEATURE SPLIT = THE PRIMARY REASON TO BUY: the one feature a buyer in this category cares about most. #F5F7FA, radius 12px, padding 44px; grid .92fr/1.08fr with align-items:stretch (mobile stacked): left - the SHARED SECTION LABEL, h2 40-42px/950, one paragraph of 2-3 sentences (at most 320 characters), chip row of dark 8px-radius chips (#1A2128, color:#FFFFFF) with confirmed materials/facts; right - one gallery frame in a white 12px-radius card. The image slot is height:420px desktop / 300px mobile; its img is display:block;width:100%;height:100%;object-fit:contain;object-position:center.
 4. DARK FEATURE SPLIT = THE ENGINEERING STORY: how the product performs, distinct from block 3. Its SHARED SECTION LABEL carries brand · model - this is the one mid-page mention of the exact model. Grid 1fr/1fr with align-items:stretch (mobile stacked): left panel #1A2128 radius 12px padding 40px with the label, white h2 36-38px, one paragraph #D0D7DE of 2-3 sentences (at most 320 characters) and a 2x2 mini-grid of stat tiles (rgba(255,255,255,.08), 24px/950 cyan value + 14px label); right - one REAL gallery frame in a WHITE neutral card, radius 12px, height:420px desktop / 300px mobile. Its img uses width:100%;height:100%;object-fit:contain;object-position:center. Never use cover for this real product frame.
 5. CAPABILITY TRIO = THREE SECONDARY CONVENIENCES that blocks 3 and 4 did not cover - never restate them. Three equal-height white/soft cards (radius 12px;display:flex;flex-direction:column;height:100%;overflow:hidden). Each card starts with a WHITE neutral image slot of height:250px desktop / 210px mobile; the real gallery img uses width:100%;height:100%;object-fit:contain;object-position:center. Copy lives in a separate padding:22px block with h3 20px and one line. If fewer frames remain, two cards are acceptable - never a repeated photo. Never add a standalone photo-only section: every image sits next to copy that earns its place.
 6. TRUST SPLIT - outer canvas #F5F7FA, radius 12px, padding 18px; grid .9fr/1.1fr with align-items:stretch (mobile stacked). Left: dark panel (#1A2128, radius 10px, padding 36px) with h2 34-36px and one supportive paragraph about choosing/completing the setup with artline - no invented services or warranties beyond Product JSON. Right: 2x2 grid of equal-height soft cards. Each tile answers a real buyer decision from Product JSON: what it pairs with (battery voltage/type, communication, parallel operation), an operating limit (temperature, IP rating, mounting), a capacity boundary, or a confirmed warranty term. REGISTRY DATA IS BANNED HERE: never SKU, article number, internal code, EAN/barcode or country of origin - a buyer decides nothing with those.
-7. FINAL RECAP - centered dark section, radius 12px, padding 48px 28px, background linear-gradient(135deg,#1A2128,#252525): the SHARED SECTION LABEL with brand · model, one h2 40-42px white stating the main benefit in one line (no model code - the label already carries it), one summary paragraph #D0D7DE of 2-3 sentences max-width 700px, chip row of 3 white pills with exact confirmed values (dimensions, key spec, capacity).
+7. FINAL RECAP - centered dark section, radius 12px, padding 48px 28px, background linear-gradient(135deg,#1A2128,#252525): the SHARED SECTION LABEL with brand · model, one h2 40-42px white stating the main benefit in one line (no model code - the label already carries it), one summary paragraph #D0D7DE of 2-3 sentences max-width 700px, chip row of 3 white 8px-radius chips with exact confirmed values (dimensions, key spec, capacity).
 8. FAQ - native questions and answers, quiet light canvas
 - Container: background:#FFFFFF;border-radius:12px;padding:32px 30px 12px (mobile 24px 16px 8px). At the top one h2 30-32px/900;text-align:center;margin:0 0 14px, with the natural target-language heading for frequently asked questions.
 - Then 4-6 <details> items and nothing else. Each details: margin:0;padding:0;border-bottom:1px solid #E7EAEE.
@@ -1087,7 +1087,7 @@ BENTO DESIGN SYSTEM
 - Inside it ONE grid: display:grid;grid-template-columns:repeat(4,1fr);grid-auto-flow:dense;gap:14px (mobile: repeat(2,1fr);gap:10px).
 - Every tile: background:#1A2128;border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:22px;box-sizing:border-box;overflow:hidden. No other surface colors.
 - Accent #19BCC9 ONLY for the big numeric values. Headings #F5F7FA, labels and secondary text #AFB8C1.
-- Radii 12px outer / 8px inner. Chips 999px. Weights heavy: values 850-950, h3 800.
+- Radii 12px outer / 8px inner. Chips 8px. Weights heavy: values 850-950, h3 800.
 - Column spans only (grid-column:span 2). NEVER grid-row spans and never fixed tile heights except photo tiles - dense flow must be able to fill every hole.
 
 TILE SET (12-14 tiles total; each tile carries EXACTLY ONE confirmed fact)
@@ -1095,7 +1095,7 @@ TILE SET (12-14 tiles total; each tile carries EXACTLY ONE confirmed fact)
 2. VALUE TILES (4-6, span 1) - the strongest confirmed numbers: value first 34-40px/950 in #19BCC9, then h3 15px #F5F7FA, then one short 13px line in #AFB8C1. Number with unit always.
 3. PHOTO TILES (2-3) - real GALLERY_IMAGES frames, each in its own tile with padding:0. The <img> fills the tile: display:block;width:100%;height:240px;object-fit:cover (an environment shot) or object-fit:contain inside white padding for a studio render. One photo tile may span 2 columns. Every gallery URL used at most once.
 4. FEATURE TILES (2-3, span 1 or 2) - h3 18px/800 + one 13px line: a confirmed capability that is not a bare number (connectivity set, mounting, protection class, package contents).
-5. CHIPS TILE (exactly one, span 2) - compatibility or interface set as white-text chips: span style="display:inline-block;padding:7px 14px;border-radius:999px;background:rgba(255,255,255,.08);color:#F5F7FA;font-size:13px;font-weight:800;margin:0 8px 8px 0". Only confirmed items, 3-6 chips.
+5. CHIPS TILE (exactly one, span 2) - compatibility or interface set as white-text chips: span style="display:inline-block;padding:7px 14px;border-radius:8px;background:rgba(255,255,255,.08);color:#F5F7FA;font-size:13px;font-weight:800;margin:0 8px 8px 0". Only confirmed items, 3-6 chips.
 - Order tiles so desktop rows always sum to 4 columns; the MODEL TILE sits in the first or second row. Mobile keeps the same tile order; span-2 tiles span the full 2-column width.
 
 8. FAQ - native questions and answers, dark canvas
@@ -1133,8 +1133,8 @@ _BENTO_LIGHT_SWAPS = (
      'Every tile: background:#FFFFFF;border:1px solid rgba(15,23,32,.08)'),
     ('inside an inner white card (background:#FFFFFF;border-radius:8px;padding:12px) - a white-background render never lies bare on a dark tile.',
      'inside an inner card (background:#F7F9FA;border:1px solid rgba(15,23,32,.08);border-radius:8px;padding:12px) so the render sits on a cleanly framed field.'),
-    ('as white-text chips: span style="display:inline-block;padding:7px 14px;border-radius:999px;background:rgba(255,255,255,.08);color:#F5F7FA;',
-     'as dark-text chips: span style="display:inline-block;padding:7px 14px;border-radius:999px;background:rgba(15,23,32,.06);color:#0F171E;'),
+    ('as white-text chips: span style="display:inline-block;padding:7px 14px;border-radius:8px;background:rgba(255,255,255,.08);color:#F5F7FA;',
+     'as dark-text chips: span style="display:inline-block;padding:7px 14px;border-radius:8px;background:rgba(15,23,32,.06);color:#0F171E;'),
     ('8. FAQ - native questions and answers, dark canvas',
      '8. FAQ - native questions and answers, light canvas'),
     ('Container: background:#1A2128;border:1px solid rgba(255,255,255,.08)',
@@ -1190,8 +1190,8 @@ _STANDARD_SWAPS = (
     ('square Hero corners next to 12px cards look broken', 'square Hero corners next to rounded cards look broken'),
     ('- the Hero section has border-radius:12px and overflow:hidden', '- the Hero section has border-radius:14px and overflow:hidden'),
     # Showcase-родина (Showcase, Dark, Promo, Podium і похідні)
-    ('- Radii: one quiet base radius everywhere - outer sections 12px, inner cards 8-10px; chips and badges 999px (pills are part of this style). Generous padding, not big radii, carries the premium feel; apart from pills, a corner rounder than 12px is a defect.',
-     '- Radii: outer sections 14px, inner cards and frames 10-12px; chips and badges 999px (pills are part of this style). Generous padding, not big radii, carries the premium feel; apart from pills, a corner rounder than 14px is a defect.'),
+    ('- Radii: one quiet base radius everywhere - outer sections 12px, inner cards 8-10px; chips and badges 8px (one shape for every label and chip, never pills). Generous padding, not big radii, carries the premium feel; apart from pills, a corner rounder than 12px is a defect.',
+     '- Radii: outer sections 14px, inner cards and frames 10-12px; chips and badges 8px (one shape for every label and chip, never pills). Generous padding, not big radii, carries the premium feel; apart from pills, a corner rounder than 14px is a defect.'),
     ('- Weights are heavy: h2 900-950, numeric values 950, chips 850-900.', '- Weights: h2 and numeric values 900, chips 800-900; never 950.'),
     ('position:relative;overflow:hidden;border-radius:12px;border:1px solid #35393F;background:#101010 url(HERO_URL)',
      'position:relative;overflow:hidden;border-radius:14px;border:1px solid #35393F;background:#101010 url(HERO_URL)'),
@@ -1218,8 +1218,8 @@ _STANDARD_SWAPS = (
     ('one subtitle 20-22px in', 'one subtitle 18px in'),
     # Bento
     ('border-radius:12px;padding:14px;box-sizing:border-box.', 'border-radius:14px;padding:14px;box-sizing:border-box.'),
-    ('- Radii 12px outer / 8px inner. Chips 999px. Weights heavy: values 850-950, h3 800.',
-     '- Radii 14px outer, 10-12px tiles, 8px inner cards. Chips 999px. Weights: h2 and values 900, h3 800; never 950.'),
+    ('- Radii 12px outer / 8px inner. Chips 8px. Weights heavy: values 850-950, h3 800.',
+     '- Radii 14px outer, 10-12px tiles, 8px inner cards. Chips 8px. Weights: h2 and values 900, h3 800; never 950.'),
     ('brand + model code as h2 40-46px/950 letter-spacing:-.02em', 'brand + model code as h2 30px/900'),
     ('value first 34-40px/950 in', 'value first 26px/900 in'),
     ('then h3 15px', 'then h3 18px'),
@@ -1330,7 +1330,7 @@ HTML AND EDITOR RULES
 DESIGN SYSTEM
 - Font: Montserrat, Segoe UI, Arial, sans-serif. Body 400-500; subordinate headings 700-800; h2 and values 900. Never use 950.
 - Type scale, both devices: Hero h2 30px/1.12; other h2 24px/1.25; subtitles and h3 18px/1.4; body 16px/1.6; technical values 26px/1.15; technical captions 14px/1.4; badges 12-13px.
-- Radius: outer blocks 14px; inner cards and frames 10-12px; badge pills 999px only where useful. Never turn every specification into a pill.
+- Radius: outer blocks 14px; inner cards and frames 10-12px; badges, labels and chips 8px - one shape for all of them. Never turn a specification into a pill.
 - Desktop: gap between major blocks 22px (margin-top on every block after the first); block padding 36-42px; split gap 28-36px; card gap 14-18px. Padding includes borders through box-sizing:border-box.
 - Canonical palette: dark #101010 / #1A2128; light #FFFFFF / #F5F7FA; borders #35393F on dark, #D0D7DE on light; text #101010 and #555555 on light, #FFFFFF and #D8DDE2 on dark. Accent #19BCC9 on dark and #157985 on light: badges, eyebrows, big technical values and thin borders only - never paragraphs, never a fill.
 - VALUE TILES: a tile value is a number with its unit or a short identifier of at most 14 characters (430 мм, 2×2.5″, USB-C 3.2, E-ATX). Never a sentence, a range of form factors, a country of origin, the product category ("Корпус") or a package that is only the product itself - such facts go into copy or are dropped. Each value is shown as a tile ONCE per page: blocks 05 and 08 never repeat a value already shown in block 02, and the Hero carries no value rows (the studio removes repeats).

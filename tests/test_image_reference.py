@@ -656,7 +656,7 @@ def test_short_bordered_pills_hug_their_text():
             '</div></section>')
     out = _shrink_pills(html)
     assert out.count('width:fit-content') == 1, 'лише коротка пігулка'
-    assert 'border-radius:999px' in out, 'усі лейбли - однакова капсула'
+    assert 'border-radius:8px' in out and '999px' not in out, 'усі лейбли - однаковий прямокутник 8px'
     assert 'ПРОИЗВОДИТЕЛЬНОСТЬ' in out
     # картка з дітьми і довгий абзац - недоторкані
     assert 'Лёгкий корпус</small></div>' in out and 'блочним абзацом</p>' in out
@@ -734,7 +734,7 @@ def test_showcase_prompt_has_named_blocks_consistent_labels_and_no_crop_conflict
     prompt = SHOWCASE_STYLE_PROMPT
     assert 'ARTLINE BLOCK 01: HERO START' in prompt
     assert 'ARTLINE BLOCK 07: FINAL RECAP END' in prompt
-    assert 'SHARED SECTION LABEL' in prompt and 'width:fit-content' in prompt and 'border-radius:999px;box-sizing' in prompt
+    assert 'SHARED SECTION LABEL' in prompt and 'width:fit-content' in prompt and 'border-radius:8px;box-sizing' in prompt
     assert 'ARTLINE BLOCK 08: FAQ START' in prompt and 'exactly eight direct child blocks' in prompt
     assert 'EQUAL DESKTOP CARDS' in prompt
     dark_split = prompt.split('4. DARK FEATURE SPLIT', 1)[1].split('5. CAPABILITY TRIO', 1)[0]
@@ -768,7 +768,7 @@ def test_showcase_finalizer_names_blocks_and_equalizes_desktop_components():
     assert '<!-- ARTLINE BLOCK 01: HERO START -->' in out
     assert '<!-- ARTLINE BLOCK 07: FINAL RECAP END -->' in out
     assert out.count('width:fit-content') == 4
-    assert out.count('border-radius:999px') == 4, 'лейбли Showcase - пігулки, як чипи (стандарт ARTLINE)'
+    assert out.count('border-radius:8px;box-sizing') == 4, 'лейбли Showcase - прямокутник 8px, як чипи'
     assert 'align-items:stretch' in out
     assert out.count('height:100%') >= 2
     assert _finalize_showcase_layout(out, 'desktop') == out
@@ -860,7 +860,7 @@ def test_stat_cards_are_not_turned_into_pills():
     pill_with_span = ('<section><div style="border:1px solid #19BCC9;border-radius:8px;padding:6px 12px">'
                       '<span>МОБИЛЬНОСТЬ И ПАРАМЕТРЫ</span></div></section>')
     out = _shrink_pills(pill_with_span)
-    assert 'width:fit-content' in out and 'border-radius:999px' in out
+    assert 'width:fit-content' in out and 'border-radius:8px' in out
 
 
 def test_contained_photos_get_a_rounded_frame():
@@ -895,7 +895,7 @@ def test_labels_share_one_radius_even_with_their_own_width():
             '<div style="background:#1A2128;border-radius:10px;padding:6px 12px;display:inline-block">ЩЕ ОДИН ЛЕЙБЛ</div>'
             '</section>')
     out = _shrink_pills(html)
-    assert out.count('border-radius:999px') == 3, 'усі лейбли - однакова капсула'
+    assert out.count('border-radius:8px') == 3, 'усі лейбли - однаковий прямокутник 8px'
     # власну ширину не перебиваємо
     assert 'width:fit-content' in out
     assert _shrink_pills(out) == out, 'повторне застосування - no-op'
@@ -3095,7 +3095,7 @@ def test_master_style_is_seeded_and_recognised_by_the_faq_machinery():
     main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
     web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
 
-    assert MASTER_STYLE_NAME == 'ARTLINE Master' and BASE_STYLE_VERSION == '12.74'
+    assert MASTER_STYLE_NAME == 'ARTLINE Master' and BASE_STYLE_VERSION == '12.75'
     assert 'ARTLINE BLOCK 08' not in MASTER_STYLE_PROMPT, 'схема коментарів Showcase тут чужа'
     assert style_has_faq(MASTER_STYLE_PROMPT) and is_master_style(MASTER_STYLE_PROMPT)
     assert video_profile(MASTER_STYLE_PROMPT) == 'master' and surface_radius_cap(MASTER_STYLE_PROMPT) == 14

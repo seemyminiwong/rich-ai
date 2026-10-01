@@ -23,6 +23,9 @@ VALUE = (26, '1.15')
 CAPTION_MIN = 12
 OUTER_RADIUS = 14
 MAX_RADIUS = 14
+# Лейбли, бейджі й чипи - одна форма: заокруглений прямокутник 8px, не пігулка
+# (рішення власника 2026-10-01; майстер-промпт: «Never turn every specification into a pill»).
+BADGE_RADIUS = 8
 ACCENT = '#19BCC9'
 ACCENT_ON_LIGHT = '#157985'
 
@@ -174,7 +177,7 @@ def _radius_token(token: str, is_outer: bool, scale: float = 1.0) -> str:
 
 def is_badge(tag) -> bool:
     """Бейдж/лейбл/чип: короткий текст у рядковому елементі з власною рамкою або фоном.
-    Стандарт: «badge pills 999px» - усі бейджі сторінки однієї форми з чипами."""
+    Стандарт: лейбли, бейджі й чипи - одна форма, заокруглений прямокутник BADGE_RADIUS."""
     style = (tag.get('style') or '').lower().replace(' ', '')
     if tag.name in ('img', 'section') or tag.find(['img', 'div', 'p', 'h2', 'h3', 'ul', 'li', 'table']):
         return False
@@ -185,12 +188,12 @@ def is_badge(tag) -> bool:
 
 def normalize_radii(style: str, is_outer: bool, badge: bool = False) -> str:
     if badge:
-        # Бейдж - завжди пігулка; 0 і тонкі смужки (<4px) лишаються як задумано.
+        # Бейдж - завжди 8px (і пігулки 999px теж); 0 і тонкі смужки (<4px) лишаються як задумано.
         def pill(match):
             prop, value, important = match.group(1), match.group(2), match.group(3) or ''
             tokens = [t for t in re.split(r'\s*/\s*|\s+', value.strip()) if t]
             if any((m := _LENGTH_RE.match(t)) and float(m.group(1)) * (16 if (m.group(2) or '').lower() in ('rem', 'em') else 1) >= 4 for t in tokens):
-                return f'{prop}:999px{important}'
+                return f'{prop}:{BADGE_RADIUS}px{important}'
             return match.group(0)
         return _RADIUS_DECL_RE.sub(pill, style or '')
 
@@ -288,9 +291,10 @@ def radius_deviations(markup: str, scale: float | None = None) -> list[str]:
         is_outer = id(tag) in block_ids
         if not is_outer and is_badge(tag):
             values = [t for m in _RADIUS_DECL_RE.finditer(style) for t in re.split(r'\s*/\s*|\s+', m.group(2).strip()) if t]
-            if any((m := _LENGTH_RE.match(t)) and 4 <= float(m.group(1)) < 100 for t in values):
+            norm = BADGE_RADIUS * scale
+            if any((m := _LENGTH_RE.match(t)) and float(m.group(1)) >= 4 and abs(float(m.group(1)) - norm) > 1 for t in values):
                 text = ' '.join(tag.get_text(' ', strip=True).split())[:40]
-                out.append(f'<{tag.name}> бейдж {values[0]}, норма 999px (пігулка, як чипи)' + (f' «{text}»' if text else ''))
+                out.append(f'<{tag.name}> бейдж {values[0]}, норма {norm:g}px (як усі лейбли й чипи)' + (f' «{text}»' if text else ''))
             continue
         for match in _RADIUS_DECL_RE.finditer(style):
             for token in re.split(r'\s*/\s*|\s+', match.group(2).strip()):
@@ -397,7 +401,7 @@ def apply_artline_standard(markup: str, product_name: str = '') -> str:
                 changed |= _apply_size(tag, *target)
 
         # 5. Радіуси: зовнішні блоки 14px, внутрішні картки, рамки й лейбли 10-12px,
-        #    пігулки 999px. Обробляються і скорочені записи «14px 14px 0 0», і
+        #    лейбли й чипи 8px. Обробляються і скорочені записи «14px 14px 0 0», і
         #    окремі кути (border-top-left-radius), і rem/em - раніше їх пропускали,
         #    і на сторінці сусідили 14, 8 і 20.
         style = tag.get('style') or ''
