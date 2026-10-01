@@ -1417,23 +1417,13 @@ def _html_breadcrumbs(page_html: str) -> list[str]:
 
 
 def _html_category(page_html: str, product_name: str = '') -> str:
-    """Pick the product category from the breadcrumb trail.
+    """Категорія з хлібних крихт поточної сторінки (без мережі).
 
-    The last crumb is normally the product itself and the first ones are the shop
-    root, so the useful category is the last remaining entry.
+    Крихти нормалізуються (латинська «i» -> «і», ``&quot;`` -> лапки), а сам
+    товар відсіюється за схожістю і кодом моделі - див. app.category.
     """
-    trail = _html_breadcrumbs(page_html)
-    name = re.sub(r"\s+", " ", (product_name or "")).strip().lower()
-    candidates = []
-    for crumb in trail:
-        value = crumb.strip(" /›»>-")
-        low = value.lower()
-        if not value or low in _GENERIC_CRUMBS or len(value) > 80:
-            continue
-        if name and (low in name or name in low):
-            continue  # the product itself, not a category
-        candidates.append(value)
-    return candidates[-1] if candidates else ''
+    from app.category import shop_category
+    return shop_category(page_html, product_name)
 
 
 def _html_meta_category(page_html: str) -> str:
@@ -1767,7 +1757,11 @@ def _extract_product_raw(jsonld, title: str, clean_text: str, url: str, model: s
     page_specs = _html_specs(page_html) if page_html else []
     page_features = _html_features(page_html) if page_html else []
     page_trail = _html_breadcrumbs(page_html) if page_html else []
-    page_category = (_html_category(page_html, base.get('name') or title) or _html_meta_category(page_html)) if page_html else ''
+    page_category = ''
+    if page_html:
+        from app.category import resolve_category
+        page_category = resolve_category(page_html, url, base.get('name') or title, fetch=None,
+                                         meta_category=_html_meta_category(page_html))['category']
     if base:
         base['specs'] = _merge_specs(base.get('specs') or [], page_specs)
         if not base.get('features'):

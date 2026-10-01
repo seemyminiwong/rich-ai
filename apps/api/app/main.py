@@ -24,7 +24,7 @@ from app.config import DEFAULT_IMAGE_PRICING, DEFAULT_TEXT_PRICING, settings
 from app.db import Base, SessionLocal, engine, ensure_schema, get_db, run_migrations
 from app.models import Artifact, Asset, AuditLog, CriticReport, Event, FindingDecision, Invite, Landing, Palette, Project, PublishingProfile, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
-from app.tasks import bill_extra, image_rate, process_landing, process_project, text_rate, translate_project
+from app.tasks import bill_extra, image_rate, process_landing, process_project, recategorize_projects, text_rate, translate_project
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
 from app.media import media_url, sign_media_path, strip_media_query, verify_media_token
 from app.raster import flatten_to_white
@@ -1457,6 +1457,23 @@ def _adopt_images(db: Session, new_project: Project, source_project_id: str, lab
             adopted += 1
     return adopted
 
+
+
+class RecategorizeIn(BaseModel):
+    # Порожньо = усі проєкти. Проєкти в черзі й у генерації пропускаються.
+    project_ids: list[str] = Field(default_factory=list, max_length=500)
+
+
+@app.post('/api/projects/recategorize')
+def recategorize(payload: RecategorizeIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
+    """Уточнити категорії наявних проєктів: без AI, без перегенерації, без витрат.
+    Працює у воркері - сторінки товарів читаються по черзі."""
+    check_action(user.id, 'recategorize', 3)
+    ids = [x for x in payload.project_ids if x][:500]
+    total = len(ids) if ids else db.scalar(select(func.count(Project.id))) or 0
+    recategorize_projects.delay(ids or None)
+    audit(db, user, 'project.recategorize', 'project', '', {'count': total}); db.commit()
+    return {'queued': total}
 
 
 @app.post('/api/projects/probe')

@@ -306,6 +306,67 @@ def _existing_images(db, project) -> dict:
     return {a.label: a.url for a in rows if a.url}
 
 
+def apply_category(product: dict, page_html: str, source_url: str, fetch=None) -> str:
+    """Уточнити категорію товару: нормалізовані крихти, українська версія
+    сторінки, тип товару для загальних розділів. Оновлює product на місці
+    (category, shop_category, product_type, provenance) і повертає категорію."""
+    from app.category import normalize_label, resolve_category
+    from app.pipeline import _html_meta_category
+    name = product.get('name') or ''
+    resolved = resolve_category(page_html or '', source_url, name, fetch=fetch or fetch_html,
+                                meta_category=_html_meta_category(page_html or ''))
+    category = resolved['category'] or normalize_label(decode_entities(product.get('category') or product.get('product_type') or ''))
+    product['category'] = category
+    product['shop_category'] = resolved['shop_category']
+    product['product_type'] = resolved['product_type']
+    for item in product.get('evidence') or []:
+        if item.get('id') == 'identity_category':
+            item.update(value=category, source_type='breadcrumbs' if resolved['source'].startswith('breadcrumbs') else item.get('source_type'),
+                        evidence=' > '.join(resolved['trail'])[:200] or item.get('evidence', ''),
+                        confidence='confirmed' if resolved['source'] else item.get('confidence', 'derived'))
+    return decode_entities(category)
+
+
+@celery.task
+def recategorize_projects(project_ids: list[str] | None = None) -> dict:
+    """Перерахувати категорії наявних проєктів без перегенерації і без AI.
+
+    Читає сторінку товару (і її українську версію), оновлює лише категорію в
+    проєкті й у Product JSON. Проєкти, що зараз генеруються, пропускаються.
+    """
+    changed = skipped = failed = 0
+    with SessionLocal() as db:
+        query = select(Project)
+        if project_ids:
+            query = query.where(Project.id.in_(project_ids))
+        for project in db.scalars(query).all():
+            if project.status in (Status.processing, Status.queued):
+                skipped += 1
+                continue
+            try:
+                page_html = fetch_html(project.source_url)
+                product = json.loads(project.product_json or '{}') or {}
+                if not product.get('name'):
+                    jsonld, _images, title, _text = parse_page(page_html, project.source_url)
+                    product['name'] = (jsonld or {}).get('name') or title or project.name
+                before = project.product_category or ''
+                after = apply_category(product, page_html, project.source_url)[:120]
+                if after and after != before:
+                    project.product_category = after
+                    if project.product_json and project.product_json != '{}':
+                        project.product_json = json.dumps(product, ensure_ascii=False)
+                    db.add(Event(project_id=project.id, stage='extract',
+                                 message=f'Категорію уточнено: «{before or "—"}» → «{after}»'))
+                    changed += 1
+                db.commit()
+            except Exception as exc:
+                db.rollback()
+                failed += 1
+                logger.warning('Recategorize %s failed: %s', project.id, exc)
+    logger.info('Recategorize: changed %d, skipped %d, failed %d', changed, skipped, failed)
+    return {'changed': changed, 'skipped': skipped, 'failed': failed}
+
+
 def record_seo_history(project, reports: list, version: int = 0, limit: int = 60) -> None:
     """Історія оцінок SEO/GEO/human/language: порівняння між прогонами й версіями."""
     try:
@@ -427,8 +488,9 @@ def process_project(self, project_id, reuse_images=False):
             detected_name = str(product.get('name') or title or '').strip()
             if detected_name:
                 project.name = decode_entities(detected_name)[:200]
-            category = decode_entities(product.get('category') or product.get('product_type') or '')
+            category = apply_category(product, page_html, project.source_url)
             project.product_category = category[:120]
+            project.product_json = json.dumps(product, ensure_ascii=False)
             project.input_tokens += input_tokens
             project.output_tokens += output_tokens
             if input_tokens or output_tokens:

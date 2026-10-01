@@ -780,6 +780,8 @@ checks.update({
     'public url audit is a separate script, not part of generation': (root / 'scripts/audit_public_url.py').exists() and 'audit_public_url' not in tasks and 'lighthouse' not in tasks.lower(),
     'ci checks seo fixtures, lighthouse and lychee': 'lighthouse' in ci.lower() and 'lychee' in ci.lower() and 'build_seo_fixtures.py' in ci and 'check_no_hardcoded_claims.py' in ci,
     'seo tests exist': (root / 'tests/test_seo_geo.py').exists(),
+    'category is normalized, ukrainian and never the product itself': (root / 'apps/api/app/category.py').exists() and 'def is_product_crumb' in (root / 'apps/api/app/category.py').read_text(encoding='utf-8') and 'def ukrainian_url' in (root / 'apps/api/app/category.py').read_text(encoding='utf-8') and 'apply_category(product, page_html, project.source_url)' in tasks and (root / 'tests/test_category.py').exists(),
+    'existing projects can be recategorized without ai': "@app.post('/api/projects/recategorize')" in main and 'def recategorize_projects' in tasks and 'async function recategorize' in web,
     # Те, що мало лишитись: захист зображень, render gate, ARTLINE Standard.
     'image safeguards kept': 'def _enforce_image_whitelist' in pipeline and 'def is_publishable_image_url' in pipeline and 'materialize_product_reference' in tasks,
     'render gate kept': 'def render_gate' in pipeline and 'render_gate(latest)' in tasks and "critic_type='render'" in tasks,
