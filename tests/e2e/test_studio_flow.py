@@ -104,7 +104,7 @@ def test_login_dialog_modes_create_and_settings(browser_page):
     page.click('button:has-text("Новий проєкт")')
     page.wait_for_selector('#newProject[open]')
     page.fill('#newProject input[name=source_url]', url_value)
-    for _ in range(3):
+    for _ in range(4):  # джерело → товар → результат → SEO/GEO → перевірка
         page.click('#newProject .wiz-foot button:has-text("Далі")')
     page.wait_for_selector('#newProject #wizSummary dl')
     page.click('#newProject button:has-text("Створити й запустити")')

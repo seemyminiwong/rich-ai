@@ -27,11 +27,12 @@ PERMISSIONS = {
     'usage.view': 'Бачити використання і вартість',
     'settings.view': 'Бачити налаштування',
     'users.manage': 'Керувати користувачами та доступами',
+    'profile.manage': 'Керувати Publishing Profile (перевірені факти компанії для публічних сторінок)',
 }
 
 ROLE_DEFAULTS = {
     Role.admin: set(PERMISSIONS),
-    Role.editor: {'project.create', 'project.delete', 'project.edit_html', 'review.request_changes', 'style.manage', 'media.view', 'usage.view', 'settings.view'},
+    Role.editor: {'project.create', 'project.delete', 'project.edit_html', 'review.request_changes', 'style.manage', 'media.view', 'usage.view', 'settings.view', 'profile.manage'},
     Role.reviewer: {'review.request_changes', 'review.approve'},
     Role.viewer: {'media.view'},
 }

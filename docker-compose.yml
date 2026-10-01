@@ -179,6 +179,28 @@ services:
       web:
         condition: service_started
 
+  # Post-publish аудит публічного URL (Lighthouse, Lychee, crawler, GEO).
+  # Окремий образ і профіль: сторонні SEO-інструменти не потрапляють в API.
+  # Своя мережа без доступу до postgres/redis/api; ліміти CPU/RAM/часу; без
+  # секретів студії (env_file навмисно не підключено).
+  #   docker compose --profile audit run --rm audit https://artline.ua/uk/solution/x --language uk --out /out/x
+  audit:
+    build:
+      context: .
+      dockerfile: apps/audit/Dockerfile
+    profiles: ["audit"]
+    networks: [audit]
+    cpus: 2
+    mem_limit: 2g
+    pids_limit: 256
+    read_only: false
+    volumes:
+      - ./build/audit:/out
+    environment:
+      SEO_AUDIT_TIMEOUT: ${SEO_AUDIT_TIMEOUT:-30}
+      SEO_AUDIT_MEMORY_MB: ${SEO_AUDIT_MEMORY_MB:-1536}
+      SEO_AUDIT_CRAWLER_CMD: ${SEO_AUDIT_CRAWLER_CMD:-}
+
   backup:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -241,3 +263,8 @@ volumes:
   media_data:
   caddy_data:
   caddy_config:
+
+networks:
+  # Ізольована мережа аудиту: лише інтернет, жодного доступу до сервісів студії.
+  audit:
+    driver: bridge

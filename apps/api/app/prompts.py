@@ -31,6 +31,30 @@ ARTLINE_STANDARD = r'''ARTLINE STANDARD (shared by every ARTLINE style; it overr
 - Images: every img has a concise alt in the target language; loading="lazy" on every img outside the Hero.
 - FAQ, when the style has one: product-specific questions answered by Product JSON, all items closed, plain question text in summary.
 - Mobile: one column, no horizontal overflow, the same copy and images as desktop, outer radius 14px, block padding about 20px 16px.'''
+HUMAN_COPY_CONTRACT = r'''HUMAN COPY CONTRACT
+- Write like an experienced product editor speaking to a technically interested buyer.
+- Lead with the answer, not with scene-setting or a slogan.
+- Keep one useful idea per sentence.
+- Vary sentence length naturally, but keep most sentences concise.
+- Use specific nouns, verbs, values and product entities.
+- Explain why a confirmed characteristic matters without exaggerating it.
+- Prefer plain native-language wording over translated marketing idioms.
+- Do not repeat the brand or model in every heading.
+- Do not force SEO phrases into grammatically unnatural forms.
+- Never write for an algorithm or mention SEO, keywords, ranking, AI search or optimization.
+- Avoid generic phrases equivalent to: innovative solution, new level, limitless possibilities, ideal choice, maximum comfort, combines style and performance, opens new horizons, designed for those who value quality.
+- Avoid empty introductions, rhetorical questions and conclusions that repeat the heading.
+- Do not address the buyer with artificial urgency.
+- Do not use "we", "our service", delivery, warranty or support claims unless they are supplied in VERIFIED COMPANY FACTS.
+- If the available facts are insufficient, write less. Never use filler to reach a target word count.'''
+
+# Межі між трьома джерелами в промпті: факти товару, пошуковий контекст і
+# підтверджені факти компанії не змішуються в хибні причинно-наслідкові звʼязки.
+SOURCE_BOUNDARY_RULES = r'''SOURCE BOUNDARIES
+- PRODUCT FACTS is the only source of product characteristics. The SEO BRIEF cannot add, change or confirm any characteristic: a search query is not a fact.
+- VERIFIED COMPANY FACTS are statements about the seller, not characteristics of the product. Never merge them with product facts into cause-and-effect claims (for example "because it ships to Poland it is reliable").
+- Length guide: a simple product needs roughly 250-450 words, a technically complex one 400-700; with few confirmed facts write less.'''
+
 ENGINEERING_STYLE_NAME = "ARTLINE Engineering"
 
 DEFAULT_STYLE_PROMPT = r'''Create production-ready premium ecommerce rich content that feels native to artline.ua and belongs to one coherent ARTLINE design system.
@@ -141,7 +165,7 @@ TYPOGRAPHY
 - Card h3: 18-20px, line-height 1.25-1.35, weight 700-800.
 - Body desktop: 16-17px, line-height 1.55-1.7. Body mobile: 14-16px, line-height 1.55-1.65.
 - Keep paragraphs concise and readable. Avoid all-caps except short badges.
-- Limit paragraphs to 2-3 sentences and about 70 characters per line on desktop. Target roughly 350-600 words of visible copy across the whole page.
+- Limit paragraphs to 2-3 sentences and about 70 characters per line on desktop. Length is a guide, not a rule: a simple product needs roughly 250-450 words of visible copy, a technically complex one 400-700; with few confirmed facts write less. Never pad to reach a word count.
 
 PAGE STRUCTURE
 Create exactly six sections, in this order, and no others:
@@ -433,7 +457,7 @@ TYPOGRAPHY
 - Card h3: 18-20px, line-height 1.25-1.35, weight 700-800.
 - Parameter value lead line in cards: 24-28px desktop, 20-24px mobile, weight 900, color #101010; its unit may use #69737D at a smaller size.
 - Body desktop: 16-17px, line-height 1.55-1.7. Body mobile: 14-16px, line-height 1.55-1.65.
-- Limit paragraphs to 2-3 sentences and about 70 characters per line on desktop. Target roughly 350-600 words of visible copy across the whole page.
+- Limit paragraphs to 2-3 sentences and about 70 characters per line on desktop. Length is a guide, not a rule: a simple product needs roughly 250-450 words of visible copy, a technically complex one 400-700; with few confirmed facts write less. Never pad to reach a word count.
 - Avoid all-caps except short badges.
 
 PAGE STRUCTURE

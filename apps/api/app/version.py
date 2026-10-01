@@ -4,4 +4,4 @@ The backend, health endpoint and Docker image tags all derive from here.
 Keep apps/web/index.html (the ?b= cache-busting query) in sync on release.
 """
 
-__version__ = "12.2"
+__version__ = "12.3"

@@ -1,0 +1,12 @@
+# Зафіксовані версії сторонніх SEO/GEO-інструментів (перевірено 2026-09-30).
+# Оновлюючи, перевірте ліцензію і запишіть нову версію/commit тут.
+lighthouse            13.5.0        Apache-2.0   npm: lighthouse            (scripts/audit_public_url.py, CI)
+@lhci/cli             0.15.1        Apache-2.0   npm: @lhci/cli             (CI: lighthouserc.json)
+lychee                v0.24.2       MIT/Apache   github.com/lycheeverse/lychee (CI action, scripts/audit_public_url.py)
+advertools            0.18.0        MIT          pypi: advertools (commit 59dc2be7a98a, 2026-06-30)  (scripts/seo_research)
+open-seo-crawler      33bbe9148eeb @ 2026-09-29  MIT     github.com/puneetindersingh/open-seo-crawler (через --crawler-cmd, не в образі API)
+unlighthouse          6551e97c63be @ 2026-09-29  MIT     github.com/harlan-zw/unlighthouse (сайт-wide Lighthouse перед публікацією великого лендінгу; вручну)
+geo-optimizer-skill   0e1ffc88aa23 @ 2026-09-30  MIT     github.com/Auriti-Labs/geo-optimizer-skill (перелік GEO-перевірок відтворено в audit_public_url.py; оцінка - рекомендація)
+seo-geo-audit         ebc638192c46 @ 2026-07-02  MIT     github.com/lireking/seo-geo-audit (другий незалежний аудит через --crawler-cmd)
+search-solved-public-seo  f1108d97e738 @ 2026-09-21  NOASSERTION  github.com/searchsolved/search-solved-public-seo (ліцензію не вказано: у репозиторій не копіюється; лише локальні запуски окремих скриптів після перевірки їхніх заголовків; pin commit-hash тут перед використанням)
+serpbear              a1328fb4142d @ 2026-05-14  MIT     github.com/towfiqi/serpbear (окремий сервіс моніторингу позицій; до студії не підключається)

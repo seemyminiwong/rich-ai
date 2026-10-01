@@ -22,7 +22,7 @@ from sqlalchemy import delete as sa_delete, func, select, text
 from sqlalchemy.orm import Session
 from app.config import DEFAULT_IMAGE_PRICING, DEFAULT_TEXT_PRICING, settings
 from app.db import Base, SessionLocal, engine, ensure_schema, get_db, run_migrations
-from app.models import Artifact, Asset, AuditLog, CriticReport, Event, Invite, Landing, Palette, Project, Review, Role, Status, Style, StyleVersion, User
+from app.models import Artifact, Asset, AuditLog, CriticReport, Event, FindingDecision, Invite, Landing, Palette, Project, PublishingProfile, Review, Role, Status, Style, StyleVersion, User
 from app.security import PERMISSIONS, ROLE_DEFAULTS, current, effective_perms, has_perm, hash_password, require_perm, token, verify
 from app.tasks import bill_extra, image_rate, process_landing, process_project, text_rate, translate_project
 from app.limits import add_spend, add_user_spend, check_action, check_budget, check_login, check_user_budget, client_ip, today_spend, user_today_spend
@@ -34,6 +34,9 @@ from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, ru
 from app.master_theme import THEMES, normalize_theme
 from app.brand_detect import detect_brand
 from app.text_edit import apply_segments, editable_segments
+from app.publishing import apply_profile_payload, default_profile, profile_to_dict, seed_default_profile, snapshot_for
+from app.seo_geo import (LANG_MAP, FINDING_STATES, approval_blockers, audit_landing_document, brief_from_keywords, build_seo_brief,
+                         finalize_landing_seo, import_keyword_data, normalize_brief, public_facts_summary, validate_decision)
 from app.version import __version__
 from app.bulk_import import BulkCSVError, MAX_BULK_CSV_BYTES, parse_bulk_csv, split_bulk_values
 from app.brand_palettes import BRAND_ACCENTS, BRAND_PREVIOUS
@@ -294,6 +297,7 @@ LEGACY_PALETTES = {
 
 def seed():
     with SessionLocal() as db:
+        seed_default_profile(db)
         user = db.scalar(select(User).where(User.email == settings.admin_email))
         if not user:
             db.add(User(email=settings.admin_email, name='Адміністратор', password_hash=hash_password(settings.admin_password), role=Role.admin))
@@ -405,6 +409,20 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title='ARTLINE Rich Studio API', version=APP_VERSION, lifespan=lifespan)
+
+# Внутрішній інтерфейс, API, вхід, медіа й службові URL не просуваються в
+# пошуку і не архівуються: єдиний заголовок для КОЖНОЇ відповіді сервера
+# (nginx повторює його для статики). Публічний лендінг на /p/<token> - це
+# превʼю-чернетка, а не канонічна адреса, тому теж noindex; індексується лише
+# експортована сторінка на домені з Publishing Profile.
+ROBOTS_HEADER = 'noindex, nofollow, noarchive'
+
+
+@app.middleware('http')
+async def robots_noindex(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault('X-Robots-Tag', ROBOTS_HEADER)
+    return response
 # /media is a verifying endpoint now, not a blind static mount: signed URLs are
 # capabilities, unsigned ones are tolerated only in transitional mode.
 _MEDIA_NAME = re.compile(r'^[A-Za-z0-9._\-]+$')
@@ -507,6 +525,10 @@ class ProjectIn(BaseModel):
     video_url: str = Field(default='', max_length=500)
     # Тема сторінки ARTLINE Master: mixed / light / dark (інші стилі ігнорують).
     style_theme: str = Field(default='mixed', max_length=16)
+    # SEO / GEO (необовʼязково): бриф із майстра або імпорту. source='auto' -
+    # воркер добудує його з товару (категорія, сутності, питання покупця).
+    seo_brief: dict | None = None
+    publishing_profile_id: str | None = Field(default=None, max_length=200)
 class BulkProjectImportIn(BaseModel):
     csv_text: str = Field(min_length=1, max_length=MAX_BULK_CSV_BYTES)
     style_id: str | None = Field(default=None, max_length=200)
@@ -692,14 +714,74 @@ def project_dict(p, full=False, style_name=''):
          'custom_hero_url': p.custom_hero_url, 'custom_feature_url': p.custom_feature_url, 'reference_url': getattr(p, 'reference_url', '') or '', 'product_category': decode_entities(p.product_category), 'sku': str(product.get('sku') or ''), 'cost_breakdown': breakdown, 'error': p.error, 'duration_seconds': p.duration_seconds, 'input_tokens': p.input_tokens, 'output_tokens': p.output_tokens,
          'image_count': p.image_count, 'text_request_count': p.text_request_count, 'image_request_count': p.image_request_count, 'text_cost': p.text_cost, 'image_cost': p.image_cost, 'estimated_cost': p.estimated_cost,
          'created_at': p.created_at, 'started_at': p.started_at, 'finished_at': p.finished_at,
+         'seo_brief': _safe_map(getattr(p, 'seo_brief_json', '')),
+         'facts_provenance': public_facts_summary(product),
+         'seo_history': _safe_list(getattr(p, 'seo_history_json', '')),
          'photo_palette': _palette_raw(p).get('source') == 'photo',
          'brand_palette': _palette_raw(p).get('source') == 'brand', 'palette_brand': str(_palette_raw(p).get('brand') or ''),
          'palette_tokens': {k: v for k, v in _palette_raw(p).items()
                             if k in ('accent', 'dark', 'dark_soft', 'light_soft')}}
     if full:
         r['product_json'] = p.product_json; r['source_images'] = p.source_images
+        r['source_evidence'] = _safe_map(getattr(p, 'source_evidence_json', '')).get('items') or product.get('evidence') or []
+        r['publishing_profile'] = _safe_map(getattr(p, 'publishing_profile_json', ''))
         r['artifacts'] = [artifact_dict(x) for x in sorted(p.artifacts, key=lambda a: (a.language, a.variant, a.version))]
     return r
+
+
+def _safe_list(raw: str) -> list:
+    try:
+        value = json.loads(raw or '[]')
+        return value if isinstance(value, list) else []
+    except Exception:
+        return []
+
+
+def _critic_dict(x) -> dict:
+    return {'id': x.id, 'type': x.critic_type, 'score': x.score, 'summary': x.summary, 'issues': json.loads(x.issues_json or '[]'),
+            'suggestions': json.loads(x.suggestions_json or '[]'), 'findings': _safe_list(getattr(x, 'findings_json', '')),
+            'auto_fixed': x.auto_fixed, 'created_at': x.created_at}
+
+
+def _latest_artifacts(p) -> list:
+    latest = {}
+    for a in sorted(p.artifacts, key=lambda x: x.version):
+        latest[(a.language, a.variant)] = a
+    return list(latest.values())
+
+
+def _finding_decisions(db, project_id: str) -> dict:
+    rows = db.scalars(select(FindingDecision).where(FindingDecision.project_id == project_id)).all()
+    return {x.finding_key: {'state': x.state, 'comment': x.comment, 'user_id': x.user_id, 'updated_at': x.updated_at} for x in rows}
+
+
+def _free_audit(db, p, user=None, note: str = '') -> list:
+    """Безкоштовні детерміновані перевірки для свіжих версій; платна AI-рецензія
+    не стирається. Спільна для кнопки «Перезапустити», правки тексту й HTML."""
+    from app.pipeline import free_critic_reports
+    from app.tasks import record_seo_history
+    latest = _latest_artifacts(p)
+    if not latest:
+        return []
+    product = json.loads(p.product_json or '{}')
+    brief = _safe_map(getattr(p, 'seo_brief_json', ''))
+    profile = _safe_map(getattr(p, 'publishing_profile_json', ''))
+    reports = free_critic_reports(latest, product, brief, profile)
+    db.execute(sa_delete(CriticReport).where(CriticReport.project_id == p.id, CriticReport.critic_type.notin_(('llm', 'render'))))
+    for report in reports:
+        db.add(CriticReport(project_id=p.id, critic_type=report['type'], score=report['score'], summary=report['summary'],
+                            issues_json=json.dumps(report['issues'], ensure_ascii=False),
+                            suggestions_json=json.dumps(report['suggestions'], ensure_ascii=False),
+                            findings_json=json.dumps(report['findings'], ensure_ascii=False), auto_fixed=False))
+    record_seo_history(p, reports, max((a.version for a in latest), default=0))
+    # Знахідки, яких більше немає, автоматично стають resolved.
+    present = {f['key'] for r in reports for f in r['findings']}
+    for row in db.scalars(select(FindingDecision).where(FindingDecision.project_id == p.id)).all():
+        if row.state == 'open' and row.finding_key not in present:
+            row.state = 'resolved'
+    if note:
+        db.add(Event(project_id=p.id, stage='critic', message=note))
+    return reports
 
 
 @app.get('/health')
@@ -1467,7 +1549,37 @@ def _project_values(payload: ProjectIn, db: Session) -> tuple[dict, Style]:
         'faq_enabled': bool(payload.faq),
         'video_url': video_url,
         'style_theme': _checked_theme(payload.style_theme),
+        'seo_brief_json': json.dumps(_brief_from_payload(payload.seo_brief, languages[0], db, payload.publishing_profile_id), ensure_ascii=False),
+        'publishing_profile_json': snapshot_for(db, payload.publishing_profile_id),
     }, style
+
+
+def _brief_from_payload(brief: dict | None, language: str, db: Session, profile_id: str | None) -> dict:
+    """Бриф із майстра: auto (воркер добудує з товару), manual або import
+    (CSV/JSON-вивантаження стає датованим snapshot ще до того, як товар прочитано)."""
+    if not brief:
+        return {'source': 'auto'}
+    imported = brief.get('import') if isinstance(brief.get('import'), dict) else None
+    base = {k: v for k, v in brief.items() if k != 'import'}
+    if imported and str(imported.get('text') or '').strip():
+        try:
+            rows = import_keyword_data(str(imported.get('text')), 'json' if imported.get('format') == 'json' else 'csv',
+                                       str(imported.get('source') or 'import')[:32])
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise HTTPException(400, f'SEO-бриф: не вдалося прочитати вивантаження: {exc}')
+        if not rows:
+            raise HTTPException(400, 'SEO-бриф: у вивантаженні немає рядків із запитами')
+        from app.publishing import profile_by_id
+        result = brief_from_keywords(rows, {}, base.get('language') or language, str(imported.get('source') or 'import')[:32],
+                                     base.get('market') or None, profile_by_id(db, profile_id))
+        for key in ('audience', 'search_intent', 'forbidden_claims'):
+            if base.get(key):
+                result[key] = base[key]
+        return normalize_brief(result)
+    result = normalize_brief(base)
+    if base.get('source') == 'auto':
+        result['source'] = 'auto'
+    return result
 
 
 def _checked_theme(value) -> str:
@@ -2062,7 +2174,9 @@ def project(project_id: str, db: Session = Depends(get_db), user=Depends(current
     reviewers = {u.id: (u.name or u.email) for u in db.scalars(select(User).where(User.id.in_([x.reviewer_id for x in review_rows]))).all()} if review_rows else {}
     r['reviews'] = [{'id': x.id, 'reviewer_id': x.reviewer_id, 'reviewer': reviewers.get(x.reviewer_id, ''), 'decision': x.decision, 'comment': x.comment, 'checklist': json.loads(x.checklist_json or '{}'), 'created_at': x.created_at} for x in review_rows]
     r['assets'] = [{'id': x.id, 'kind': x.kind, 'label': x.label, 'url': x.url, 'prompt': x.prompt, 'model': x.model, 'width': x.width, 'height': x.height, 'cost': x.cost, 'metadata': json.loads(x.metadata_json or '{}'), 'created_at': x.created_at} for x in db.scalars(select(Asset).where(Asset.project_id == p.id).order_by(Asset.created_at.desc())).all()]
-    r['critics'] = [{'id': x.id, 'type': x.critic_type, 'score': x.score, 'summary': x.summary, 'issues': json.loads(x.issues_json or '[]'), 'suggestions': json.loads(x.suggestions_json or '[]'), 'auto_fixed': x.auto_fixed, 'created_at': x.created_at} for x in db.scalars(select(CriticReport).where(CriticReport.project_id == p.id).order_by(CriticReport.created_at.desc())).all()]
+    r['critics'] = [_critic_dict(x) for x in db.scalars(select(CriticReport).where(CriticReport.project_id == p.id).order_by(CriticReport.created_at.desc())).all()]
+    r['finding_decisions'] = _finding_decisions(db, p.id)
+    r['approval_blockers'] = approval_blockers(r['critics'], _latest_artifacts(p), r['finding_decisions'])
     return r
 
 
@@ -2306,6 +2420,15 @@ def review(project_id: str, payload: ReviewIn, db: Session = Depends(get_db), us
         raise HTTPException(403, 'Немає права схвалювати результат')
     if payload.decision == 'request_changes' and not has_perm(user, 'review.request_changes'):
         raise HTTPException(403, 'Немає права запитувати зміни')
+    if payload.decision == 'approve':
+        # Ворота схвалення: критичні знахідки (непідтверджена характеристика,
+        # розбіжність чисел, не той товар, змішання мов, зламаний HTML, alt,
+        # критичний дефект верстки) і аварійний шаблон блокують. Попередження
+        # SEO/GEO не блокують - їх приймають з коментарем.
+        reports = [_critic_dict(x) for x in db.scalars(select(CriticReport).where(CriticReport.project_id == p.id)).all()]
+        blockers = approval_blockers(reports, _latest_artifacts(p), _finding_decisions(db, p.id))
+        if blockers:
+            raise HTTPException(409, 'Схвалення заблоковано: ' + ' | '.join(blockers[:5]) + (f' (+{len(blockers) - 5})' if len(blockers) > 5 else ''))
     try:
         mapping = {'approve': Status.approved, 'request_changes': Status.changes_requested, 'submit': Status.review}
         new_status = mapping[payload.decision]
@@ -2332,22 +2455,23 @@ def events(project_id: str, db: Session = Depends(get_db), user=Depends(current)
 
 @app.post('/api/projects/{project_id}/critic')
 def run_critic(project_id: str, payload: CriticIn, db: Session = Depends(get_db), user=Depends(require_perm('review.request_changes', 'project.create'))):
-    from app.pipeline import critic_html
     p = db.get(Project, project_id)
     if not p: raise HTTPException(404, 'Проєкт не знайдено')
-    latest = {}
-    for a in sorted(p.artifacts, key=lambda x: x.version): latest[(a.language, a.variant)] = a
+    latest = _latest_artifacts(p)
     if not latest: raise HTTPException(409, 'У проєкті ще немає готового HTML для перевірки')
     if payload.llm:
         # ПЛАТНИЙ шлях: реальна модель читає сторінки. Вартість чесно лягає у
-        # вартість проєкту, глобальний і особистий бюджети списуються.
-        from app.pipeline import llm_critic
+        # вартість проєкту, глобальний і особистий бюджети списуються. Ніколи
+        # не запускається автоматично - лише з підтвердження користувача.
+        from app.pipeline import llm_critic_full
         check_action(user.id, 'critic_llm', 4); check_budget(); check_user_budget(user)
         model = p.text_model or settings.openai_text_model
         try:
-            score, summary, issues, suggestions, in_tok, out_tok = llm_critic(list(latest.values()), json.loads(p.product_json or '{}'), model)
+            review = llm_critic_full(latest, json.loads(p.product_json or '{}'), model,
+                                     _safe_map(getattr(p, 'seo_brief_json', '')), _safe_map(getattr(p, 'publishing_profile_json', '')))
         except RuntimeError as exc:
             raise HTTPException(409, str(exc))
+        in_tok, out_tok = review['input_tokens'], review['output_tokens']
         rate_in, rate_out = text_rate(model)
         cost = round((in_tok * rate_in + out_tok * rate_out) / 1_000_000, 6)
         p.text_cost = float(p.text_cost or 0) + cost
@@ -2357,29 +2481,169 @@ def run_critic(project_id: str, payload: CriticIn, db: Session = Depends(get_db)
         p.text_request_count = (p.text_request_count or 0) + 1
         add_spend(cost); add_user_spend(user.id, cost); bill_extra(db, p, cost)
         db.execute(sa_delete(CriticReport).where(CriticReport.project_id == p.id, CriticReport.critic_type == 'llm'))
-        db.add(CriticReport(project_id=p.id, critic_type='llm', score=score, summary=summary,
-                            issues_json=json.dumps(issues, ensure_ascii=False),
-                            suggestions_json=json.dumps(suggestions, ensure_ascii=False), auto_fixed=False))
+        db.add(CriticReport(project_id=p.id, critic_type='llm', score=review['score'], summary=review['summary'],
+                            issues_json=json.dumps(review['issues'], ensure_ascii=False),
+                            suggestions_json=json.dumps(review['suggestions'], ensure_ascii=False),
+                            findings_json=json.dumps(review['findings'], ensure_ascii=False), auto_fixed=False))
         db.add(Event(project_id=p.id, stage='critic', message=f'{user.email}: AI-рецензія ({model}) — ${cost:.4f} додано до вартості проєкту'))
         audit(db, user, 'critic.llm', 'project', p.id, {'model': model, 'cost': cost}); db.commit()
-        return {'type': 'llm', 'score': score, 'summary': summary, 'issues': issues, 'suggestions': suggestions, 'cost': cost}
+        return {'type': 'llm', 'score': review['score'], 'summary': review['summary'], 'issues': review['issues'],
+                'suggestions': review['suggestions'], 'findings': review['findings'], 'categories': review['categories'], 'cost': cost}
     # Безкоштовні евристики; платну AI-рецензію не стираємо.
-    db.execute(sa_delete(CriticReport).where(CriticReport.project_id == p.id, CriticReport.critic_type != 'llm'))
-    reports = []
-    for kind in ('html', 'facts', 'accessibility', 'marketing'):
-        score, summary, issues, suggestions = critic_html(list(latest.values()), kind, json.loads(p.product_json or '{}'))
-        row = CriticReport(project_id=p.id, critic_type=kind, score=score, summary=summary, issues_json=json.dumps(issues, ensure_ascii=False), suggestions_json=json.dumps(suggestions, ensure_ascii=False), auto_fixed=False)
-        db.add(row); reports.append({'type': kind, 'score': score, 'summary': summary, 'issues': issues, 'suggestions': suggestions})
+    reports = _free_audit(db, p)
     # Аудит верстки безкоштовний (свій Chromium, нуль токенів), тому ходить у
     # тій самій кнопці. Сервіс вимкнено - решта перевірок усе одно віддаються.
     from app.pipeline import render_gate
-    score, summary, issues, suggestions, checked = render_gate(list(latest.values()))
+    from app.seo_geo import legacy_findings
+    score, summary, issues, suggestions, checked = render_gate(latest)
     if checked:
+        db.execute(sa_delete(CriticReport).where(CriticReport.project_id == p.id, CriticReport.critic_type == 'render'))
+        findings = legacy_findings('render', issues)
         row = CriticReport(project_id=p.id, critic_type='render', score=score, summary=summary,
                            issues_json=json.dumps(issues, ensure_ascii=False),
-                           suggestions_json=json.dumps(suggestions, ensure_ascii=False), auto_fixed=False)
-        db.add(row); reports.append({'type': 'render', 'score': score, 'summary': summary, 'issues': issues, 'suggestions': suggestions})
+                           suggestions_json=json.dumps(suggestions, ensure_ascii=False),
+                           findings_json=json.dumps(findings, ensure_ascii=False), auto_fixed=False)
+        db.add(row); reports.append({'type': 'render', 'score': score, 'summary': summary, 'issues': issues, 'suggestions': suggestions, 'findings': findings})
     db.add(Event(project_id=p.id, stage='critic', message=f'{user.email}: перевірку якості перезапущено')); audit(db, user, 'critic.run', 'project', p.id); db.commit(); return reports
+
+
+class FindingDecisionIn(BaseModel):
+    state: str = Field(default='open', max_length=16)
+    comment: str = Field(default='', max_length=2000)
+
+
+@app.put('/api/projects/{project_id}/findings/{finding_key}')
+def decide_finding(project_id: str, finding_key: str, payload: FindingDecisionIn, db: Session = Depends(get_db),
+                   user=Depends(require_perm('review.request_changes', 'review.approve', 'project.create'))):
+    """Стан знахідки: open / resolved / accepted. Warning приймається лише з
+    коментарем; critical прийняти не можна - його треба виправити."""
+    p = db.get(Project, project_id)
+    if not p: raise HTTPException(404, 'Проєкт не знайдено')
+    row = None
+    for report in db.scalars(select(CriticReport).where(CriticReport.project_id == p.id)).all():
+        row = next((f for f in _safe_list(report.findings_json) if f.get('key') == finding_key), None)
+        if row:
+            break
+    if not row:
+        raise HTTPException(404, 'Знахідку не знайдено в поточних звітах - перезапустіть перевірку')
+    error = validate_decision(row, payload.state, payload.comment)
+    if error:
+        raise HTTPException(400, error)
+    decision = db.scalar(select(FindingDecision).where(FindingDecision.project_id == p.id, FindingDecision.finding_key == finding_key))
+    if decision is None:
+        decision = FindingDecision(project_id=p.id, finding_key=finding_key)
+        db.add(decision)
+    decision.state = payload.state; decision.comment = payload.comment.strip(); decision.user_id = user.id
+    label = {'open': 'знову відкрито', 'resolved': 'позначено виправленим', 'accepted': 'прийнято з коментарем'}[payload.state]
+    db.add(Event(project_id=p.id, stage='critic', message=f'{user.email}: зауваження «{row.get("message", "")[:80]}» {label}'
+                 + (f': {decision.comment[:120]}' if decision.comment else '')))
+    audit(db, user, 'finding.' + payload.state, 'project', p.id, {'key': finding_key, 'code': row.get('code')}); db.commit()
+    return {'key': finding_key, 'state': decision.state, 'comment': decision.comment}
+
+
+class SeoBriefIn(BaseModel):
+    brief: dict = Field(default_factory=dict)
+
+
+class SeoBriefImportIn(BaseModel):
+    text: str = Field(min_length=1, max_length=2_000_000)
+    format: str = Field(default='csv', max_length=8)      # csv | json
+    source: str = Field(default='import', max_length=32)  # gsc | keyword_planner | dataforseo | import
+    language: str = Field(default='', max_length=8)
+    market: list[str] = Field(default_factory=list, max_length=10)
+
+
+@app.put('/api/projects/{project_id}/seo-brief')
+def save_seo_brief(project_id: str, payload: SeoBriefIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
+    """Ручний бриф. source='auto' - воркер добудує з товару при наступному запуску."""
+    p = db.get(Project, project_id)
+    if not p: raise HTTPException(404, 'Проєкт не знайдено')
+    require_project_edit(p, user)
+    brief = normalize_brief(payload.brief)
+    if brief.get('source') != 'auto' and not brief.get('collected_at'):
+        brief['collected_at'] = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+    if brief.get('source') == 'auto' and p.product_json and p.product_json != '{}':
+        brief = build_seo_brief(json.loads(p.product_json), language=brief.get('language') or (p.languages.split(',') or ['ua'])[0],
+                                profile=_safe_map(getattr(p, 'publishing_profile_json', '')), source='auto',
+                                manual={k: v for k, v in brief.items() if k in ('market', 'audience', 'search_intent', 'forbidden_claims') and v})
+        brief['source'] = 'auto'
+    p.seo_brief_json = json.dumps(brief, ensure_ascii=False)
+    audit(db, user, 'project.seo_brief', 'project', p.id, {'source': brief.get('source')}); db.commit()
+    return brief
+
+
+@app.post('/api/projects/{project_id}/seo-brief/import')
+def import_seo_brief(project_id: str, payload: SeoBriefImportIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
+    """CSV/JSON з GSC, Keyword Planner або DataForSEO -> датований snapshot у брифі.
+    Дані - джерело, не генератор тексту; live-запитів при генерації немає."""
+    p = db.get(Project, project_id)
+    if not p: raise HTTPException(404, 'Проєкт не знайдено')
+    require_project_edit(p, user)
+    try:
+        rows = import_keyword_data(payload.text, 'json' if payload.format == 'json' else 'csv', payload.source)
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, f'Не вдалося прочитати вивантаження: {exc}')
+    if not rows:
+        raise HTTPException(400, 'У файлі немає рядків із запитами')
+    language = payload.language or _safe_map(getattr(p, 'seo_brief_json', '')).get('language') or (p.languages.split(',') or ['ua'])[0]
+    brief = brief_from_keywords(rows, json.loads(p.product_json or '{}'), language, payload.source, payload.market or None,
+                                _safe_map(getattr(p, 'publishing_profile_json', '')))
+    p.seo_brief_json = json.dumps(brief, ensure_ascii=False)
+    audit(db, user, 'project.seo_brief_import', 'project', p.id, {'source': payload.source, 'rows': len(rows)}); db.commit()
+    return {'brief': brief, 'rows': len(rows)}
+
+
+class PublishingProfileIn(BaseModel):
+    name: str = Field(default='', max_length=120)
+    organization_name: str = Field(default='', max_length=200)
+    organization_url: str = Field(default='', max_length=500)
+    logo_url: str = Field(default='', max_length=1000)
+    primary_site: bool = False
+    domains: list[str] = Field(default_factory=list, max_length=50)
+    markets: list[str] = Field(default_factory=list, max_length=20)
+    languages: list[str] = Field(default_factory=list, max_length=20)
+    verified_facts: dict = Field(default_factory=dict)
+    statements: dict = Field(default_factory=dict)
+    approved_contacts: list[str] = Field(default_factory=list, max_length=20)
+    delivery_geography: list[str] = Field(default_factory=list, max_length=50)
+    warranty_text: dict = Field(default_factory=dict)
+    service_text: dict = Field(default_factory=dict)
+    is_default: bool | None = None
+
+
+@app.get('/api/publishing-profiles')
+def publishing_profiles(db: Session = Depends(get_db), user=Depends(current)):
+    rows = db.scalars(select(PublishingProfile).order_by(PublishingProfile.created_at)).all()
+    return [profile_to_dict(x) for x in rows] or [profile_to_dict(None)]
+
+
+@app.post('/api/publishing-profiles')
+def publishing_profile_create(payload: PublishingProfileIn, db: Session = Depends(get_db), user=Depends(require_perm('profile.manage'))):
+    if not payload.name.strip():
+        raise HTTPException(400, 'Назва профілю обовʼязкова')
+    if db.scalar(select(PublishingProfile).where(PublishingProfile.name == payload.name.strip())):
+        raise HTTPException(409, 'Профіль з такою назвою вже є')
+    row = PublishingProfile(name=payload.name.strip(), version=0)
+    apply_profile_payload(row, payload.model_dump(exclude={'is_default'}), user.email)
+    if payload.is_default:
+        for other in db.scalars(select(PublishingProfile)).all():
+            other.is_default = False
+        row.is_default = True
+    db.add(row); db.flush(); audit(db, user, 'profile.create', 'publishing_profile', row.id); db.commit(); db.refresh(row)
+    return profile_to_dict(row)
+
+
+@app.put('/api/publishing-profiles/{profile_id}')
+def publishing_profile_update(profile_id: str, payload: PublishingProfileIn, db: Session = Depends(get_db), user=Depends(require_perm('profile.manage'))):
+    row = db.get(PublishingProfile, profile_id)
+    if not row: raise HTTPException(404, 'Профіль не знайдено')
+    data = payload.model_dump(exclude_unset=True, exclude={'is_default'})
+    apply_profile_payload(row, data, user.email)
+    if payload.is_default:
+        for other in db.scalars(select(PublishingProfile)).all():
+            other.is_default = other.id == row.id
+    audit(db, user, 'profile.update', 'publishing_profile', row.id, {'version': row.version}); db.commit(); db.refresh(row)
+    return profile_to_dict(row)
 
 
 @app.post('/api/projects/{project_id}/critic/fix')
@@ -3222,6 +3486,10 @@ class LandingIn(BaseModel):
     campaign_subtitle: str = Field(default='', max_length=300)
     period: str = Field(default='', max_length=100)
     language: str = Field(default='ua', max_length=5)
+    # SEO: фактичний публічний URL (canonical) і мовні версії {"uk": url, "pl": url, "x-default": url}.
+    publish_url: str = Field(default='', max_length=1000)
+    alternates: dict[str, str] = Field(default_factory=dict)
+    publishing_profile_id: str | None = Field(default=None, max_length=200)
     product_urls: list[str] = Field(default_factory=list, max_length=24)
     category_urls: list[str] = Field(default_factory=list, max_length=24)
     listing_url: str = Field(default='', max_length=1000)
@@ -3248,9 +3516,13 @@ def landing_dict(x, full=False):
          'product_count': len(json.loads(x.products_json or '[]')),
          'category_count': len(json.loads(getattr(x, 'categories_json', None) or '[]')),
          'public': bool(getattr(x, 'public', False)),
-         'share_token': getattr(x, 'share_token', '') or ''}
+         'share_token': getattr(x, 'share_token', '') or '',
+         'publish_url': getattr(x, 'publish_url', '') or '',
+         'alternates': _safe_map(getattr(x, 'alternates_json', '')),
+         'html_lang': LANG_MAP.get(x.language, x.language)}
     if full:
         d['html'] = x.html
+        d['publishing_profile'] = _safe_map(getattr(x, 'publishing_profile_json', ''))
         d['products'] = json.loads(x.products_json or '[]')
         d['categories'] = json.loads(getattr(x, 'categories_json', None) or '[]')
         d['source_urls'] = json.loads(x.source_urls_json or '[]')
@@ -3308,7 +3580,9 @@ def landing_create(payload: LandingIn, db: Session = Depends(get_db), user=Depen
     landing = Landing(
         name=payload.name.strip(), campaign_title=payload.campaign_title.strip(),
         campaign_subtitle=payload.campaign_subtitle.strip(), period=payload.period.strip(),
-        language=payload.language if payload.language in ('ua', 'ru') else 'ua',
+        language=payload.language if payload.language in LANG_MAP else 'ua',
+        publish_url=_checked_publish_url(payload.publish_url), alternates_json=json.dumps(_checked_alternates(payload.alternates)),
+        publishing_profile_json=snapshot_for(db, payload.publishing_profile_id),
         source_urls_json=json.dumps(urls), listing_url=listing,
         source_categories_json=json.dumps(category_urls),
         text_model=payload.text_model.strip() or settings.openai_text_model,
@@ -3322,6 +3596,84 @@ def landing_create(payload: LandingIn, db: Session = Depends(get_db), user=Depen
     db.commit()
     process_landing.delay(landing.id)
     return landing_dict(landing)
+
+
+def _checked_publish_url(value: str) -> str:
+    value = (value or '').strip()
+    if value and not is_public_http_url(value):
+        raise HTTPException(400, 'Публічний URL лендінгу має бути http(s)-адресою на сайті')
+    if re.search(r'/p/[A-Za-z0-9_-]{16,}', value):
+        raise HTTPException(400, 'Canonical не може вказувати на тимчасове превʼю-посилання студії')
+    return value[:1000]
+
+
+def _checked_alternates(values: dict) -> dict:
+    out = {}
+    for code, url in (values or {}).items():
+        code = str(code).strip().lower()
+        url = str(url or '').strip()
+        if not url:
+            continue
+        if code != 'x-default' and code not in LANG_MAP:
+            raise HTTPException(400, f'hreflang: невідома мова «{code}» (uk, pl, en, ru або x-default)')
+        if not is_public_http_url(url):
+            raise HTTPException(400, f'hreflang {code}: URL має бути публічною http(s)-адресою')
+        out[LANG_MAP.get(code, code)] = url[:1000]
+    return out
+
+
+class LandingSeoIn(BaseModel):
+    publish_url: str = Field(default='', max_length=1000)
+    alternates: dict[str, str] = Field(default_factory=dict)
+
+
+def _landing_seo_args(landing, published: bool) -> dict:
+    campaign = {'name': landing.name, 'campaign_title': landing.campaign_title, 'campaign_subtitle': landing.campaign_subtitle,
+                'period': landing.period, 'language': landing.language, 'hero_url': landing.hero_url}
+    profile = _safe_map(getattr(landing, 'publishing_profile_json', '')) or default_profile_snapshot()
+    return dict(campaign=campaign, products=json.loads(landing.products_json or '[]'), profile=profile, language=landing.language,
+                canonical=(getattr(landing, 'publish_url', '') or '') if published else '',
+                alternates=_safe_map(getattr(landing, 'alternates_json', '')) if published else {}, published=published)
+
+
+def default_profile_snapshot() -> dict:
+    from app.seo_geo import DEFAULT_PUBLISHING_PROFILE
+    return dict(DEFAULT_PUBLISHING_PROFILE)
+
+
+@app.put('/api/landings/{landing_id}/seo')
+def landing_seo_save(landing_id: str, payload: LandingSeoIn, db: Session = Depends(get_db), user=Depends(require_perm('project.create'))):
+    """Публічний URL (canonical) і hreflang-версії. Canonical - лише фактична
+    адреса на сайті; поки він порожній, експорт лишається noindex."""
+    landing = _landing_or_404(db, landing_id)
+    landing.publish_url = _checked_publish_url(payload.publish_url)
+    landing.alternates_json = json.dumps(_checked_alternates(payload.alternates))
+    audit(db, user, 'landing.seo', 'landing', landing.id, {'canonical': bool(landing.publish_url)}); db.commit(); db.refresh(landing)
+    return landing_dict(landing, full=True)
+
+
+@app.get('/api/landings/{landing_id}/seo-audit')
+def landing_seo_audit(landing_id: str, db: Session = Depends(get_db), user=Depends(current)):
+    """Детермінований аудит standalone-документа у двох станах: чернетка (noindex)
+    і опублікований експорт (canonical, hreflang, index). Без мережі й без Chromium -
+    Lighthouse/Lychee/crawler працюють над опублікованим URL окремим скриптом."""
+    landing = _landing_or_404(db, landing_id)
+    if not (landing.html or '').strip():
+        raise HTTPException(409, 'Сторінка ще не згенерована')
+    out = {}
+    for label, published in (('draft', False), ('published', bool(landing.public and getattr(landing, 'publish_url', '')))):
+        args = _landing_seo_args(landing, published)
+        page = finalize_landing_seo(landing.html, **args)
+        findings = audit_landing_document(page, language=landing.language, expected_canonical=args['canonical'],
+                                          expected_alternates=args['alternates'], published=published,
+                                          products=args['products'], categories=json.loads(getattr(landing, 'categories_json', None) or '[]'),
+                                          profile=args['profile'])
+        from app.seo_geo import report_from_findings
+        score, summary, issues, suggestions = report_from_findings(findings)
+        out[label] = {'score': score, 'summary': summary, 'findings': findings, 'suggestions': suggestions,
+                      'canonical': args['canonical'], 'alternates': args['alternates']}
+    out['publishable'] = bool(landing.public and getattr(landing, 'publish_url', ''))
+    return out
 
 
 @app.post('/api/landings/{landing_id}/run')
@@ -3360,8 +3712,10 @@ def landing_download(landing_id: str, db: Session = Depends(get_db), user=Depend
         raise HTTPException(409, 'Сторінка ще не згенерована')
     from app.landing import inline_media_images
     # Standalone-файл: /media-зображення (AI-фон hero) інлайняться в data:URI,
-    # щоб сторінка жила без сервера студії.
-    page = inline_media_images(landing.html)
+    # щоб сторінка жила без сервера студії. SEO-head ставить сервер: canonical,
+    # hreflang і index лише коли лендінг опубліковано І задано публічний URL.
+    published = bool(landing.public and getattr(landing, 'publish_url', ''))
+    page = inline_media_images(finalize_landing_seo(landing.html, **_landing_seo_args(landing, published)))
     name = _archive_name(landing.name, landing.id[:8])
     return Response(page, media_type='text/html; charset=utf-8',
                     headers={'Content-Disposition': f'attachment; filename="landing-{name}.html"'})
@@ -3412,7 +3766,8 @@ def landing_public(share_token: str, db: Session = Depends(get_db)):
     from app.landing import inline_media_images
     # Ті самі data:URI, що й у «Скачати HTML»: сторінка не тягне /media, тож
     # публічний доступ не відкриває медіа-сховище студії.
-    page = inline_media_images(landing.html)
+    # Превʼю-посилання - не канонічна адреса: завжди noindex, без canonical.
+    page = inline_media_images(finalize_landing_seo(landing.html, **_landing_seo_args(landing, False)))
     # Публічна сторінка живе НЕ на artline.ua, тож шрифт сайту (Montserrat)
     # підвантажуємо зі студії (/fonts/ роздає web). У збереженому HTML його
     # немає свідомо: «Скачати HTML» лишається автономним файлом зі стеком.
@@ -3422,7 +3777,7 @@ def landing_public(share_token: str, db: Session = Depends(get_db)):
             if re.search(r'<head[^>]*>', page, re.I) else font_link + page
     return Response(page, media_type='text/html; charset=utf-8', headers={
         # Розісланий чернетковий лендінг не має спливати в пошуку.
-        'X-Robots-Tag': 'noindex, nofollow',
+        'X-Robots-Tag': 'noindex, nofollow, noarchive',
         'Cache-Control': 'no-store, must-revalidate',
         'X-Content-Type-Options': 'nosniff',
         # X-Frame-Options свідомо немає: посилання відкривають у прев'ю
@@ -3452,7 +3807,15 @@ def _save_artifact_version(db: Session, source: Artifact, html: str, user, actio
         db.scalar(select(Project.id).where(Project.id == source.project_id).with_for_update())
         latest_version = db.scalar(select(func.max(Artifact.version)).where(Artifact.project_id == source.project_id, Artifact.language == source.language, Artifact.variant == source.variant)) or 0
         new = Artifact(project_id=source.project_id, language=source.language, variant=source.variant, html=clean, version=latest_version + 1, created_by=user.id, run_index=getattr(source, 'run_index', 1) or 1)
-        db.add(new); db.flush(); audit(db, user, action, 'artifact', new.id); db.commit(); db.refresh(new); return artifact_dict(new)
+        db.add(new); db.flush(); audit(db, user, action, 'artifact', new.id)
+        # Після правки - швидкі безкоштовні перевірки автоматично (факти, SEO,
+        # GEO, людський текст, мова). Платний LLM-рецензент НЕ запускається
+        # без підтвердження користувача.
+        project = db.get(Project, source.project_id)
+        if project is not None:
+            db.expire(project, ['artifacts'])
+            _free_audit(db, project, user, note=f'{user.email}: після правки тексту перевірки перезапущено (v{new.version} {new.language}/{new.variant})')
+        db.commit(); db.refresh(new); return artifact_dict(new)
     except Exception as exc:
         db.rollback()
         raise HTTPException(500, f'Не вдалося зберегти нову версію: {exc}') from exc

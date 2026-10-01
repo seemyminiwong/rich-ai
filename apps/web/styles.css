@@ -1122,3 +1122,28 @@ tr.is-updated td{animation:rowFlash 1.6s var(--ease-out)}
 .theme-option.mixed .theme-swatch i:nth-child(even),.theme-option.light .theme-swatch i{background:#F5F7FA}
 @media (max-width:640px){.theme-options{grid-template-columns:minmax(0,1fr)}}
 .form-grid>.theme-slot,.two>.theme-slot{grid-column:1/-1}
+
+/* --- SEO/GEO findings ------------------------------------------------------- */
+.finding-group{margin:0 0 8px;border:1px solid var(--color-border);border-radius:var(--radius-card);background:var(--color-surface)}
+.finding-group>summary{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;font-size:var(--fs-sm)}
+.finding-group>summary::-webkit-details-marker{display:none}
+.finding-group .issue-items{padding:0 8px 8px}
+.issue-items.findings li.finding{display:block;background:var(--color-surface);border-color:var(--color-border)}
+.issue-items.findings li.finding.sev-critical{border-color:var(--color-danger);background:var(--color-danger-soft,#FDECEC)}
+.issue-items.findings li.finding.sev-warning{border-color:var(--color-warning-border);background:var(--color-warning-soft)}
+.issue-items.findings li.finding.handled{opacity:.75}
+.issue-items.findings li.finding.handled .issue-text{text-decoration:line-through}
+.finding-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px}
+.finding-state{margin-left:auto;font-size:var(--fs-xs);color:var(--color-text-secondary)}
+.sev{display:inline-block;padding:1px 8px;border-radius:var(--radius-pill);font-size:var(--fs-xs);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.sev-critical{background:var(--color-danger);color:#fff}
+.sev-warning{background:var(--color-warning);color:var(--color-ink)}
+.sev-info{background:var(--color-surface-subtle);color:var(--color-text-secondary);border:1px solid var(--color-border)}
+.finding-quote{margin:6px 0;padding:6px 10px;border-left:3px solid var(--color-border);color:var(--color-text-secondary);font-size:var(--fs-sm);font-style:italic}
+.finding-fix{display:flex;gap:6px;align-items:flex-start;font-size:var(--fs-sm);color:var(--color-text)}
+.finding-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.seg.flash{outline:2px solid var(--color-brand);outline-offset:2px;transition:outline-color var(--motion-slow)}
+.seo-history{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
+.seo-history th,.seo-history td{padding:4px 6px;border-bottom:1px solid var(--color-border);text-align:left}
+.seo-history td.num{text-align:right}
+.check.sm{font-size:var(--fs-xs)}

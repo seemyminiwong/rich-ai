@@ -1,0 +1,23 @@
+# Lychee: перевірка посилань у документації та тестовому експорті лендінгу.
+# Використовується в CI (.github/workflows/ci.yml, job seo-geo) і локально:
+#   lychee --config lychee.toml README.md docs/*.md CHANGELOG.md
+#   lychee --config lychee.toml --offline 'build/seo-fixtures/**/*.html'
+no_progress = true
+max_concurrency = 4
+timeout = 20
+max_retries = 2
+retry_wait_time = 5
+# 403/429 - антибот або ліміт, а не зламане посилання; це не критична помилка.
+accept = ["200..=206", "403", "429"]
+exclude_private = true
+exclude_loopback = true
+exclude_mail = true
+exclude = [
+  "^https?://(localhost|127\\.0\\.0\\.1|SERVER_IP)",
+  "^https?://[^/]*example\\.(com|org|net)",
+  "^https?://studio\\.example\\.com",
+  "^https?://rich-ai-seven\\.vercel\\.app",
+  "^https?://img\\.shields\\.io",
+  "^https?://github\\.com/settings",
+  "^https?://console\\.cloud\\.google\\.com",
+]

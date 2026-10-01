@@ -2993,7 +2993,7 @@ def test_render_gate_is_wired_as_a_free_critic_and_never_fails_the_run():
     assert 'render_gate(latest)' in tasks and "critic_type='render'" in tasks
     assert 'Верстку не перевірено' in tasks, 'відсутність перевірки має бути видно в журналі'
     # ручний перезапуск перевірок теж міряє верстку (безкоштовно)
-    assert 'render_gate(list(latest.values()))' in main
+    assert 'render_gate(latest)' in main
     assert "render:'Верстка у браузері'" in web
     assert 'Верстку у браузері не перевірено' in web
     assert 'profiles: ["shots"]' in compose and 'POST /audit' in compose

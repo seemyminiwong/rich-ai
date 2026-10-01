@@ -103,7 +103,7 @@ checks = {
     'delete reassigns projects': 'reassigned_projects' in main,
     'base prompt requires alt text': 'must include a concise descriptive alt attribute' in prompts,
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
-    'base prompt limits paragraphs': '350-600 words' in prompts,
+    'base prompt limits paragraphs': 'Length is a guide, not a rule' in prompts and '250-450 words' in prompts and '400-700' in prompts and '350-600 words' not in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
     'base style version bumped': 'BASE_STYLE_VERSION = "12.74"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 3 and 'never by rendering words' in prompts,
@@ -135,7 +135,7 @@ checks = {
     'cost breakdown api': "'cost_breakdown': breakdown" in main,
     'cost breakdown ui': 'function costPanel' in web,
     'live project timer': 'function startProjectTimer' in web and 'id="liveTimer"' in web,
-    'quality disclaimer': 'critic-note' in web and 'не замінюють ручну перевірку' in web,
+    'quality disclaimer': 'critic-note' in web and 'не заміна ручної перевірки' in web and 'не гарантує позицій у пошуку' in web,
     'sku surfaced': "'sku': str(product.get('sku')" in main and 'sku-strip' in web,
     'category extracted': 'category is a short human-readable product category' in pipeline and '"category"' in pipeline,
     'html spec parsing': 'def _html_specs' in pipeline and 'def _merge_specs' in pipeline and 'page_html' in tasks,
@@ -165,7 +165,7 @@ checks = {
     'root admin protected': 'def is_root_admin' in main and 'Пароль головного адміністратора' in main and 'Головного адміністратора видалити не можна' in main and 'u.is_root' in web,
 
     # --- v12 foundation ---
-    'single version source': '__version__ = "12.2"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
+    'single version source': '__version__ = "12.3"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
     'no version in the product UI': all(s not in (root / 'apps/web/index.html').read_text(encoding='utf-8') for s in ('Studio v', 'v12')) and 'state.version' not in web and 'BASE_STYLE_VERSION' not in main,
     'cache busting kept': '?b=' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
     'openai retries': 'def _with_retry' in pipeline and '_with_retry(lambda: api.responses.create' in pipeline and '_with_retry(lambda: image_client().images.edit' in pipeline,
@@ -490,9 +490,8 @@ checks = {
     # Чернетка лендінгу лежить на домені студії, а бойова версія поїде на
     # artline.ua — індексація тут зробила б дубль проти власного сайту.
     'promo drafts are kept out of the index': (
-        'X-Robots-Tag "noindex, nofollow"' in nginx
-        and nginx.index('X-Robots-Tag') > nginx.index('location ^~ /promo/')
-        and nginx.index('X-Robots-Tag') < nginx.index('location = /health')
+        'X-Robots-Tag "noindex, nofollow, noarchive"' in nginx
+        and nginx.index('X-Robots-Tag', nginx.index('location ^~ /promo/')) < nginx.index('location = /health')
     ),
     'static promo pages never shadow the studio landings route': (
         'location ^~ /promo/' in nginx
@@ -509,7 +508,7 @@ checks = {
     'a landing stays private until it is published': (
         'if not landing or not landing.public or not (landing.html' in main
         and 'secrets.token_urlsafe(24)' in main
-        and "'X-Robots-Tag': 'noindex, nofollow'" in main
+        and "'X-Robots-Tag': 'noindex, nofollow, noarchive'" in main
     ),
     'rotating the share token revokes the old link': (
         'rotate: bool = False' in main
@@ -517,8 +516,8 @@ checks = {
         and 'function rotateLandingShare' in web
     ),
     'the public page carries no /media dependency': (
-        'inline_media_images(landing.html)' in main
-        and main.count('inline_media_images(landing.html)') == 2
+        'inline_media_images(finalize_landing_seo(landing.html' in main
+        and main.count('inline_media_images(finalize_landing_seo(landing.html') == 2
     ),
     'api outranks the static cache regex too': 'location ^~ /api/' in nginx and 'location /api/ {' not in nginx,
     'frontend crashes reach the alert channel': "addEventListener('error'" in web and "@app.post('/api/client-error')" in main,
@@ -628,7 +627,7 @@ checks.update({
     'operator photo uploads: optional, per-photo toggle, gallery merge': "@app.post('/api/uploads/image')" in main and "startswith('/media/uploads/')" in main and 'uploaded_frames' in tasks and 'function uploadRefs' in web and 'toggleUpload(' in web and "uploads:(state.uploads||[]).filter(u=>u.on&&u.url)" in web,
     'pixel field behind login and boot screens': 'function startPixelField' in web and web.count("startPixelField(document.querySelector") >= 1 and 'pixel-bg' not in web.split('function bootScreen')[1].split('\n')[0] and 'image-rendering:pixelated' in (root / 'apps/web/styles.css').read_text(encoding='utf-8') and 'prefers-reduced-motion' in web,
     'github oauth: invite-gated, csrf state, hash handoff': "@app.get('/api/auth/github/callback')" in main and 'def _github_state_ok' in main and 'немає запрошення' in main and 'github_client_secret' in config and 'gh_token=' in web and 'loadAuthMethods' in web and "'user:email'" in main,
-    'playwright e2e is the primary frontend insurance': (root / 'tests/e2e/test_studio_flow.py').exists() and 'pageerror' in (root / 'tests/e2e/test_studio_flow.py').read_text(encoding='utf-8') and 'playwright install' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8') and 'needs: [checks, e2e]' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8'),
+    'playwright e2e is the primary frontend insurance': (root / 'tests/e2e/test_studio_flow.py').exists() and 'pageerror' in (root / 'tests/e2e/test_studio_flow.py').read_text(encoding='utf-8') and 'playwright install' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8') and 'needs: [checks, seo-geo, e2e]' in (root / '.github/workflows/ci.yml').read_text(encoding='utf-8'),
     'health endpoint hides the version from anonymous callers': "def health(): return {'status': 'ok'}" in main,
     'progress memo capped at 100 entries': 'mk.length-100' in web,
     'tech stack list on settings page, static (no decorative loops in the work area)': 'function techStrip' in web and 'techloop-seq' in web and '${techStrip()}' in web and 'tlScroll' not in (root / 'apps/web/styles.css').read_text(encoding='utf-8'),
@@ -744,6 +743,47 @@ checks.update({
     # роздуття діалогу стримує ліміт галереї: не більше 10 кадрів.
     'probe box cannot inflate the dialog': 'dialog form>*{min-width:0}' in css and '.probe-grid{display:flex;flex-wrap:wrap' in css and 'frames = gallery_urls(images, limit=10)' in main,
     'studio ui: tokens, grouped nav, wizard, one primary per screen, guarded by tests': ':root{' in css and '--color-brand:#19BCC9' in css and (root / 'apps/web/ui.js').exists() and 'const NAV_GROUPS=' in web and 'function wizardSubmit' in web and (root / 'tests/test_studio_ui.py').exists(),
+})
+
+# --- SEO / GEO / human-copy контроль як частина конвеєра -------------------------
+seo_geo = (root / 'apps/api/app/seo_geo.py').read_text(encoding='utf-8')
+landing_src = (root / 'apps/api/app/landing.py').read_text(encoding='utf-8')
+publishing = (root / 'apps/api/app/publishing.py').read_text(encoding='utf-8')
+rev0023 = (root / 'apps/api/alembic/versions/0023_seo_geo.py').read_text(encoding='utf-8')
+ci = (root / '.github/workflows/ci.yml').read_text(encoding='utf-8')
+_old_claims = ("'Технічна підтримка 24/7'", "'Швидка доставка по Україні'", "'Офіційна гарантія'",
+               "'Техническая поддержка 24/7'", "'Быстрая доставка по Украине'", "'Официальная гарантия'")
+checks.update({
+    'human copy contract reaches the model': 'HUMAN COPY CONTRACT' in prompts and 'HUMAN_COPY_CONTRACT' in pipeline and 'Never use filler to reach a target word count' in prompts,
+    'prompt separates product facts, seo brief and company facts': 'PRODUCT FACTS' in pipeline and 'seo_brief_block(brief)' in pipeline and 'company_facts_block(company, language)' in pipeline and 'SEO BRIEF' in seo_geo and 'VERIFIED COMPANY FACTS' in seo_geo,
+    'seo brief cannot extend product json': 'a search query is not a fact' in prompts and 'confirmed_only(product' in pipeline,
+    'deterministic rich audits exist': all(f'def {fn}(' in seo_geo for fn in ('build_seo_brief', 'audit_rich_fragment', 'audit_human_copy', 'audit_geo_copy', 'audit_language_quality', 'audit_variant_consistency', 'audit_landing_document', 'build_landing_metadata', 'build_landing_jsonld', 'finalize_landing_seo')),
+    'findings are structured, not a single score': "'code': code" in seo_geo and "'severity': severity" in seo_geo and "'evidence'" in seo_geo and "'suggestion'" in seo_geo and 'findings_json' in models and 'def finding_key' in seo_geo,
+    'new critic types are wired': "CRITIC_TYPES_NEW = ('seo', 'geo', 'human', 'language')" in seo_geo and 'def free_critic_reports' in pipeline and 'free_critic_reports(latest, product, seo_brief, company_profile)' in tasks and "seo:'SEO',geo:'GEO',human:'Людський текст',language:'Мова'" in web,
+    'migration 0023 adds brief, evidence, profile, findings, landing seo': "down_revision = \"0022_project_style_theme\"" in rev0023 and all(c in rev0023 for c in ('seo_brief_json', 'source_evidence_json', 'publishing_profiles', 'finding_decisions', 'findings_json', 'publish_url', 'alternates_json')) and 'IF NOT EXISTS' in rev0023 and 'def downgrade' in rev0023,
+    'migration 0022 untouched': "revision = \"0022_project_style_theme\"" in rev0022 if (rev0022 := (root / 'apps/api/alembic/versions/0022_project_style_theme.py').read_text(encoding='utf-8')) else False,
+    'ua/pl/en language map': "LANG_MAP = {" in seo_geo and "'ua': 'uk'" in seo_geo and 'LANDING_I18N' in seo_geo and 'landing_i18n(lang)' in landing_src and "'ua' else" not in landing_src and '== "ua"' not in landing_src,
+    'deterministic json-ld builder owns schema': 'def build_landing_jsonld' in seo_geo and "'@type': 'Organization'" in seo_geo and "'@type': 'ItemList'" in seo_geo and "_FORBIDDEN_PRODUCT_KEYS" in seo_geo and 'aggregateRating' in seo_geo,
+    'draft landing is noindex, published is index': "'index,follow,max-image-preview:large' if (published and canonical) else 'noindex,nofollow'" in seo_geo and 'finalize_landing_seo(landing.html, **_landing_seo_args(landing, False))' in main,
+    'canonical never points at a preview token': "/p/[A-Za-z0-9_-]{16,}" in main and 'canonical_preview_token' in seo_geo,
+    'post-edit audit reruns free checks, never the paid critic': '_free_audit(db, project, user, note=' in main and 'def _free_audit' in main and 'llm_critic' not in main[main.index('def _free_audit'):main.index('def _free_audit') + 2500],
+    'hardcoded 24/7 and warranty claims are gone': not any(c in landing_src for c in _old_claims) and 'def verified_advantages' in landing_src and 'company_facts(profile, language)' in landing_src,
+    'advantages come only from verified company facts': 'ONLY if VERIFIED COMPANY FACTS is non-empty' in landing_src and 'SKIP this section entirely' in landing_src,
+    'delivery ukraine + poland from the verified profile': "'delivery_regions': ['Ukraine', 'Poland']" in seo_geo and 'Постачаємо обладнання по Україні та Польщі.' in seo_geo and 'Dostarczamy sprzęt na terenie Ukrainy i Polski.' in seo_geo and 'We deliver equipment across Ukraine and Poland.' in seo_geo and 'def seed_default_profile' in publishing,
+    'publishing profile is a model, not an app setting': 'class PublishingProfile' in models and 'publishing_profile_json' in models and "@app.put('/api/publishing-profiles/{profile_id}')" in main and 'profile.manage' in security,
+    'facts carry provenance': 'def build_evidence' in seo_geo and "product['evidence'] = product_evidence(" in pipeline and "'source_type'" in seo_geo and "'confidence'" in seo_geo and 'derived' in seo_geo,
+    'critical findings gate approval, warnings are accepted with a comment': 'def approval_blockers' in seo_geo and 'approval_blockers(reports, _latest_artifacts(p), _finding_decisions(db, p.id))' in main and 'Критичну знахідку не можна прийняти' in seo_geo and 'потрібен коментар' in seo_geo and "@app.put('/api/projects/{project_id}/findings/{finding_key}')" in main,
+    'llm critic returns categories and structured issues': 'def llm_critic_full' in pipeline and '"categories": {"facts"' in pipeline and '"quote"' in pipeline and 'llm_critic_full(latest' in main,
+    'studio, api and media are noindex': "ROBOTS_HEADER = 'noindex, nofollow, noarchive'" in main and 'async def robots_noindex' in main and nginx.count('X-Robots-Tag "noindex, nofollow, noarchive"') >= 4,
+    'review ui groups findings and links to segments': 'const CRITIC_GROUPS=' in web and 'function findingTpl' in web and 'function jumpToSegment' in web and 'function decideFinding' in web and 'approval_blockers' in web,
+    'seo brief step in the wizard': "'SEO / GEO'" in web and 'function collectSeoBrief' in web and 'seo_brief:collectSeoBrief(form)' in web and "@app.post('/api/projects/{project_id}/seo-brief/import')" in main,
+    'public url audit is a separate script, not part of generation': (root / 'scripts/audit_public_url.py').exists() and 'audit_public_url' not in tasks and 'lighthouse' not in tasks.lower(),
+    'ci checks seo fixtures, lighthouse and lychee': 'lighthouse' in ci.lower() and 'lychee' in ci.lower() and 'build_seo_fixtures.py' in ci and 'check_no_hardcoded_claims.py' in ci,
+    'seo tests exist': (root / 'tests/test_seo_geo.py').exists(),
+    # Те, що мало лишитись: захист зображень, render gate, ARTLINE Standard.
+    'image safeguards kept': 'def _enforce_image_whitelist' in pipeline and 'def is_publishable_image_url' in pipeline and 'materialize_product_reference' in tasks,
+    'render gate kept': 'def render_gate' in pipeline and 'render_gate(latest)' in tasks and "critic_type='render'" in tasks,
+    'artline standard kept': 'apply_artline_standard(' in pipeline and 'ARTLINE_STANDARD' in prompts and (root / 'apps/api/app/artline_standard.py').exists(),
 })
 
 # Structural guard for the class of bug that ate the probe helpers: every function

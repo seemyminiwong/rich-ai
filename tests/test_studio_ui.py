@@ -156,7 +156,7 @@ def test_new_project_is_a_wizard_that_keeps_the_same_form():
     dialog = _body(js, 'projectDialog')
     for step in range(1, 5):
         assert f'sec({step})' in dialog
-    assert "WIZ_STEPS=['Джерело','Товар і медіа','Результат','Перевірка і запуск']" in js
+    assert "WIZ_STEPS=['Джерело','Товар і медіа','Результат','SEO / GEO','Перевірка і запуск']" in js
     # одна форма: createProject читає ту саму FormData
     assert 'onsubmit="wizardSubmit(event)"' in dialog and 'createProject(e)' in _body(js, 'wizardSubmit')
     # режими Простий/Розширений лишаються на кроці «Результат»

@@ -1734,7 +1734,26 @@ def extract_product(jsonld, title: str, clean_text: str, url: str, model: str, p
     """
     product, input_tokens, output_tokens = _extract_product_raw(
         jsonld, title, clean_text, url, model, page_html)
-    return clean_product_entities(product), input_tokens, output_tokens
+    product = clean_product_entities(product)
+    product['evidence'] = product_evidence(product, jsonld, clean_text, url, page_html)
+    return product, input_tokens, output_tokens
+
+
+def product_evidence(product: dict, jsonld, clean_text: str, url: str, page_html: str = '') -> list:
+    """Provenance кожного факту картки: JSON-LD → таблиця характеристик →
+    текст сторінки. Значення, якого немає в жодному джерелі (AI-витяг),
+    позначається derived і в промпт НЕ потрапляє (seo_geo.confirmed_only)."""
+    from app.seo_geo import build_evidence
+    try:
+        base = _normalize_jsonld(jsonld) if jsonld else {}
+    except Exception:
+        base = {}
+    base = clean_product_entities(base)
+    jsonld_keys = {k for k in ('name', 'brand', 'category', 'sku') if str(base.get(k) or '').strip()
+                   and str(base.get(k)).strip().lower() == str(product.get(k) or '').strip().lower()}
+    table_specs = clean_product_entities(_html_specs(page_html)) if page_html else []
+    return build_evidence(product, jsonld_specs=base.get('specs') or [], table_specs=table_specs,
+                          page_text=clean_text or '', source_url=url, jsonld_keys=jsonld_keys)
 
 
 def _extract_product_raw(jsonld, title: str, clean_text: str, url: str, model: str, page_html: str = ''):
@@ -3756,9 +3775,9 @@ POST_GENERATION_GUARANTEES = [
 ]
 
 
-def build_prompt(product, style, language='ua', variant='desktop', hero='', feature='', gallery=None, theme='mixed'):
+def build_prompt(product, style, language='ua', variant='desktop', hero='', feature='', gallery=None, theme='mixed', brief=None, company=None):
     """Публічна обгортка _prompt для dry-run: точний текст, що піде в модель."""
-    return _prompt(product, style, language, variant, hero, feature, gallery, theme)
+    return _prompt(product, style, language, variant, hero, feature, gallery, theme, brief, company)
 
 
 def _golden_example(style) -> str:
@@ -3790,7 +3809,13 @@ def _style_text_for(prompt: str, variant: str) -> str:
     return text if variant == 'mobile' else strip_mobile_layout(text)
 
 
-def _prompt(product, style, language, variant, hero, feature, gallery=None, theme='mixed'):
+def _prompt(product, style, language, variant, hero, feature, gallery=None, theme='mixed', brief=None, company=None):
+    """Промпт генерації. Три джерела передаються ОКРЕМО і не змішуються:
+    PRODUCT FACTS (лише підтверджені характеристики), SEO BRIEF (пошуковий
+    контекст, не факти), VERIFIED COMPANY FACTS (про продавця, не про товар)."""
+    from app.prompts import HUMAN_COPY_CONTRACT, SOURCE_BOUNDARY_RULES
+    from app.seo_geo import company_facts_block, confirmed_only, seo_brief_block
+    facts = confirmed_only(product or {})
     layout = 'single-column mobile layout with no horizontal overflow' if variant == 'mobile' else 'desktop layout up to 1240px'
     target_language_rule = language_rule(language)
     return f"""Create standardized premium ecommerce rich content. Return HTML only: exactly one complete <section>...</section>.
@@ -3804,9 +3829,14 @@ Mandatory visual guardrails: use #101010 for headings and #555555 or #69737D for
 The style prompt below is the primary design specification. Follow it precisely unless it conflicts with factual accuracy or HTML validity.
 STYLE PROMPT:
 {_style_text_for(style.prompt, variant)}{_standard_for(style.prompt)}{master_theme_prompt(theme) if is_master_style(style.prompt) else ''}{_golden_example(style)}
-Mandatory factual rule: use only facts present in Product JSON. Never invent warranty, partnership, certification, compatibility, performance, contents or support claims.
+{HUMAN_COPY_CONTRACT}
+{SOURCE_BOUNDARY_RULES}
+Mandatory factual rule: use only facts present in PRODUCT FACTS (Product JSON). Never invent warranty, partnership, certification, compatibility, performance, contents or support claims.
 Images: hero={hero}; feature={feature}.{_gallery_line(style, gallery)}
-Product JSON: {json.dumps(product, ensure_ascii=False)}"""
+{seo_brief_block(brief)}
+{company_facts_block(company, language)}
+PRODUCT FACTS
+Product JSON: {json.dumps(facts, ensure_ascii=False)}"""
 
 
 def _deterministic_html(product, style, language, variant, hero, feature):
@@ -3822,7 +3852,8 @@ def _deterministic_html(product, style, language, variant, hero, feature):
         raw_description = fallback_copy['description']
     elif language == 'ua' and any(ch in raw_description.lower() for ch in 'ыэёъ'):
         raw_description = fallback_copy['description']
-    elif language == 'pl' and any('а' <= ch <= 'я' or ch in 'іїєґ' for ch in raw_description.lower()):
+    elif language in ('pl', 'en') and any('а' <= ch <= 'я' or ch in 'іїєґ' for ch in raw_description.lower()):
+        # Латинська сторінка не може нести кириличний опис зі сторінки-джерела.
         raw_description = fallback_copy['description']
     description = html_lib.escape(raw_description or fallback_copy['description'])
     facts = [str(x) for x in (product.get('features') or []) if x]
@@ -4213,7 +4244,7 @@ def public_fallback_reason(exc: Exception) -> str:
     return f'внутрішня помилка генерації ({type(exc).__name__})'
 
 
-def generate_html(product, style, language, variant, hero, feature, model: str, gallery=None, rotation=None, palette: dict | None = None, video: str = '', video_product: str = '', theme: str = 'mixed'):
+def generate_html(product, style, language, variant, hero, feature, model: str, gallery=None, rotation=None, palette: dict | None = None, video: str = '', video_product: str = '', theme: str = 'mixed', brief: dict | None = None, company: dict | None = None):
     """Return (html, input_tokens, output_tokens, fallback_reason).
 
     fallback_reason is '' when the AI response was used, otherwise a short reason
@@ -4226,7 +4257,7 @@ def generate_html(product, style, language, variant, hero, feature, model: str, 
     theme = normalize_theme(theme) if master else 'mixed'
     # Темна тема майстра вмикає ті самі темні FAQ і блок відео, що й темні стилі.
     dark_page = (getattr(style, 'name', '') or '') in DARK_STYLE_NAMES or theme == 'dark'
-    base_prompt = _prompt(product, style, language, variant, hero, feature, gallery, theme)
+    base_prompt = _prompt(product, style, language, variant, hero, feature, gallery, theme, brief, company)
     try:
         response = _responses_create(model, base_prompt, 16000)
         output = _html_only(response.output_text)
@@ -4426,31 +4457,57 @@ def llm_fix_texts(html: str, issues: list[str], product: dict, model: str, langu
     return result, input_tokens, output_tokens, changed
 
 
-def llm_critic(artifacts, product: dict, model: str):
+LLM_CRITIC_CATEGORIES = ('facts', 'human_copy', 'seo', 'geo', 'language')
+
+
+def llm_critic_full(artifacts, product: dict, model: str, brief: dict | None = None, company: dict | None = None) -> dict:
     """Справжній AI-рецензент (ПЛАТНИЙ): модель читає сторінки проти product JSON.
 
-    Повертає (score, summary, issues, suggestions, input_tokens, output_tokens);
-    вартість токенів рахує і додає до проєкту викликаючий код. Евристичний
-    critic_html лишається безкоштовною першою лінією.
+    Розширений контракт відповіді: оцінки за категоріями (facts / human_copy /
+    seo / geo / language) і СТРУКТУРОВАНІ issues з цитатою, причиною і порадою.
+    Повертає dict: score, summary, categories, issues (рядки, сумісність),
+    suggestions, findings, input_tokens, output_tokens. Вартість токенів рахує
+    і додає до проєкту викликаючий код. Детермінований critic лишається
+    безкоштовною першою лінією - цей його не замінює.
     """
+    from app.seo_geo import company_facts, confirmed_only, finding, norm_lang
     if not text_ready():
         raise RuntimeError('Text provider is not configured')
     pages = []
     for a in artifacts:
         text = _visible_text(getattr(a, 'html', ''))[:6000]
         pages.append(f'=== {getattr(a, "language", "?")}/{getattr(a, "variant", "?")} ===\n{text}')
+    facts = confirmed_only(product or {})
+    evidence = (product or {}).get('evidence') or []
+    languages = sorted({norm_lang(getattr(a, 'language', 'uk')) for a in artifacts})
+    company_lines = []
+    for code in languages:
+        for line in company_facts(company, code):
+            company_lines.append(f'[{code}] {line}')
     prompt = (
-        'Ти - прискіпливий рецензент ecommerce rich-контенту. Нижче PRODUCT JSON '
-        '(єдине джерело правди) і видимий текст згенерованих сторінок.\n'
-        'Знайди: (1) розбіжності зі специфікаціями - числа, одиниці, вигадані факти чи можливості; '
-        '(2) слабкі або порожні маркетингові формулювання; (3) проблеми структури подачі для покупця.\n'
-        'Поверни ЛИШЕ валідний JSON без пояснень: '
-        '{"score": <0-100 цілісна оцінка довіри>, "summary": "<один рядок українською>", '
-        '"issues": ["<конкретна проблема українською>"], "suggestions": ["<конкретна порада українською>"]}\n\n'
-        f'PRODUCT JSON:\n{json.dumps(product, ensure_ascii=False)[:4000]}\n\n'
+        'Ти - прискіпливий рецензент ecommerce rich-контенту: факти, людський текст, SEO, GEO (generative engines), мова. '
+        'Нижче PRODUCT FACTS (єдине джерело правди про товар), EVIDENCE (походження кожного факту), '
+        'SEO BRIEF (пошуковий контекст - НЕ факти), VERIFIED COMPANY FACTS (єдині дозволені твердження про продавця) '
+        'і видимий текст згенерованих сторінок.\n'
+        'Обов\'язково: (1) звір КОЖНЕ число з PRODUCT FACTS; (2) відрізняй підтверджений факт від висновку моделі; '
+        '(3) знайди механічний переклад і кальки; (4) знайди штучний AI-текст і порожні фрази; (5) знайди keyword stuffing; '
+        '(6) перевір answer-first структуру абзаців; (7) перевір ясність сутності (бренд, модель, категорія в одному ранньому реченні); '
+        '(8) порівняй мовні версії за змістом - вони мають казати одне й те саме; '
+        '(9) НЕ пропонуй нових характеристик, яких немає в PRODUCT FACTS.\n'
+        'Поверни ЛИШЕ валідний JSON без пояснень:\n'
+        '{"score": <0-100>, "summary": "<один рядок українською>", '
+        '"categories": {"facts": <0-100>, "human_copy": <0-100>, "seo": <0-100>, "geo": <0-100>, "language": <0-100>}, '
+        '"issues": [{"code": "<snake_case>", "severity": "critical|warning|info", "language": "<uk|pl|en|ru>", '
+        '"variant": "<desktop|mobile|>", "quote": "<точна цитата зі сторінки>", "reason": "<чому це проблема, українською>", '
+        '"suggestion": "<як виправити без нових фактів>"}], '
+        '"suggestions": ["<загальна порада українською>"]}\n\n'
+        f'PRODUCT FACTS:\n{json.dumps(facts, ensure_ascii=False)[:4000]}\n\n'
+        f'EVIDENCE:\n{json.dumps(evidence, ensure_ascii=False)[:2500]}\n\n'
+        f'SEO BRIEF:\n{json.dumps({k: v for k, v in (brief or {}).items() if k != "keywords"}, ensure_ascii=False)[:1500]}\n\n'
+        'VERIFIED COMPANY FACTS:\n' + ('\n'.join(company_lines) if company_lines else 'none') + '\n\n'
         + '\n\n'.join(pages)[:24000]
     )
-    response = _responses_create(model, prompt, 3000)
+    response = _responses_create(model, prompt, 4000)
     raw = (response.output_text or '').strip()
     match = re.search(r'\{.*\}', raw, re.S)
     data = _safe_json(match.group(0)) if match else None
@@ -4458,10 +4515,38 @@ def llm_critic(artifacts, product: dict, model: str):
         raise RuntimeError('AI-рецензент повернув невалідний JSON')
     input_tokens, output_tokens = _usage_counts(response, prompt, raw)
     score = max(0.0, min(100.0, float(data.get('score') or 0)))
-    issues = [str(x) for x in (data.get('issues') or [])][:12]
+    categories = {}
+    for key in LLM_CRITIC_CATEGORIES:
+        try:
+            categories[key] = max(0.0, min(100.0, float((data.get('categories') or {}).get(key))))
+        except (TypeError, ValueError):
+            categories[key] = None
+    findings, issues = [], []
+    for item in (data.get('issues') or [])[:16]:
+        if isinstance(item, dict):
+            severity = str(item.get('severity') or 'warning').lower()
+            row = finding(str(item.get('code') or 'llm_issue')[:48], severity if severity in ('critical', 'warning', 'info') else 'warning',
+                          str(item.get('reason') or item.get('message') or '')[:300],
+                          language=norm_lang(item.get('language') or '') if item.get('language') else '',
+                          variant=str(item.get('variant') or '')[:12], evidence=str(item.get('quote') or '')[:240],
+                          suggestion=str(item.get('suggestion') or '')[:300], source='llm')
+            findings.append(row)
+            quote = f' - «{row["evidence"][:80]}»' if row['evidence'] else ''
+            issues.append(f'{row["message"]}{quote}')
+        else:
+            text = str(item)
+            issues.append(text)
+            findings.append(finding('llm_issue', 'warning', text[:300], source='llm'))
     suggestions = [str(x) for x in (data.get('suggestions') or [])][:8]
     summary = str(data.get('summary') or ('Зауважень немає' if not issues else issues[0]))[:300]
-    return score, summary, issues, suggestions, input_tokens, output_tokens
+    return {'score': score, 'summary': summary, 'categories': categories, 'issues': issues[:12],
+            'suggestions': suggestions, 'findings': findings, 'input_tokens': input_tokens, 'output_tokens': output_tokens}
+
+
+def llm_critic(artifacts, product: dict, model: str, brief: dict | None = None, company: dict | None = None):
+    """Сумісна обгортка: (score, summary, issues, suggestions, input_tokens, output_tokens)."""
+    r = llm_critic_full(artifacts, product, model, brief, company)
+    return r['score'], r['summary'], r['issues'], r['suggestions'], r['input_tokens'], r['output_tokens']
 
 
 # Ширина полотна для аудиту: та сама, у якій сторінку бачить покупець.
@@ -4555,7 +4640,33 @@ def render_gate(artifacts) -> tuple:
     return score, summary, issues[:24], suggestions, checked
 
 
-def critic_html(artifacts, critic_type: str, product: dict):
+FREE_CRITIC_TYPES = ('html', 'facts', 'accessibility', 'marketing', 'seo', 'geo', 'human', 'language')
+
+
+def free_critic_reports(artifacts, product: dict, brief: dict | None = None, profile: dict | None = None) -> list:
+    """Усі БЕЗКОШТОВНІ детерміновані перевірки одним списком звітів
+    {type, score, summary, issues, suggestions, findings}. Перша лінія перед
+    платним LLM-рецензентом і render gate; та сама функція для генерації,
+    кнопки «Перезапустити» і повторної перевірки після правки тексту."""
+    from app.seo_geo import legacy_findings, run_rich_audits
+    reports = []
+    for kind in ('html', 'facts', 'accessibility', 'marketing'):
+        score, summary, issues, suggestions = critic_html(artifacts, kind, product)
+        reports.append({'type': kind, 'score': score, 'summary': summary, 'issues': issues,
+                        'suggestions': suggestions, 'findings': legacy_findings(kind, issues)})
+    reports.extend(run_rich_audits(artifacts, product, brief, profile))
+    return reports
+
+
+def critic_html(artifacts, critic_type: str, product: dict, brief: dict | None = None, profile: dict | None = None):
+    """Один критик: (score, summary, issues, suggestions). Нові типи seo / geo /
+    human / language делегуються в seo_geo і повертають той самий контракт."""
+    if critic_type in ('seo', 'geo', 'human', 'language'):
+        from app.seo_geo import run_rich_audits
+        for report in run_rich_audits(artifacts, product, brief, profile):
+            if report['type'] == critic_type:
+                return report['score'], report['summary'], report['issues'], report['suggestions']
+        return 100.0, 'Зауважень немає', [], []
     html = '\n'.join(getattr(a, 'html', '') for a in artifacts)
     issues = []
     suggestions = []

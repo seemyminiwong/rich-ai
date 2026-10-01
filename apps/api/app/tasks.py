@@ -53,6 +53,7 @@ from app.pipeline import (
     safe_client,
     translate_html,
     critic_html,
+    free_critic_reports,
 )
 
 
@@ -305,6 +306,24 @@ def _existing_images(db, project) -> dict:
     return {a.label: a.url for a in rows if a.url}
 
 
+def record_seo_history(project, reports: list, version: int = 0, limit: int = 60) -> None:
+    """Історія оцінок SEO/GEO/human/language: порівняння між прогонами й версіями."""
+    try:
+        history = json.loads(getattr(project, 'seo_history_json', '') or '[]')
+    except Exception:
+        history = []
+    entry = {
+        'at': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'run': getattr(project, 'run_index', 1) or 1,
+        'version': int(version or 0),
+        'scores': {r['type']: round(float(r.get('score') or 0)) for r in reports},
+        'critical': sum(1 for r in reports for f in (r.get('findings') or []) if f.get('severity') == 'critical'),
+        'warning': sum(1 for r in reports for f in (r.get('findings') or []) if f.get('severity') == 'warning'),
+    }
+    history.append(entry)
+    project.seo_history_json = json.dumps(history[-limit:], ensure_ascii=False)
+
+
 @celery.task(bind=True, max_retries=0)
 def process_project(self, project_id, reuse_images=False):
     started = time.time()
@@ -390,6 +409,21 @@ def process_project(self, project_id, reuse_images=False):
                 jsonld, title, clean_text, project.source_url, project.text_model, page_html
             )
             project.product_json = json.dumps(product, ensure_ascii=False)
+            # Provenance підтверджених фактів окремо від картки (UI, аудит GEO).
+            project.source_evidence_json = json.dumps({'items': product.get('evidence') or [], 'source_url': project.source_url}, ensure_ascii=False)
+            # Знімок Publishing Profile і SEO-бриф: бриф «Автоматично» будується
+            # з товару (категорія, сутності, питання) і НЕ вигадує search volume.
+            from app.publishing import snapshot_for
+            from app.seo_geo import build_seo_brief, normalize_brief
+            if not (getattr(project, 'publishing_profile_json', '') or '').strip('{} \n'):
+                project.publishing_profile_json = snapshot_for(db)
+            company_profile = json.loads(project.publishing_profile_json or '{}')
+            seo_brief = normalize_brief(json.loads(getattr(project, 'seo_brief_json', '') or '{}'))
+            if seo_brief.get('source') in ('', 'auto') or not seo_brief.get('primary_topic'):
+                seo_brief = build_seo_brief(product, language=(project.languages.split(',') or ['ua'])[0], profile=company_profile,
+                                            source='auto', manual={k: v for k, v in seo_brief.items() if k in ('market', 'audience', 'search_intent', 'forbidden_claims', 'publishing_profile_id') and v})
+                seo_brief['source'] = 'auto'
+            project.seo_brief_json = json.dumps(seo_brief, ensure_ascii=False)
             detected_name = str(product.get('name') or title or '').strip()
             if detected_name:
                 project.name = decode_entities(detected_name)[:200]
@@ -790,7 +824,7 @@ def process_project(self, project_id, reuse_images=False):
                             rich_html, generated_in, generated_out, fallback_reason = generate_html(
                                 product, style, master_language, variant, hero, feature, project.text_model, gallery=page_gallery, rotation=rotation_frames,
                                 palette=_project_palette(project), video=getattr(project, 'video_url', '') or '', video_product=product_name,
-                                theme=page_theme,
+                                theme=page_theme, brief=seo_brief, company=company_profile,
                             )
                             added_input += generated_in
                             added_output += generated_out
@@ -862,7 +896,7 @@ def process_project(self, project_id, reuse_images=False):
                             # template, whose structure is identical for all languages.
                             rich_html, added_input, added_output, fallback_reason = generate_html(
                                 product, style, language, variant, hero, feature, project.text_model, gallery=page_gallery, rotation=rotation_frames,
-                                palette=_project_palette(project), theme=page_theme,
+                                palette=_project_palette(project), theme=page_theme, brief=seo_brief, company=company_profile,
                             )
                             if fallback_reason and settings.openai_api_key:
                                 fallback_hits.append(f'{language.upper()}/{variant}: {fallback_reason}')
@@ -922,9 +956,20 @@ def process_project(self, project_id, reuse_images=False):
             for artifact in sorted(artifact_rows, key=lambda row: row.version):
                 latest_by_variant[(artifact.language, artifact.variant)] = artifact
             latest = list(latest_by_variant.values())
-            for critic_type in ('html','facts','accessibility','marketing'):
-                score, summary, issues, suggestions = critic_html(latest, critic_type, product)
-                db.add(CriticReport(project_id=project.id, critic_type=critic_type, score=score, summary=summary, issues_json=json.dumps(issues, ensure_ascii=False), suggestions_json=json.dumps(suggestions, ensure_ascii=False)))
+            # Безкоштовна перша лінія: html/facts/accessibility/marketing + нові
+            # детерміновані seo/geo/human/language зі структурованими знахідками.
+            log(db, project, 'review', 'Перевірка тексту: факти, SEO, GEO, людський текст, мова', 95)
+            free_reports = free_critic_reports(latest, product, seo_brief, company_profile)
+            for report in free_reports:
+                db.add(CriticReport(project_id=project.id, critic_type=report['type'], score=report['score'], summary=report['summary'],
+                                    issues_json=json.dumps(report['issues'], ensure_ascii=False),
+                                    suggestions_json=json.dumps(report['suggestions'], ensure_ascii=False),
+                                    findings_json=json.dumps(report['findings'], ensure_ascii=False)))
+            record_seo_history(project, free_reports, max((a.version for a in latest), default=0))
+            critical_count = sum(1 for r in free_reports for f in r['findings'] if f.get('severity') == 'critical')
+            warning_count = sum(1 for r in free_reports for f in r['findings'] if f.get('severity') == 'warning')
+            log(db, project, 'review', f'Текстові перевірки: критичних {critical_count}, попереджень {warning_count}', 96,
+                'warning' if critical_count else 'info')
             # Рецензент, який ДИВИТЬСЯ: сторінка укладається у справжньому браузері
             # і міряється. Решта перевірок читають розмітку й тому не бачать ані
             # обрізаного заголовка, ані цифри, що злилася з плиткою. Сервіс
@@ -1286,7 +1331,15 @@ def process_landing(self, landing_id: str):
                          else db.scalar(select(Style).where(Style.name == LANDING_STYLE_NAME)))
             if style_row and all(ph in (style_row.prompt or '') for ph in LANDING_PLACEHOLDERS):
                 template = style_row.prompt
-            html_out, input_tokens, output_tokens, reason = generate_landing_html(campaign, products, model, template, categories)
+            from app.publishing import snapshot_for
+            if not (getattr(landing, 'publishing_profile_json', '') or '').strip('{} \n'):
+                landing.publishing_profile_json = snapshot_for(db)
+            landing_profile = json.loads(landing.publishing_profile_json or '{}')
+            # Чернетка: noindex, без canonical. Опубліковану версію з canonical/
+            # hreflang збирає сервер при віддачі (finalize_landing_seo у main).
+            html_out, input_tokens, output_tokens, reason = generate_landing_html(
+                campaign, products, model, template, categories, profile=landing_profile,
+                seo={'canonical': '', 'alternates': {}, 'published': False})
             from app.pipeline import apply_palette, style_palette
             landing_palette = _project_palette(landing) or (style_palette(style_row) if style_row is not None else None)
             html_out = apply_palette(html_out, landing_palette)

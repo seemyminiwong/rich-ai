@@ -17,6 +17,7 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 
 from app.pipeline import fetch_html, parse_page, is_public_http_url
+from app.seo_geo import LANG_MAP, company_facts, finalize_landing_seo, landing_i18n, norm_lang
 
 logger = logging.getLogger('artline.landing')
 
@@ -222,11 +223,22 @@ def inline_media_images(markup: str) -> str:
     return str(soup) if changed else markup
 
 
-def deterministic_landing(campaign: dict, products: list[dict], categories: list[dict] | None = None) -> str:
+def verified_advantages(profile: dict | None, language: str) -> list[str]:
+    """Переваги лендінгу - ЛИШЕ з VERIFIED COMPANY FACTS профілю публікації.
+
+    Немає підтверджених фактів - немає блоку: жодних «офіційна гарантія»,
+    «підтримка 24/7» чи «швидка доставка» заради симетрії трьох карток."""
+    return company_facts(profile, language)
+
+
+def deterministic_landing(campaign: dict, products: list[dict], categories: list[dict] | None = None,
+                          profile: dict | None = None) -> str:
     """Аварійний шаблон: та сама структура, що в AI-версії, нуль токенів.
-    Темне промо-hero -> сітка категорій -> сітка товарів -> переваги."""
-    lang = campaign.get('language') or 'ua'
-    buy = 'Купити' if lang == 'ua' else 'Купить'
+    Темне промо-hero -> сітка категорій -> сітка товарів -> переваги (лише
+    з підтверджених фактів компанії; порожньо = блоку немає)."""
+    lang = norm_lang(campaign.get('language') or 'ua')
+    i18n = landing_i18n(lang)
+    buy = i18n['buy']
     title = _chunk(campaign, 'campaign_title') or _chunk(campaign, 'name')
     categories = categories or []
     category_cards = ''.join(
@@ -237,7 +249,7 @@ def deterministic_landing(campaign: dict, products: list[dict], categories: list
         + f'<span style="color:#101010;font-weight:900;font-size:15px;text-align:center">{html_lib.escape(c.get("name") or "")}</span></a>'
         for c in categories)
     categories_html = (f'<h2 style="margin:26px 0 14px;font-size:30px;font-weight:950;color:#101010;text-align:center">'
-                       f'{"Категорії акційних товарів" if lang == "ua" else "Категории акционных товаров"}</h2>'
+                       f'{html_lib.escape(i18n["categories"])}</h2>'
                        f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px">{category_cards}</div>'
                        ) if categories else ''
     cards = []
@@ -252,34 +264,36 @@ def deterministic_landing(campaign: dict, products: list[dict], categories: list
             f'<img src="{img}" alt="{name}" loading="lazy" style="max-width:100%;max-height:100%;object-fit:contain"></div>'
             f'<div style="padding:18px;display:flex;flex-direction:column;gap:10px;flex:1">'
             f'<p style="margin:0;font-size:15px;line-height:1.45;color:#101010;font-weight:700;flex:1">{name}</p>'
-            + (f'<div style="font-size:22px;font-weight:950;color:#101010">{price}</div>' if price else '')
+            + (f'<div style="font-size:22px;font-weight:950;color:#101010"><span style="font-size:13px;font-weight:700;color:#69737D;display:block">{html_lib.escape(i18n["price"])}</span>{price}</div>' if price else '')
             + f'<a href="{url}" rel="noopener" style="display:block;text-align:center;background:#19BCC9;color:#101010;font-weight:900;text-decoration:none;'
               f'padding:12px 16px;border-radius:999px;font-size:14px">{buy}</a></div></div>'
         )
-    advantages = [
-        ('Офіційна гарантія' if lang == 'ua' else 'Официальная гарантия'),
-        ('Технічна підтримка 24/7' if lang == 'ua' else 'Техническая поддержка 24/7'),
-        ('Швидка доставка по Україні' if lang == 'ua' else 'Быстрая доставка по Украине'),
-    ]
+    advantages = verified_advantages(profile, lang)
     adv = ''.join(
-        f'<div style="background:#1A2128;border:1px solid #35393F;border-radius:22px;padding:26px;text-align:center;color:#FFFFFF;font-weight:900;font-size:17px">{a}</div>'
+        f'<div style="background:#1A2128;border:1px solid #35393F;border-radius:22px;padding:26px;text-align:center;color:#FFFFFF;font-weight:900;font-size:17px">{html_lib.escape(a)}</div>'
         for a in advantages)
+    advantages_html = (f'<!-- LANDING BLOCK 04: ADVANTAGES START --><div style="margin:18px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">{adv}</div><!-- LANDING BLOCK 04: ADVANTAGES END -->'
+                       if adv else '')
+    products_heading = (f'<h2 style="margin:26px 0 14px;font-size:30px;font-weight:950;color:#101010;text-align:center">{html_lib.escape(i18n["products"])}</h2>'
+                        if cards else '')
     return f'''<!doctype html>
-<html lang="{'uk' if lang == 'ua' else 'ru'}">
+<html lang="{lang}">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title></head>
 <body style="margin:0;background:#F5F7FA;font-family:'Montserrat','Segoe UI',Arial,sans-serif">
 <section style="max-width:1240px;margin:0 auto;padding:14px;box-sizing:border-box">
+<!-- LANDING BLOCK 01: HERO START -->
 <div style="position:relative;overflow:hidden;background:{'#101010' if campaign.get('hero_url') else 'linear-gradient(135deg,#101010,#1A2128)'};border:1px solid #35393F;border-radius:32px;padding:64px 28px;text-align:center">
 {f'<img src="{html_lib.escape(str(campaign.get("hero_url")))}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center"><div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(16,16,16,.55) 0%,rgba(16,16,16,.82) 100%)"></div>' if campaign.get('hero_url') else ''}
 <div style="position:relative;z-index:1">
 {f'<div style="display:inline-block;background:rgba(25,188,201,.12);border:1px solid #19BCC9;color:#C9F0F4;padding:9px 16px;border-radius:999px;font-weight:900;font-size:13px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:18px">{_chunk(campaign, "period")}</div>' if campaign.get('period') else ''}
 <h1 style="margin:0 0 12px;font-size:52px;line-height:1.02;font-weight:950;color:#FFFFFF">{title}</h1>
-{f'<p style="margin:0;color:#C9F0F4;font-weight:700;font-size:20px">{_chunk(campaign, "campaign_subtitle")}</p>' if campaign.get('campaign_subtitle') else ''}
+{f'<p style="margin:0;color:#C9F0F4;font-weight:700;font-size:20px">{_chunk(campaign, "campaign_subtitle")}</p>' if campaign.get('campaign_subtitle') else f'<p style="margin:0;color:#C9F0F4;font-weight:700;font-size:20px">{html_lib.escape(i18n["fallback_lead"])}</p>'}
 </div>
 </div>
-{categories_html}
-{f'<div style="margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">{"".join(cards)}</div>' if cards else ''}
-<div style="margin:18px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">{adv}</div>
+<!-- LANDING BLOCK 01: HERO END -->
+{f'<!-- LANDING BLOCK 02: CATEGORIES START -->{categories_html}<!-- LANDING BLOCK 02: CATEGORIES END -->' if categories_html else ''}
+{f'<!-- LANDING BLOCK 03: PRODUCTS START -->{products_heading}<div style="margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">{"".join(cards)}</div><!-- LANDING BLOCK 03: PRODUCTS END -->' if cards else ''}
+{advantages_html}
 </section>
 </body></html>'''
 
@@ -293,7 +307,8 @@ STRICT RULES
 - No scripts, forms, buttons (use <a> styled as buttons), iframes, external CSS.
 - Use ONLY the product data in PRODUCTS JSON: exact names, exact price_text, exact image URLs, exact product URLs. NEVER invent a product, price or URL. If price_text is empty, omit the price line for that product.
 - Every product card links its image, name and buy CTA to the product url.
-- Language of ALL copy: {LANGUAGE}. Buy button: «Купити» (ua) / «Купить» (ru).
+- Language of ALL copy: {LANGUAGE}. Buy button text: «{BUY}». Price label: «{PRICE_LABEL}». Products heading: «{PRODUCTS_HEADING}». Categories heading: «{CATEGORIES_HEADING}».
+- Never write "we", warranty, support, delivery, stock, installation or SLA claims unless they are quoted verbatim from VERIFIED COMPANY FACTS below. No urgency, no superlatives, no invented promises.
 
 DESIGN SYSTEM (ARTLINE)
 - Canvas #F5F7FA; dark surfaces #101010/#1A2128 border #35393F; light cards #FFFFFF border #D0D7DE; accent cyan #19BCC9 (dark) / #157985 (light). Radii: sections 28-32px, cards 18-22px, chips/buttons 999px. Heavy weights: h1/h2 950, prices 950.
@@ -301,12 +316,15 @@ DESIGN SYSTEM (ARTLINE)
   1. PROMO HERO - {HERO_RULE}
   2. CATEGORY GRID (only if CATEGORIES JSON is non-empty) - centered h2 section title, then a responsive grid of white category cards: image on top (height ~120px, object-fit:contain), category name below (900 weight, centered). THE WHOLE CARD is one <a> linking to the exact category url. Use ONLY categories from CATEGORIES JSON - exact names, exact image URLs, exact urls; if a category has no image, render the card with the name only.
   3. PRODUCT GRID (only if PRODUCTS JSON is non-empty) - responsive grid of white cards: white image slot (fixed height, img object-fit:contain, never cropped), product name, price (old-style big 950; if the name suggests Refurbished/discount you still only show given price_text), cyan pill CTA «{BUY}» linking to the product url.
-  4. ADVANTAGES - three dark cards with short confident claims (official warranty, support, delivery) - no invented specifics, no numbers not present in data.
+  4. ADVANTAGES - ONLY if VERIFIED COMPANY FACTS is non-empty: one dark card per verified fact, quoted verbatim (never paraphrased, never extended with terms, speed, free delivery, warranty periods, 24/7 or stock). If VERIFIED COMPANY FACTS is empty, SKIP this section entirely - do not fill it with neutral promises or invent three cards for symmetry.
 - Mobile-friendly: grids use repeat(auto-fit,minmax(240px,1fr)) (categories minmax(180px,1fr)); hero title scales down via the media-query <style> block.
 - Wrap each section in comments: <!-- LANDING BLOCK 01: HERO START --> ... END, 02: CATEGORIES, 03: PRODUCTS, 04: ADVANTAGES (skip a number entirely if its section is absent).
 
 CAMPAIGN
 {CAMPAIGN}
+
+VERIFIED COMPANY FACTS (the only allowed company claims; empty means none)
+{COMPANY_FACTS}
 
 CATEGORIES JSON
 {CATEGORIES}
@@ -331,16 +349,22 @@ _HERO_RULE_GRADIENT = ('dark gradient section (linear-gradient(135deg,#101010,#1
 
 
 def build_landing_prompt(campaign: dict, products: list[dict], template: str = '',
-                         categories: list[dict] | None = None) -> str:
-    lang = campaign.get('language') or 'ua'
+                         categories: list[dict] | None = None, profile: dict | None = None) -> str:
+    lang = norm_lang(campaign.get('language') or 'ua')
+    i18n = landing_i18n(lang)
     hero_url = str(campaign.get('hero_url') or '')
     safe_products = [{k: p.get(k, '') for k in ('name', 'price_text', 'image', 'url')} for p in products]
     safe_categories = [{k: c.get(k, '') for k in ('name', 'image', 'url')} for c in (categories or [])]
     base = template if template and all(ph in template for ph in LANDING_PLACEHOLDERS) else LANDING_PROMPT
+    facts = verified_advantages(profile, lang)
     return (base
             .replace('{HERO_RULE}', _HERO_RULE_IMAGE.replace('{HERO_URL}', hero_url) if hero_url else _HERO_RULE_GRADIENT)
-            .replace('{LANGUAGE}', 'українська' if lang == 'ua' else 'русский')
-            .replace('{BUY}', 'Купити' if lang == 'ua' else 'Купить')
+            .replace('{LANGUAGE}', i18n['language_name'])
+            .replace('{BUY}', i18n['buy'])
+            .replace('{PRICE_LABEL}', i18n['price'])
+            .replace('{PRODUCTS_HEADING}', i18n['products'])
+            .replace('{CATEGORIES_HEADING}', i18n['categories'])
+            .replace('{COMPANY_FACTS}', json.dumps(facts, ensure_ascii=False))
             .replace('{CAMPAIGN}', json.dumps({
                 'title': campaign.get('campaign_title') or campaign.get('name') or '',
                 'subtitle': campaign.get('campaign_subtitle') or '',
@@ -351,13 +375,25 @@ def build_landing_prompt(campaign: dict, products: list[dict], template: str = '
 
 
 def generate_landing_html(campaign: dict, products: list[dict], model: str, template: str = '',
-                          categories: list[dict] | None = None):
+                          categories: list[dict] | None = None, profile: dict | None = None,
+                          seo: dict | None = None):
     """(html, input_tokens, output_tokens, fallback_reason). Ніколи не кидає:
-    відмова AI -> детермінований шаблон, гроші за токени не втрачаються."""
+    відмова AI -> детермінований шаблон, гроші за токени не втрачаються.
+
+    Після санітизації сервер сам ставить SEO-head (finalize_landing_seo): модель
+    не володіє title/description/canonical/robots/hreflang/JSON-LD."""
     from app.pipeline import _responses_create, _usage_counts, public_fallback_reason
-    fallback = deterministic_landing(campaign, products, categories)
+    seo = seo or {}
+
+    def finalize(markup: str) -> str:
+        return finalize_landing_seo(markup, campaign=campaign, products=products, profile=profile,
+                                    language=campaign.get('language') or 'ua', canonical=seo.get('canonical', ''),
+                                    alternates=seo.get('alternates') or {}, published=bool(seo.get('published')),
+                                    breadcrumbs=seo.get('breadcrumbs'))
+
+    fallback = finalize(deterministic_landing(campaign, products, categories, profile))
     try:
-        prompt = build_landing_prompt(campaign, products, template, categories)
+        prompt = build_landing_prompt(campaign, products, template, categories, profile)
         response = _responses_create(model, prompt, 16000)
         raw = response.output_text or ''
         match = re.search(r'<!doctype html.*</html>', raw, re.I | re.S) or re.search(r'<html.*</html>', raw, re.I | re.S)
@@ -365,7 +401,8 @@ def generate_landing_html(campaign: dict, products: list[dict], model: str, temp
             raise RuntimeError('AI did not return a complete HTML document')
         html = sanitize_landing_html(match.group(0))
         # Жодного вигаданого товарного посилання: кожен href/src або з проб, або відносний.
-        allowed = {p.get('url') for p in products} | {p.get('image') for p in products}
+        allowed = {p.get('url') for p in products} | {p.get('image') for p in products} | \
+                  {c.get('url') for c in (categories or [])} | {c.get('image') for c in (categories or [])}
         soup = BeautifulSoup(html, 'html.parser')
         for tag in soup.find_all(['a', 'img']):
             attr = 'href' if tag.name == 'a' else 'src'
@@ -374,6 +411,7 @@ def generate_landing_html(campaign: dict, products: list[dict], model: str, temp
                 del tag[attr]
         from app.pipeline import enforce_site_font
         html = enforce_site_font(str(soup))
+        html = finalize(html)
         input_tokens, output_tokens = _usage_counts(response, prompt, raw)
         return html, input_tokens, output_tokens, ''
     except Exception as exc:

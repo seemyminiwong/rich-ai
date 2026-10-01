@@ -138,6 +138,18 @@ class Project(Base):
     # заповнює її раз, а далі перевикористовує на кожному прогоні: після
     # перегенерації адреси кадрів ті самі, тож заміна робиться одним кліком.
     image_map_json: Mapped[str] = mapped_column(Text, default='{}')
+    # SEO/GEO-бриф (ринок, аудиторія, primary/secondary topics, сутності, питання
+    # покупця, заборонені формулювання, джерело й дата даних). Це контекст
+    # пошуку, а НЕ факти: бриф не може розширити Product JSON.
+    seo_brief_json: Mapped[str] = mapped_column(Text, default='{}')
+    # Provenance підтверджених фактів: для кожної характеристики - джерело
+    # (jsonld / spec_table / spec_block / manual / page_text), цитата й confidence.
+    source_evidence_json: Mapped[str] = mapped_column(Text, default='{}')
+    # Знімок Publishing Profile на момент запуску: пізніша зміна налаштувань
+    # не переписує вже затверджений артефакт.
+    publishing_profile_json: Mapped[str] = mapped_column(Text, default='{}')
+    # Історія оцінок SEO/GEO/human/language за прогонами й версіями (порівняння).
+    seo_history_json: Mapped[str] = mapped_column(Text, default='[]')
     error: Mapped[str] = mapped_column(Text, default='')
     duration_seconds: Mapped[float] = mapped_column(Float, default=0)
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
@@ -253,7 +265,55 @@ class CriticReport(Base):
     summary: Mapped[str] = mapped_column(Text, default='')
     issues_json: Mapped[str] = mapped_column(Text, default='[]')
     suggestions_json: Mapped[str] = mapped_column(Text, default='[]')
+    # Структуровані знахідки (code/severity/language/variant/block/evidence/
+    # suggestion/key). issues_json лишається рядками для сумісності.
+    findings_json: Mapped[str] = mapped_column(Text, default='[]')
     auto_fixed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class FindingDecision(Base):
+    """Рішення рецензента щодо знахідки: open / resolved / accepted.
+
+    Warning можна прийняти лише з коментарем; critical прийняти не можна -
+    його треба виправити. Ключ знахідки стабільний між прогонами (seo_geo.finding_key)."""
+    __tablename__ = 'finding_decisions'
+    __table_args__ = (UniqueConstraint('project_id', 'finding_key'),)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey(f'{settings.db_schema}.projects.id'), index=True)
+    finding_key: Mapped[str] = mapped_column(String, index=True)
+    state: Mapped[str] = mapped_column(String, default='open')
+    comment: Mapped[str] = mapped_column(Text, default='')
+    user_id: Mapped[str | None] = mapped_column(ForeignKey(f'{settings.db_schema}.users.id'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class PublishingProfile(Base):
+    """Верифікований профіль публікації: підтверджені факти компанії.
+
+    Публічні комерційні факти (доставка, гарантія, сервіс, контакти) живуть ТУТ,
+    а не в AppSetting з API-ключами. Проєкт і лендінг зберігають ЗНІМОК профілю."""
+    __tablename__ = 'publishing_profiles'
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    name: Mapped[str] = mapped_column(String, unique=True)
+    domains_json: Mapped[str] = mapped_column(Text, default='[]')
+    organization_name: Mapped[str] = mapped_column(String, default='')
+    organization_url: Mapped[str] = mapped_column(Text, default='')
+    logo_url: Mapped[str] = mapped_column(Text, default='')
+    primary_site: Mapped[bool] = mapped_column(Boolean, default=False)
+    markets_json: Mapped[str] = mapped_column(Text, default='[]')
+    languages_json: Mapped[str] = mapped_column(Text, default='[]')
+    verified_facts_json: Mapped[str] = mapped_column(Text, default='{}')
+    statements_json: Mapped[str] = mapped_column(Text, default='{}')
+    approved_contacts_json: Mapped[str] = mapped_column(Text, default='[]')
+    delivery_geography_json: Mapped[str] = mapped_column(Text, default='[]')
+    warranty_text_json: Mapped[str] = mapped_column(Text, default='{}')
+    service_text_json: Mapped[str] = mapped_column(Text, default='{}')
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    updated_by: Mapped[str] = mapped_column(String, default='')
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
@@ -292,6 +352,13 @@ class Landing(Base):
     # натисне «Опублікувати». Порожній токен = посилання ще не видавалось.
     public: Mapped[bool] = mapped_column(Boolean, default=False)
     share_token: Mapped[str] = mapped_column(String, default='')
+    # Фактичний публічний URL після публікації на сайті (canonical). Порожньо =
+    # чернетка: у head завжди noindex, canonical не ставиться.
+    publish_url: Mapped[str] = mapped_column(Text, default='')
+    # Мовні версії тієї самої сторінки: {"uk": url, "pl": url, "x-default": url}.
+    alternates_json: Mapped[str] = mapped_column(Text, default='{}')
+    # Знімок Publishing Profile на момент запуску.
+    publishing_profile_json: Mapped[str] = mapped_column(Text, default='{}')
     status: Mapped[Status] = mapped_column(Enum(Status), default=Status.queued)
     stage: Mapped[str] = mapped_column(String, default='queued')
     error: Mapped[str] = mapped_column(Text, default='')
