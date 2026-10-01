@@ -2524,6 +2524,66 @@ def run_critic(project_id: str, payload: CriticIn, db: Session = Depends(get_db)
     db.add(Event(project_id=p.id, stage='critic', message=f'{user.email}: перевірку якості перезапущено')); audit(db, user, 'critic.run', 'project', p.id); db.commit(); return reports
 
 
+@app.get('/api/projects/{project_id}/report.md')
+def project_problem_report(project_id: str, request: Request, db: Session = Depends(get_db), user=Depends(current)):
+    """Markdown-звіт про проблеми для швидкої дефектовки: безкоштовно, без AI."""
+    from app.artline_standard import radius_deviations
+    from app.report import build_problem_report
+    p = db.get(Project, project_id)
+    if not p: raise HTTPException(404, 'Проєкт не знайдено')
+    style = db.get(Style, p.style_id)
+    critics = [_critic_dict(x) for x in db.scalars(select(CriticReport).where(CriticReport.project_id == p.id).order_by(CriticReport.created_at)).all()]
+    decisions = _finding_decisions(db, p.id)
+    latest = _latest_artifacts(p)
+    events = [{'level': x.level, 'stage': x.stage, 'message': x.message, 'created_at': x.created_at}
+              for x in db.scalars(select(Event).where(Event.project_id == p.id).order_by(Event.created_at.desc()).limit(200)).all()]
+    from app.pipeline import style_palette
+    from app.tasks import _project_palette
+    try:
+        scale = float(((_project_palette(p) or (style_palette(style) if style else {})) or {}).get('radius', 1) or 1)
+    except (TypeError, ValueError):
+        scale = 1.0
+    radius = {f'{a.language.upper()} {a.variant} v{a.version}': radius_deviations(a.html, scale) for a in sorted(latest, key=lambda a: (a.language, a.variant))}
+    origin = f'{request.headers.get("x-forwarded-proto") or request.url.scheme}://{request.headers.get("host") or request.url.netloc}'
+    text = build_problem_report(project_dict(p, False, style.name if style else ''), critics=critics, decisions=decisions,
+                                blockers=approval_blockers(critics, latest, decisions), artifacts=latest, events=events,
+                                radius=radius, studio_url=origin, version=APP_VERSION)
+    name = _archive_name(p.name, p.id[:8])
+    audit(db, user, 'project.report', 'project', p.id); db.commit()
+    return Response(text, media_type='text/markdown; charset=utf-8',
+                    headers={'Content-Disposition': f'attachment; filename="defects-{name}.md"'})
+
+
+@app.post('/api/projects/{project_id}/restyle')
+def project_restyle(project_id: str, db: Session = Depends(get_db), user=Depends(require_perm('project.edit_html'))):
+    """Безкоштовно застосувати стандарт оформлення ARTLINE до поточних версій.
+
+    Те саме механічне вирівнювання, що й після генерації (радіуси, шкала, ваги,
+    акцент, тире), плюс схема кольорів і масштаб скруглень проєкту. Текст,
+    сітка й зображення не змінюються; змінена сторінка стає новою версією."""
+    from app.artline_standard import apply_artline_standard
+    from app.pipeline import apply_palette, style_palette
+    from app.tasks import _project_palette
+    p = db.get(Project, project_id)
+    if not p: raise HTTPException(404, 'Проєкт не знайдено')
+    require_project_edit(p, user)
+    if p.status in (Status.processing, Status.queued):
+        raise HTTPException(409, 'Проєкт зараз генерується - дочекайтесь завершення')
+    style = db.get(Style, p.style_id)
+    palette = _project_palette(p) or (style_palette(style) if style else None)
+    updated = []
+    for artifact in _latest_artifacts(p):
+        fixed = apply_palette(apply_artline_standard(artifact.html, p.name or ''), palette)
+        if fixed != artifact.html:
+            saved = _save_artifact_version(db, artifact, fixed, user, action='artifact.restyle')
+            updated.append(f'{artifact.language}/{artifact.variant} v{saved["version"]}')
+            db.refresh(p)
+    if updated:
+        db.add(Event(project_id=p.id, stage='critic', message=f'{user.email}: оформлення вирівняно за стандартом ARTLINE - {", ".join(updated)}'))
+        db.commit()
+    return {'updated': updated}
+
+
 class FindingDecisionIn(BaseModel):
     state: str = Field(default='open', max_length=16)
     comment: str = Field(default='', max_length=2000)

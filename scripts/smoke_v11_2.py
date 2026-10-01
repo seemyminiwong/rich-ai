@@ -165,7 +165,7 @@ checks = {
     'root admin protected': 'def is_root_admin' in main and 'Пароль головного адміністратора' in main and 'Головного адміністратора видалити не можна' in main and 'u.is_root' in web,
 
     # --- v12 foundation ---
-    'single version source': '__version__ = "12.4"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
+    'single version source': '__version__ = "12.5"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
     'no version in the product UI': all(s not in (root / 'apps/web/index.html').read_text(encoding='utf-8') for s in ('Studio v', 'v12')) and 'state.version' not in web and 'BASE_STYLE_VERSION' not in main,
     'cache busting kept': '?b=' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
     'openai retries': 'def _with_retry' in pipeline and '_with_retry(lambda: api.responses.create' in pipeline and '_with_retry(lambda: image_client().images.edit' in pipeline,
@@ -780,6 +780,9 @@ checks.update({
     'public url audit is a separate script, not part of generation': (root / 'scripts/audit_public_url.py').exists() and 'audit_public_url' not in tasks and 'lighthouse' not in tasks.lower(),
     'ci checks seo fixtures, lighthouse and lychee': 'lighthouse' in ci.lower() and 'lychee' in ci.lower() and 'build_seo_fixtures.py' in ci and 'check_no_hardcoded_claims.py' in ci,
     'seo tests exist': (root / 'tests/test_seo_geo.py').exists(),
+    'one-click markdown defect report': "@app.get('/api/projects/{project_id}/report.md')" in main and (root / 'apps/api/app/report.py').exists() and 'function downloadProblemReport' in web,
+    'free restyle applies the ARTLINE standard to existing versions': "@app.post('/api/projects/{project_id}/restyle')" in main and 'function restyleProject' in web,
+    'stacked cards in a transparent wrapper get the outer radius': 'def outer_ids' in (root / 'apps/api/app/artline_standard.py').read_text(encoding='utf-8'),
     'category is normalized, ukrainian and never the product itself': (root / 'apps/api/app/category.py').exists() and 'def is_product_crumb' in (root / 'apps/api/app/category.py').read_text(encoding='utf-8') and 'def ukrainian_url' in (root / 'apps/api/app/category.py').read_text(encoding='utf-8') and 'apply_category(product, page_html, project.source_url)' in tasks and (root / 'tests/test_category.py').exists(),
     'existing projects can be recategorized without ai': "@app.post('/api/projects/recategorize')" in main and 'def recategorize_projects' in tasks and 'async function recategorize' in web,
     # Те, що мало лишитись: захист зображень, render gate, ARTLINE Standard.

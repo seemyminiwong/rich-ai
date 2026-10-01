@@ -518,3 +518,59 @@ def test_prompt_carries_contract_brief_and_company_facts_as_separate_sections():
     assert '48 кг' not in text and '"evidence"' not in text  # derived і evidence в промпт не йдуть
     empty = build_prompt(PRODUCT, style, 'ua', 'desktop', '/h', '/f')
     assert 'SEO BRIEF: none' in empty and 'VERIFIED COMPANY FACTS: none' in empty
+
+
+def test_stacked_cards_in_a_transparent_wrapper_get_the_outer_radius():
+    """Скарга власника (2026-10-01): на мобільному Showcase плитки значень під Hero
+    мали 10-12px, а Hero 14px - у одній колонці стояли картки з різними кутами."""
+    from app.artline_standard import apply_artline_standard, radius_deviations
+    page = ('<section>'
+            '<div style="border-radius:14px;background:#1A2128;padding:20px">'
+            '<span style="display:inline-flex;border:1px solid #19BCC9;border-radius:8px;padding:6px 14px">ASUS · КОРПУС</span>'
+            '<img src="/h.webp" style="border-radius:12px"><span style="border-radius:999px;background:#fff">M.2</span></div>'
+            '<div style="display:grid;gap:12px">'
+            '<div style="border-radius:10px;background:#1A2128;padding:20px">M.2 2230-2280</div>'
+            '<div style="border-radius:12px;background:#FFFFFF;border:1px solid #D0D7DE;padding:20px">124.5×47.7×10.9 мм</div></div>'
+            '<div style="border-radius:14px;background:#F5F7FA;padding:24px"><div style="border-radius:16px;background:#fff">Внутрішня</div></div>'
+            '</section>')
+    flagged = radius_deviations(page)
+    assert any('M.2 2230-2280' in f and 'зовнішній' in f for f in flagged)
+    out = apply_artline_standard(page)
+    assert radius_deviations(out) == []
+    assert 'border-radius:14px;background:#1A2128;padding:20px">M.2' in out
+    assert 'border-radius:14px;background:#FFFFFF' in out
+    assert 'border-radius:12px;background:#fff">Внутрішня' in out          # картка в картці - 10-12
+    assert 'border-radius:10px;padding:6px 14px' in out                     # лейбл - не зовнішня поверхня
+    assert 'border-radius:999px' in out and 'src="/h.webp" style="border-radius:12px"' in out
+
+
+def test_problem_report_is_markdown_for_triage_and_merges_variants():
+    from app.report import build_problem_report
+    crit = sg.finding('alt_missing', 'critical', 'Зображення без alt', language='uk', variant='desktop', block=1,
+                      evidence='/media/p/f.webp', suggestion='Описати фото', segment='a1', source='seo')
+    crit_m = dict(sg.finding('alt_missing', 'critical', 'Зображення без alt', language='uk', variant='mobile', block=1,
+                             evidence='/media/p/f.webp', suggestion='Описати фото', segment='a1', source='seo'))
+    warn = sg.finding('long_sentence', 'warning', 'Задовге речення | з вертикальною рискою', language='pl', variant='desktop', block=0,
+                      evidence='Bardzo długie zdanie', source='human')
+    critics = [{'type': 'seo', 'score': 50, 'summary': 'alt', 'findings': [crit, crit_m], 'issues': []},
+               {'type': 'human', 'score': 93, 'summary': 'довге', 'findings': [warn], 'issues': []},
+               {'type': 'marketing', 'score': 90, 'summary': 'бренд', 'findings': [], 'issues': ['Забагато повторів бренду на сторінку']}]
+    arts = [SimpleNamespace(language='ua', variant='desktop', version=3, html=GOOD_UK, fallback_reason=''),
+            SimpleNamespace(language='ua', variant='mobile', version=2, html=GOOD_UK, fallback_reason='no key')]
+    decisions = {warn['key']: {'state': 'accepted', 'comment': 'технічний перелік'}}
+    md = build_problem_report({'id': 'p1', 'name': 'Тест', 'languages': ['ua'], 'variants': ['desktop', 'mobile'], 'status': 'review'},
+                              critics=critics, decisions=decisions, blockers=approval_blockers(critics, arts, decisions),
+                              artifacts=arts, radius={'UA desktop v3': [], 'UA mobile v2': ['<div> зовнішній блок 8px, норма 14px']},
+                              studio_url='http://studio:3000', version='12.5')
+    assert md.startswith('# Дефекти: Тест') and '**Схвалення: ЗАБЛОКОВАНО.**' in md
+    assert '| D-01 | КРИТИЧНО | SEO | UA · десктоп + мобільна · блок 2 | Зображення без alt | відкрито |' in md
+    details = md.split('## Деталі')[1].split('## Радіуси')[0]
+    assert details.count('### D-') == 3 and details.count('Зображення без alt') == 1  # дві копії alt - один дефект
+    assert 'фрагмент редактора `a1`' in md and '- [ ] **Зображення без alt**' in md
+    assert 'Задовге речення \\| з вертикальною рискою' in md            # таблиця не ламається
+    assert '- [x] **Задовге речення | з вертикальною рискою**' in md and 'Рішення: прийнято - технічний перелік' in md
+    assert 'Забагато повторів бренду' in md                               # старі звіти без findings теж у звіті
+    assert '## Аварійний шаблон замість стилю' in md and 'UA mobile v2: no key' in md
+    assert '**UA mobile v2** - поза стандартом: 1' in md and '[відкрити в студії](http://studio:3000/projects/p1)' in md
+    rows = [line for line in md.splitlines() if line.startswith('| D-')]
+    assert len(rows) == 3, rows                                            # 2 копії alt склеєно в одну

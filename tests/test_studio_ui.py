@@ -211,3 +211,12 @@ def test_text_tab_edits_the_rich_page():
     assert "/segments`,{method:'PUT'" in save and 'refreshSelected()' in save
     # незбережені правки не губляться мовчки при перемиканні версії
     assert 'Незбережені правки тексту' in _body(js, 'selectArtifact')
+
+
+def test_open_dialog_never_scrolls_the_page_behind_it():
+    """Скарга власника (2026-10-01): прокрутка над блоком майстра прокручувала сторінку."""
+    css = _css()
+    assert 'html:has(dialog[open]){overflow:hidden;scrollbar-gutter:stable}' in css
+    contain = css.split('{overscroll-behavior:contain}')[0].rsplit('\n', 1)[-1]
+    for selector in ('dialog', 'dialog form', '.wiz-body', '.dd-list'):
+        assert selector in contain.split(','), selector

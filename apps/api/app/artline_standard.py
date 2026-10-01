@@ -181,7 +181,56 @@ def normalize_radii(style: str, is_outer: bool) -> str:
     return _RADIUS_DECL_RE.sub(repl, style or '')
 
 
-def radius_deviations(markup: str) -> list[str]:
+_SURFACE_TAGS = {'div', 'section', 'article', 'aside', 'li', 'figure', 'details', 'a', 'img', 'ul'}
+_NO_PAINT = re.compile(r'^\s*(none|transparent|initial|inherit|unset|0)\s*$|rgba\([^)]*,\s*0(\.0+)?\s*\)', re.I)
+
+
+def _paints(style: str) -> bool:
+    """Чи має елемент власну видиму поверхню: фон, рамку або тінь."""
+    for prop in ('background', 'background-color', 'background-image', 'border', 'box-shadow'):
+        m = re.search(r'(?<![-\w])' + prop + r'\s*:\s*([^;]+)', style or '', re.I)
+        if not m:
+            continue
+        value = m.group(1).strip()
+        if _NO_PAINT.search(value):
+            continue
+        if prop == 'border' and re.match(r'^\s*0(px)?\b', value):
+            continue
+        return True
+    return False
+
+
+def _is_surface(tag) -> bool:
+    style = tag.get('style') or ''
+    if tag.name not in _SURFACE_TAGS or re.search(r'display\s*:\s*inline', style, re.I):
+        return False  # лейбли, пігулки й посилання в рядку - не картки
+    if tag.name == 'img':
+        return bool(_RADIUS_DECL_RE.search(style))
+    return _paints(style)
+
+
+def outer_ids(root, blocks) -> set:
+    """Зовнішні поверхні: блоки сторінки і будь-яка картка, над якою до кореня
+    немає іншої видимої поверхні. На мобільному Showcase плитки значень лежать
+    у прозорій обгортці - для ока це такі самі картки, як Hero, і радіус у них
+    має бути той самий 14px, а не 10-12 «внутрішньої» картки."""
+    ids = {id(b) for b in blocks}
+    for tag in root.find_all(True):
+        if not _is_surface(tag):
+            continue
+        covered = False
+        for parent in tag.parents:
+            if parent is root or parent is None:
+                break
+            if getattr(parent, 'name', None) and _is_surface(parent) and parent.name != 'img':
+                covered = True
+                break
+        if not covered:
+            ids.add(id(tag))
+    return ids
+
+
+def radius_deviations(markup: str, scale: float | None = None) -> list[str]:
     """Радіуси, що не відповідають стандарту, - для рецензента, з місцем.
 
     Масштаб скруглень зі схеми (повзунок) законний, тому норма рахується від
@@ -194,13 +243,20 @@ def radius_deviations(markup: str) -> list[str]:
     if root is None:
         return []
     blocks = _blocks(root)
-    block_ids = {id(b) for b in blocks}
+    block_ids = outer_ids(root, blocks)
     outer_values = []
-    for block in blocks:
+    for block in root.find_all(True):
+        if id(block) not in block_ids:
+            continue
         m = _RADIUS_RE.search(block.get('style') or '')
         if m and 4 <= float(m.group(1)) < 100:
             outer_values.append(float(m.group(1)))
-    scale = (max(set(outer_values), key=outer_values.count) / OUTER_RADIUS) if outer_values else 1.0
+    if scale is None:
+        # Масштаб схеми невідомий (критик без палітри): вгадуємо лише явний масштаб
+        # повзунка. Близько 14px - це стандарт із помилками, а не масштаб, інакше
+        # більшість неправильних карток «узаконила» б себе, а правильні стали б дефектом.
+        mode = max(set(outer_values), key=outer_values.count) if outer_values else OUTER_RADIUS
+        scale = mode / OUTER_RADIUS if abs(mode - OUTER_RADIUS) > 2.5 else 1.0
     out = []
     for tag in root.find_all(style=True):
         style = tag.get('style') or ''
@@ -237,6 +293,7 @@ def apply_artline_standard(markup: str, product_name: str = '') -> str:
     hero = blocks[0] if blocks else None
     block_ids = {id(b) for b in blocks}
     hero_ids = {id(x) for x in (hero.find_all(True) if hero is not None else [])} | ({id(hero)} if hero is not None else set())
+    surface_ids = outer_ids(root, blocks)
 
     # 1. Корінь: на всю ширину контейнера сторінки, без max-width і відступів
     style = root.get('style') or ''
@@ -316,7 +373,7 @@ def apply_artline_standard(markup: str, product_name: str = '') -> str:
         #    і на сторінці сусідили 14, 8 і 20.
         style = tag.get('style') or ''
         if style:
-            new = normalize_radii(style, id(tag) in block_ids)
+            new = normalize_radii(style, id(tag) in surface_ids)
             if new != style:
                 tag['style'] = style = new
                 changed = True
