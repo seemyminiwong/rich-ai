@@ -208,7 +208,7 @@ GEMINI_API_KEY=
 
 Схема таблиць сумісна з `richstudio_v11_2` — оновлення зберігає наявні проєкти, стилі та користувачів. Нові колонки додаються ідемпотентними міграціями при старті.
 
-Дослідження фактів вимикається й налаштовується в `.env`: `FACT_RESEARCH_ENABLED` (типово `false`), `FACT_SEARCH_PROVIDER` (`disabled` | `manual` | `firecrawl`), `FACT_RESEARCH_MAX_QUERIES`, `FACT_RESEARCH_MAX_PAGES`, `FACT_RESEARCH_TIMEOUT_SECONDS`, `FACT_RESEARCH_MAX_PAGE_BYTES`, `FACT_RESEARCH_TTL_DAYS`, `FIRECRAWL_USD_PER_CREDIT`. Ключ `FIRECRAWL_API_KEY` краще задати в **Налаштування → Ключі** (runtime-секрет: шифрується, API і воркер підхоплюють його без перезапуску). Права: `fact_research.run` (адміністратор, редактор) і `fact_research.review` (адміністратор, редактор, рецензент).
+Дослідження фактів вмикається в інтерфейсі (**Налаштування → Ключі**, головний адміністратор; значення з бази перекриває `.env`) або в `.env`: `FACT_RESEARCH_ENABLED` (типово `false`), `FACT_SEARCH_PROVIDER` (`disabled` | `manual` | `firecrawl`), `FACT_RESEARCH_MAX_QUERIES`, `FACT_RESEARCH_MAX_PAGES`, `FACT_RESEARCH_TIMEOUT_SECONDS`, `FACT_RESEARCH_MAX_PAGE_BYTES`, `FACT_RESEARCH_TTL_DAYS`, `FIRECRAWL_USD_PER_CREDIT`. Ключ `FIRECRAWL_API_KEY` краще задати в **Налаштування → Ключі** (runtime-секрет: шифрується, API і воркер підхоплюють його без перезапуску). Права: `fact_research.run` (адміністратор, редактор) і `fact_research.review` (адміністратор, редактор, рецензент).
 
 Комерційні факти для публічних сторінок (доставка, гарантія, сервіс) задаються не в `.env`, а в **Налаштування → Publishing Profile** (право «Керувати Publishing Profile»). Змінні `SEO_AUDIT_*` стосуються лише окремого скрипта post-publish аудиту.
 

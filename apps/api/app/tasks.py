@@ -422,7 +422,8 @@ def search_provider(manual_urls: list | None = None):
     """Провайдер за налаштуваннями. Ключ - з runtime (шифрований), у логи не потрапляє."""
     from app.fact_research import DisabledSearchProvider, FirecrawlSearchProvider, ManualUrlProvider
     from app.runtime import runtime_config
-    name = (settings.fact_search_provider or 'disabled').lower()
+    from app.runtime import fact_research_config
+    name = fact_research_config()['provider']
     if name == 'firecrawl':
         return FirecrawlSearchProvider(runtime_config().get('firecrawl_api_key', ''), settings.firecrawl_usd_per_credit,
                                        settings.fact_research_timeout_seconds)

@@ -69,7 +69,17 @@ RUNTIME_KEYS = {
     'local_text_models': 'local_llm_models',
     # Ключ пошукового провайдера фактів: секрет, шифрується, назовні лише маска.
     'firecrawl_api_key': 'firecrawl_api_key',
+    # Дослідження фактів вмикається з інтерфейсу (Налаштування -> Ключі або вкладка
+    # «Факти»); .env - лише значення за замовчуванням.
+    'fact_research_enabled': 'fact_research_enabled',
+    'fact_search_provider': 'fact_search_provider',
 }
+
+FACT_PROVIDERS = ('disabled', 'manual', 'firecrawl')
+
+
+def _truthy(value) -> bool:
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
 
 DEFAULTS = {
     'llm_provider': 'openai',
@@ -102,7 +112,18 @@ def _load() -> dict:
         out[key + '_source'] = 'database' if value else ('env' if env_value else 'none')
     if out['llm_provider'] not in ('openai', 'openrouter', 'local'):
         out['llm_provider'] = 'openai'
+    out['fact_research_enabled'] = _truthy(out.get('fact_research_enabled'))
+    provider = str(out.get('fact_search_provider') or 'disabled').strip().lower()
+    out['fact_search_provider'] = provider if provider in FACT_PROVIDERS else 'disabled'
     return out
+
+
+def fact_research_config() -> dict:
+    """Чинний стан дослідження фактів: БД (з інтерфейсу) перекриває .env."""
+    cfg = runtime_config()
+    return {'enabled': bool(cfg.get('fact_research_enabled')), 'provider': cfg.get('fact_search_provider') or 'disabled',
+            'enabled_source': cfg.get('fact_research_enabled_source', 'none'),
+            'provider_source': cfg.get('fact_search_provider_source', 'none')}
 
 
 def runtime_config(force: bool = False) -> dict:

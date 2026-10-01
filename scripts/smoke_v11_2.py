@@ -165,7 +165,8 @@ checks = {
     'root admin protected': 'def is_root_admin' in main and 'Пароль головного адміністратора' in main and 'Головного адміністратора видалити не можна' in main and 'u.is_root' in web,
 
     # --- v12 foundation ---
-    'single version source': '__version__ = "12.12"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
+    'fact research toggled from the UI': "'fact_research_enabled': 'fact_research_enabled'" in (root / 'apps/api/app/runtime.py').read_text(encoding='utf-8') and 'function enableFactResearch' in (root / 'apps/web/app.js').read_text(encoding='utf-8'),
+    'single version source': '__version__ = "12.13"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
     'no version in the product UI': all(s not in (root / 'apps/web/index.html').read_text(encoding='utf-8') for s in ('Studio v', 'v12')) and 'state.version' not in web and 'BASE_STYLE_VERSION' not in main,
     'cache busting kept': '?b=' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
     'openai retries': 'def _with_retry' in pipeline and '_with_retry(lambda: api.responses.create' in pipeline and '_with_retry(lambda: image_client().images.edit' in pipeline,

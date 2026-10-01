@@ -253,3 +253,11 @@ def test_project_seo_geo_tab_shows_brief_profile_and_is_routable():
     for text in ('SEO-бриф', 'Імпортовані запити', 'Publishing Profile проєкту', 'Походження фактів', 'Імпортувати GSC / DataForSEO'):
         assert text in tab, text
     assert '/seo-brief/import' in _body(js, 'saveSeoBrief') and '/publishing-profile' in _body(js, 'refreshProjectProfile')
+
+
+def test_seo_brief_form_has_spacing_and_aligned_fields():
+    """Скарга власника (2026-10-01): на кроці «SEO / GEO» поля злипались, а «Ринок»
+    (з підказкою під підписом) стояв нижче за «Search intent»."""
+    css = _css()
+    assert '#seoBriefBox{display:grid;gap:var(--space-4)}' in css
+    assert '#seoBriefBox .form-grid,#seoEditForm .form-grid{align-items:end}' in css

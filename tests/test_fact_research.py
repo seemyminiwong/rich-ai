@@ -458,3 +458,23 @@ def test_permissions_and_secret_handling():
     assert "'firecrawl_api_key': mask(cfg.get('firecrawl_api_key', ''))" in main
     migration = (ROOT / 'apps/api/alembic/versions/0024_fact_research.py').read_text(encoding='utf-8')
     assert 'down_revision = "0023_seo_geo"' in migration and 'def downgrade' in migration and 'IF NOT EXISTS' in migration
+
+
+def test_fact_research_can_be_switched_on_from_the_ui_without_env_or_restart():
+    """Скарга власника (2026-10-01): «потрібна можливість вмикати з інтерфейсу»."""
+    import app.runtime as rt
+    from app import tasks
+    assert 'fact_research_enabled' in rt.RUNTIME_KEYS and 'fact_search_provider' in rt.RUNTIME_KEYS
+    assert rt._truthy('1') and rt._truthy('true') and not rt._truthy('0') and not rt._truthy(False)
+    with patch.object(rt, 'runtime_config', lambda force=False: {'fact_research_enabled': True, 'fact_search_provider': 'manual',
+                                                                  'fact_research_enabled_source': 'database'}):
+        assert rt.fact_research_config()['enabled'] is True and rt.fact_research_config()['provider'] == 'manual'
+        assert isinstance(tasks.search_provider(['https://www.asus.com/x']), ManualUrlProvider)
+    main = (ROOT / 'apps/api/app/main.py').read_text(encoding='utf-8')
+    put = main[main.index("@app.put('/api/secrets')"):main.index("@app.post('/api/secrets/test')")]
+    assert "values['fact_research_enabled'] = '1' if body.fact_research_enabled else '0'" in put
+    assert 'Для Firecrawl спершу збережіть ключ Firecrawl' in put and 'require_root' in put
+    start = main[main.index("@app.post('/api/projects/{project_id}/fact-research')"):main.index("@app.post('/api/projects/{project_id}/fact-research/cancel')")]
+    assert "fact_research_config()['enabled']" in start and 'settings.fact_research_enabled' not in main
+    web = (ROOT / 'apps/web/app.js').read_text(encoding='utf-8')
+    assert 'function enableFactResearch' in web and 'name="fact_research_enabled"' in web and 'name="fact_search_provider"' in web

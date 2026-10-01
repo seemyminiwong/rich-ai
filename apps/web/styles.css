@@ -1174,3 +1174,14 @@ tr.is-updated td{animation:rowFlash 1.6s var(--ease-out)}
 
 .quota-banner{display:flex;align-items:center;gap:var(--space-3);margin:var(--space-3) var(--space-6) 0}
 .quota-banner>span{flex:1}
+
+/* Бриф SEO/GEO (майстер і вкладка проєкту): поля з відступами, як у решті форм,
+   а поля в одному ряду вирівняні по низу - підказка під підписом («коди країн
+   через кому») більше не зсуває поле вниз відносно сусіднього. */
+#seoBriefBox{display:grid;gap:var(--space-4)}
+#seoBriefBox .form-grid,#seoEditForm .form-grid{align-items:end}
+#seoBriefBox>p.muted-note{margin:0}
+
+.fact-enable{align-items:center}
+.fact-enable>span:first-of-type{flex:1}
+.fact-settings{display:grid;gap:10px}

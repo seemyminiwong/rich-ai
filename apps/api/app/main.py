@@ -30,7 +30,7 @@ from app.media import media_url, sign_media_path, strip_media_query, verify_medi
 from app.raster import flatten_to_white
 from app.pipeline import _is_reasoning_model, decode_entities, fetch_bytes_capped, fetch_html, gallery_urls, image_url_rejection, image_urls_in_html, is_public_http_url, is_publishable_image_url, palette_from_accent, parse_page, plain_text_from_html, replace_image_urls, safe_client, sanitize_html, style_has_faq, style_image_prompt, text_client, youtube_video_id
 from app.landing import LANDING_PROMPT, LANDING_STYLE_NAME
-from app.runtime import OPENROUTER_BASE_URL, mask, migrate_plaintext_secrets, runtime_config, set_runtime
+from app.runtime import FACT_PROVIDERS, OPENROUTER_BASE_URL, fact_research_config, mask, migrate_plaintext_secrets, runtime_config, set_runtime
 from app.master_theme import THEMES, normalize_theme
 from app.brand_detect import detect_brand
 from app.text_edit import apply_segments, editable_segments
@@ -476,6 +476,8 @@ class SecretsIn(BaseModel):
     openrouter_api_key: str | None = None
     openrouter_text_model: str | None = None
     firecrawl_api_key: str | None = None
+    fact_research_enabled: bool | None = None
+    fact_search_provider: str | None = None
 class UserCreate(BaseModel):
     email: str
     name: str = Field(min_length=2, max_length=120)
@@ -2681,7 +2683,8 @@ def fact_research_state(project_id: str, db: Session = Depends(get_db), user=Dep
     snapshot = load_snapshot(p)
     candidates = candidate_rows(db, p.id)
     out = {
-        'enabled': bool(settings.fact_research_enabled), 'mode': getattr(p, 'fact_research_mode', '') or 'strict',
+        'enabled': fact_research_config()['enabled'], 'can_configure': is_root_admin(user),
+        'firecrawl_key_set': bool(runtime_config().get('firecrawl_api_key')), 'mode': getattr(p, 'fact_research_mode', '') or 'strict',
         'limits': {'max_queries': settings.fact_research_max_queries, 'max_pages': settings.fact_research_max_pages,
                    'timeout_seconds': settings.fact_research_timeout_seconds, 'max_page_bytes': settings.fact_research_max_page_bytes,
                    'ttl_days': settings.fact_research_ttl_days},
@@ -2721,8 +2724,8 @@ def fact_research_estimate(project_id: str, payload: FactResearchIn, db: Session
 def fact_research_start(project_id: str, payload: FactResearchIn, db: Session = Depends(get_db), user=Depends(require_perm('fact_research.run'))):
     """Лише явна дія оператора. Без FACT_RESEARCH_ENABLED і в режимі strict - відмова."""
     from app.fact_sources import FetchBlocked, validate_research_url
-    if not settings.fact_research_enabled:
-        raise HTTPException(409, 'Дослідження фактів вимкнено адміністратором (FACT_RESEARCH_ENABLED=false)')
+    if not fact_research_config()['enabled']:
+        raise HTTPException(409, 'Дослідження фактів вимкнено адміністратором (FACT_RESEARCH_ENABLED=false) - увімкніть у «Налаштування → Ключі»')
     if payload.mode not in ('official_research', 'research_only'):
         raise HTTPException(400, 'Режим strict не використовує інтернет - оберіть official_research або research_only')
     p = _project_or_404(db, project_id)
@@ -4396,8 +4399,9 @@ def _secrets_view():
         'local_text_models': cfg.get('local_text_models', ''),
         'firecrawl_api_key': mask(cfg.get('firecrawl_api_key', '')),
         'firecrawl_api_key_source': cfg.get('firecrawl_api_key_source', 'none'),
-        'fact_research_enabled': bool(settings.fact_research_enabled),
-        'fact_search_provider': settings.fact_search_provider,
+        'fact_research_enabled': bool(cfg.get('fact_research_enabled')),
+        'fact_research_enabled_source': cfg.get('fact_research_enabled_source', 'none'),
+        'fact_search_provider': cfg.get('fact_search_provider') or 'disabled',
     }
 
 
@@ -4476,6 +4480,14 @@ def put_secrets(body: SecretsIn, db: Session = Depends(get_db), user=Depends(req
         values['local_base_url'] = url
     if body.local_text_models is not None:
         values['local_text_models'] = body.local_text_models.strip()[:500]
+    if body.fact_research_enabled is not None:
+        values['fact_research_enabled'] = '1' if body.fact_research_enabled else '0'
+    if body.fact_search_provider is not None:
+        if body.fact_search_provider not in FACT_PROVIDERS:
+            raise HTTPException(400, 'Провайдер пошуку: disabled, manual або firecrawl')
+        if body.fact_search_provider == 'firecrawl' and not (body.firecrawl_api_key or runtime_config().get('firecrawl_api_key')):
+            raise HTTPException(400, 'Для Firecrawl спершу збережіть ключ Firecrawl')
+        values['fact_search_provider'] = body.fact_search_provider
     for field in ('openai_api_key', 'gemini_api_key', 'openrouter_api_key', 'local_api_key', 'firecrawl_api_key'):
         raw = getattr(body, field)
         if raw is None:
