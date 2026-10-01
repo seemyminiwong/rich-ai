@@ -5,6 +5,7 @@ landing і pipeline. Ворота схвалення й правила прий�
 чисті (approval_blockers / validate_decision), тому тестуються напряму.
 """
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -540,7 +541,7 @@ def test_stacked_cards_in_a_transparent_wrapper_get_the_outer_radius():
     assert 'border-radius:14px;background:#1A2128;padding:20px">M.2' in out
     assert 'border-radius:14px;background:#FFFFFF' in out
     assert 'border-radius:12px;background:#fff">Внутрішня' in out          # картка в картці - 10-12
-    assert 'border-radius:10px;padding:6px 14px' in out                     # лейбл - не зовнішня поверхня
+    assert 'border-radius:999px;padding:6px 14px' in out                    # лейбл - бейдж-пігулка, не зовнішня поверхня
     assert 'border-radius:999px' in out and 'src="/h.webp" style="border-radius:12px"' in out
 
 
@@ -574,3 +575,31 @@ def test_problem_report_is_markdown_for_triage_and_merges_variants():
     assert '**UA mobile v2** - поза стандартом: 1' in md and '[відкрити в студії](http://studio:3000/projects/p1)' in md
     rows = [line for line in md.splitlines() if line.startswith('| D-')]
     assert len(rows) == 3, rows                                            # 2 копії alt склеєно в одну
+
+
+def test_badges_and_chips_share_one_pill_shape():
+    """Скарга власника (2026-10-01, Qube G25F240S): лейбл «QUBE · МОНІТОР» був
+    прямокутником 8-10px поруч із круглими чипами «240Hz». Стандарт: бейджі - пігулки."""
+    from app.artline_standard import apply_artline_standard, radius_deviations
+    from app.pipeline import _finalize_showcase_layout
+    page = ('<section><div style="border-radius:14px;background:#1A2128;padding:20px">'
+            '<div style="display:inline-flex;padding:6px 14px;border:1px solid #19BCC9;border-radius:8px">QUBE · Монітор</div>'
+            '<span style="display:inline-block;padding:7px 14px;border-radius:999px;background:#fff">240Hz</span>'
+            '<div style="border-radius:12px;background:#fff;padding:12px"><h3>240Hz</h3><p>Плавність руху без розривів.</p></div></div>'
+            '<div style="border-radius:14px;background:#F5F7FA;padding:20px"><h2>Яскравість</h2><p>400 cd/m² для денного світла.</p></div></section>')
+    assert any('бейдж 8px' in d for d in radius_deviations(page))
+    out = apply_artline_standard(page)
+    assert 'border-radius:999px">QUBE' in out and radius_deviations(out) == []
+    assert 'border-radius:12px;background:#fff;padding:12px' in out     # картка не стає пігулкою
+    from app.prompts import SHOWCASE_STYLE_PROMPT
+    assert 'border:1px solid #19BCC9;border-radius:999px' in SHOWCASE_STYLE_PROMPT
+    pipeline = (Path(__file__).resolve().parents[1] / 'apps/api/app/pipeline.py').read_text(encoding='utf-8')
+    assert "'border:1px solid #19BCC9;border-radius:999px;box-sizing:border-box;'" in pipeline
+
+
+def test_brand_model_label_repeated_by_design_is_not_a_duplicate_sentence():
+    html = ('<section><div><span>QUBE · G25F240S</span><h2>QUBE G25F240S</h2><p>Висока частота оновлення робить динамічні сцени плавнішими.</p></div>'
+            '<div><span>QUBE · G25F240S</span><p>Монітор для ігор, де важлива швидкість реакції.</p></div></section>')
+    assert not [f for f in audit_human_copy(html, 'ua') if f['code'] == 'duplicate_sentence']
+    twice = html.replace('Монітор для ігор, де важлива швидкість реакції.', 'Висока частота оновлення робить динамічні сцени плавнішими.')
+    assert [f for f in audit_human_copy(twice, 'ua') if f['code'] == 'duplicate_sentence']

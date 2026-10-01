@@ -734,7 +734,7 @@ def test_showcase_prompt_has_named_blocks_consistent_labels_and_no_crop_conflict
     prompt = SHOWCASE_STYLE_PROMPT
     assert 'ARTLINE BLOCK 01: HERO START' in prompt
     assert 'ARTLINE BLOCK 07: FINAL RECAP END' in prompt
-    assert 'SHARED SECTION LABEL' in prompt and 'width:fit-content' in prompt and 'border-radius:8px' in prompt
+    assert 'SHARED SECTION LABEL' in prompt and 'width:fit-content' in prompt and 'border-radius:999px;box-sizing' in prompt
     assert 'ARTLINE BLOCK 08: FAQ START' in prompt and 'exactly eight direct child blocks' in prompt
     assert 'EQUAL DESKTOP CARDS' in prompt
     dark_split = prompt.split('4. DARK FEATURE SPLIT', 1)[1].split('5. CAPABILITY TRIO', 1)[0]
@@ -768,7 +768,7 @@ def test_showcase_finalizer_names_blocks_and_equalizes_desktop_components():
     assert '<!-- ARTLINE BLOCK 01: HERO START -->' in out
     assert '<!-- ARTLINE BLOCK 07: FINAL RECAP END -->' in out
     assert out.count('width:fit-content') == 4
-    assert out.count('border-radius:8px') == 4
+    assert out.count('border-radius:999px') == 4, 'лейбли Showcase - пігулки, як чипи (стандарт ARTLINE)'
     assert 'align-items:stretch' in out
     assert out.count('height:100%') >= 2
     assert _finalize_showcase_layout(out, 'desktop') == out

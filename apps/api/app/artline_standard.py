@@ -172,7 +172,28 @@ def _radius_token(token: str, is_outer: bool, scale: float = 1.0) -> str:
     return f'{round(target):g}px'
 
 
-def normalize_radii(style: str, is_outer: bool) -> str:
+def is_badge(tag) -> bool:
+    """Бейдж/лейбл/чип: короткий текст у рядковому елементі з власною рамкою або фоном.
+    Стандарт: «badge pills 999px» - усі бейджі сторінки однієї форми з чипами."""
+    style = (tag.get('style') or '').lower().replace(' ', '')
+    if tag.name in ('img', 'section') or tag.find(['img', 'div', 'p', 'h2', 'h3', 'ul', 'li', 'table']):
+        return False
+    inline = 'display:inline' in style or (tag.name in ('span', 'small', 'b', 'strong', 'em') and 'display:block' not in style)
+    text = ' '.join(tag.get_text(' ', strip=True).split())
+    return bool(inline and text and len(text) <= 48 and 'padding' in style and _paints(style))
+
+
+def normalize_radii(style: str, is_outer: bool, badge: bool = False) -> str:
+    if badge:
+        # Бейдж - завжди пігулка; 0 і тонкі смужки (<4px) лишаються як задумано.
+        def pill(match):
+            prop, value, important = match.group(1), match.group(2), match.group(3) or ''
+            tokens = [t for t in re.split(r'\s*/\s*|\s+', value.strip()) if t]
+            if any((m := _LENGTH_RE.match(t)) and float(m.group(1)) * (16 if (m.group(2) or '').lower() in ('rem', 'em') else 1) >= 4 for t in tokens):
+                return f'{prop}:999px{important}'
+            return match.group(0)
+        return _RADIUS_DECL_RE.sub(pill, style or '')
+
     def repl(match):
         prop, value, important = match.group(1), match.group(2), match.group(3) or ''
         parts = re.split(r'(\s*/\s*|\s+)', value.strip())
@@ -214,9 +235,11 @@ def outer_ids(root, blocks) -> set:
     немає іншої видимої поверхні. На мобільному Showcase плитки значень лежать
     у прозорій обгортці - для ока це такі самі картки, як Hero, і радіус у них
     має бути той самий 14px, а не 10-12 «внутрішньої» картки."""
-    ids = {id(b) for b in blocks}
+    # Бейдж ніколи не є зовнішньою поверхнею, навіть якщо сторінка складається з
+    # одного блока і стандарт спустився до його дітей.
+    ids = {id(b) for b in blocks if not is_badge(b)}
     for tag in root.find_all(True):
-        if not _is_surface(tag):
+        if not _is_surface(tag) or is_badge(tag):
             continue
         covered = False
         for parent in tag.parents:
@@ -263,6 +286,12 @@ def radius_deviations(markup: str, scale: float | None = None) -> list[str]:
         if 'radius' not in style.lower():
             continue
         is_outer = id(tag) in block_ids
+        if not is_outer and is_badge(tag):
+            values = [t for m in _RADIUS_DECL_RE.finditer(style) for t in re.split(r'\s*/\s*|\s+', m.group(2).strip()) if t]
+            if any((m := _LENGTH_RE.match(t)) and 4 <= float(m.group(1)) < 100 for t in values):
+                text = ' '.join(tag.get_text(' ', strip=True).split())[:40]
+                out.append(f'<{tag.name}> бейдж {values[0]}, норма 999px (пігулка, як чипи)' + (f' «{text}»' if text else ''))
+            continue
         for match in _RADIUS_DECL_RE.finditer(style):
             for token in re.split(r'\s*/\s*|\s+', match.group(2).strip()):
                 if not token or _radius_token(token, is_outer, scale) == token:
@@ -373,7 +402,7 @@ def apply_artline_standard(markup: str, product_name: str = '') -> str:
         #    і на сторінці сусідили 14, 8 і 20.
         style = tag.get('style') or ''
         if style:
-            new = normalize_radii(style, id(tag) in surface_ids)
+            new = normalize_radii(style, id(tag) in surface_ids, badge=id(tag) not in surface_ids and is_badge(tag))
             if new != style:
                 tag['style'] = style = new
                 changed = True

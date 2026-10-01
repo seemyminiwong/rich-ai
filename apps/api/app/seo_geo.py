@@ -575,7 +575,10 @@ def audit_human_copy(markup: str, language: str, variant: str = '', brief: dict 
     total_words = max(1, len(words(doc['visible_text'])))
 
     # 1. Повтор однакових речень
-    counts = Counter(_norm_sentence(s) for s, _ in all_sentences if len(words(s)) >= 4)
+    # Речення - це щонайменше 4 змістовні слова. Лейбл «QUBE · G25F240S» (бренд і код)
+    # стиль свідомо повторює в Hero і фіналі - це не повтор тексту.
+    meaningful = lambda s: len(words(s)) >= 4 and len([w for w in words(s) if len(w) > 2 and not w.isupper()]) >= 2  # noqa: E731
+    counts = Counter(_norm_sentence(s) for s, _ in all_sentences if meaningful(s))
     for norm, count in counts.items():
         if count > 1:
             first = next((s, i) for s, i in all_sentences if _norm_sentence(s) == norm)
@@ -866,13 +869,17 @@ def audit_rich_fragment(markup: str, product: dict | None, language: str, varian
         if value and value.lower() not in first_block_text:
             mk('identity_missing_early', 'warning', f'{label.capitalize()} «{value}» не названо в першому блоці', block=0,
                evidence=value, suggestion='Назвати бренд, модель і категорію в одному з перших речень')
-    if category:
+    # Категорія й основна тема записані мовою брифу (українською). На сторінці іншою
+    # мовою («Монітори» проти «Мониторы») дослівне порівняння дає хибні знахідки,
+    # тому ці дві перевірки робляться лише мовою брифу.
+    same_language = lang == norm_lang((brief or {}).get('language') or 'uk')
+    if category and same_language:
         stems = [w[:max(4, len(w) - 2)].lower() for w in words(category) if len(w) > 3]
         if stems and not any(stem in first_words for stem in stems):
             mk('category_missing_early', 'warning', f'Категорію «{category}» не названо на початку', block=0, evidence=category,
                suggestion='Категорія товару має прозвучати в Hero або першому абзаці')
     topic = str((brief or {}).get('primary_topic') or '').strip()
-    if topic:
+    if topic and same_language:
         stems = [w[:max(4, len(w) - 2)].lower() for w in words(topic) if len(w) > 3]
         if stems and not all(stem in first_words for stem in stems):
             mk('primary_topic_late', 'warning', f'Основна тема «{topic}» не розкрита в перших 150 словах', block=0,
