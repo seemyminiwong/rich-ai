@@ -261,3 +261,12 @@ def test_seo_brief_form_has_spacing_and_aligned_fields():
     css = _css()
     assert '#seoBriefBox{display:grid;gap:var(--space-4)}' in css
     assert '#seoBriefBox .form-grid,#seoEditForm .form-grid{align-items:end}' in css
+
+
+def test_login_backdrop_ripple_ignores_presses_on_the_card():
+    """Скарга власника (2026-10-03): анімація фону спрацьовувала й при натисканні на островок входу."""
+    web = (ROOT / 'apps/web/app.js').read_text(encoding='utf-8')
+    handler = web[web.index("host.addEventListener('pointerdown'"):]
+    handler = handler[:handler.index('{passive:true}')]
+    assert "e.target.closest('form')" in handler and handler.index("closest('form'))return") < handler.index('ripples.push')
+    assert '<main class="auth"><canvas class="pixel-bg"' in web and '<form onsubmit="login(event)"' in web

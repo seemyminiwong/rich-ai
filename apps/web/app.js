@@ -72,7 +72,7 @@ function startPixelField(canvas){
     const slice=zz=>{const a=hash(xi,yi,zz),b=hash(xi+1,yi,zz),c=hash(xi,yi+1,zz),d=hash(xi+1,yi+1,zz);return a+(b-a)*ux+(c-a)*uy+(a-b-c+d)*ux*uy};
     return slice(zi)+(slice(zi+1)-slice(zi))*(fz*fz*(3-2*fz))}
   const ripples=[],host=canvas.parentElement;
-  host&&host.addEventListener('pointerdown',e=>{const r=canvas.getBoundingClientRect();ripples.push({x:(e.clientX-r.left)/(r.width||1)*bw,y:(e.clientY-r.top)/(r.height||1)*bh,at:performance.now()});if(ripples.length>8)ripples.shift()},{passive:true});
+  host&&host.addEventListener('pointerdown',e=>{if(e.target instanceof Element&&e.target.closest('form'))return;const r=canvas.getBoundingClientRect();ripples.push({x:(e.clientX-r.left)/(r.width||1)*bw,y:(e.clientY-r.top)/(r.height||1)*bh,at:performance.now()});if(ripples.length>8)ripples.shift()},{passive:true});
   const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
   const t0=Math.random()*100;let last=0;
   function frame(now){
