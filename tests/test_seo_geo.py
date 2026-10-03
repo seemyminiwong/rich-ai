@@ -591,7 +591,7 @@ def test_badges_and_chips_share_one_8px_shape():
     assert any('бейдж 999px' in d and '240Hz' in d for d in found)        # чип-пігулка - відхилення
     assert not any('QUBE' in d for d in found)                            # лейбл 8px - уже норма
     out = apply_artline_standard(page)
-    assert 'border-radius:8px">QUBE' in out and 'border-radius:8px;background:#fff">240Hz' in out and radius_deviations(out) == []
+    assert 'border-radius:8px;user-select:none;-webkit-user-select:none">QUBE' in out and 'border-radius:8px;background:#fff;user-select:none;-webkit-user-select:none">240Hz' in out and radius_deviations(out) == []
     assert 'border-radius:12px;background:#fff;padding:12px' in out     # картка не стає пігулкою
     from app.prompts import SHOWCASE_STYLE_PROMPT
     assert 'border:1px solid #19BCC9;border-radius:8px' in SHOWCASE_STYLE_PROMPT and 'chips and badges 999px' not in SHOWCASE_STYLE_PROMPT

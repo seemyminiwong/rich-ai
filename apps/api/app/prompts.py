@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.75"
+BASE_STYLE_VERSION = "12.76"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -30,6 +30,7 @@ ARTLINE_STANDARD = r'''ARTLINE STANDARD (shared by every ARTLINE style; it overr
 - Punctuation: en dash (–) and hyphen (-) only. Never the em dash character and never &mdash;.
 - Images: every img has a concise alt in the target language; loading="lazy" on every img outside the Hero.
 - FAQ, when the style has one: product-specific questions answered by Product JSON, all items closed, plain question text in summary.
+- Non-selectable controls: every FAQ summary and everything that looks like a button - badges, labels, chips, tags and any pill- or button-like box - carries user-select:none;-webkit-user-select:none, so a tap or double-click never highlights its text. Paragraphs, headings, FAQ answers and specification values in tables stay selectable.
 - Mobile: one column, no horizontal overflow, the same copy and images as desktop, outer radius 14px, block padding about 20px 16px.'''
 HUMAN_COPY_CONTRACT = r'''HUMAN COPY CONTRACT
 - Write like an experienced product editor speaking to a technically interested buyer.
@@ -687,7 +688,7 @@ SECTION SET, IN ORDER
 8. FAQ - native questions and answers, quiet light canvas
 - Container: background:#FFFFFF;border-radius:12px;padding:32px 30px 12px (mobile 24px 16px 8px). At the top one h2 30-32px/900;text-align:center;margin:0 0 14px, with the natural target-language heading for frequently asked questions.
 - Then 4-6 <details> items and nothing else. Each details: margin:0;padding:0;border-bottom:1px solid #E7EAEE.
-- Each <summary>: display:flex;align-items:center;padding:20px 2px;cursor:pointer;list-style:none;font-size:17px;font-weight:600;color:#101010. The question is plain text directly inside the summary - no number, no wrapper span around it. Do NOT draw any +/-, arrow or circle icon yourself: the server prepends the toggle glyph mechanically as the first child of the summary.
+- Each <summary>: display:flex;align-items:center;padding:20px 2px;cursor:pointer;user-select:none;-webkit-user-select:none;list-style:none;font-size:17px;font-weight:600;color:#101010. The question is plain text directly inside the summary - no number, no wrapper span around it. Do NOT draw any +/-, arrow or circle icon yourself: the server prepends the toggle glyph mechanically as the first child of the summary.
 - After the summary exactly one answer <p style="margin:0;padding:0 0 22px 36px;font-size:15px;line-height:1.55;color:#555555;max-width:900px"> with 1-3 sentences.
 - Every details is CLOSED: never write the open attribute anywhere.
 - Questions are the real pre-purchase questions THIS Product JSON can answer: compatibility, capacity or operating limits, conditions, package contents, maintenance. Never ask a question the data cannot answer, never invent an answer, never mention prices, delivery or payment.
@@ -869,8 +870,8 @@ for _old, _new in (
      '- Container: background:#1A2128;border-radius:12px;padding:32px 30px 12px (mobile 24px 16px 8px).'),
     ('border-bottom:1px solid #E7EAEE.',
      'border-bottom:1px solid rgba(255,255,255,.10).'),
-    ('cursor:pointer;list-style:none;font-size:17px;font-weight:600;color:#101010.',
-     'cursor:pointer;list-style:none;font-size:17px;font-weight:600;color:#F5F7FA.'),
+    ('cursor:pointer;user-select:none;-webkit-user-select:none;list-style:none;font-size:17px;font-weight:600;color:#101010.',
+     'cursor:pointer;user-select:none;-webkit-user-select:none;list-style:none;font-size:17px;font-weight:600;color:#F5F7FA.'),
     ('font-size:15px;line-height:1.55;color:#555555;max-width:900px">',
      'font-size:15px;line-height:1.55;color:#AFB8C1;max-width:900px">'),
 ):
@@ -1101,7 +1102,7 @@ TILE SET (12-14 tiles total; each tile carries EXACTLY ONE confirmed fact)
 8. FAQ - native questions and answers, dark canvas
 - Container: background:#1A2128;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:32px 30px 12px (mobile 24px 16px 8px);margin-top:14px. At the top one h2 30-32px/900 color:#F5F7FA;text-align:center;margin:0 0 14px, with the natural target-language heading for frequently asked questions.
 - Then 4-6 <details> items and nothing else. Each details: margin:0;padding:0;border-bottom:1px solid rgba(255,255,255,.10).
-- Each <summary>: display:flex;align-items:center;padding:20px 2px;cursor:pointer;list-style:none;font-size:17px;font-weight:600;color:#F5F7FA. The question is plain text directly inside the summary - no number, no wrapper span around it. Do NOT draw any +/- icon yourself: the server prepends the toggle glyph as the first child of the summary.
+- Each <summary>: display:flex;align-items:center;padding:20px 2px;cursor:pointer;user-select:none;-webkit-user-select:none;list-style:none;font-size:17px;font-weight:600;color:#F5F7FA. The question is plain text directly inside the summary - no number, no wrapper span around it. Do NOT draw any +/- icon yourself: the server prepends the toggle glyph as the first child of the summary.
 - After the summary exactly one answer <p style="margin:0;padding:0 0 22px 36px;font-size:15px;line-height:1.55;color:#AFB8C1;max-width:900px"> with 1-3 sentences.
 - Every details is CLOSED: never write the open attribute anywhere.
 - Questions are real pre-purchase questions THIS Product JSON can answer. Never invent an answer; no prices, delivery or payment.
@@ -1331,6 +1332,7 @@ DESIGN SYSTEM
 - Font: Montserrat, Segoe UI, Arial, sans-serif. Body 400-500; subordinate headings 700-800; h2 and values 900. Never use 950.
 - Type scale, both devices: Hero h2 30px/1.12; other h2 24px/1.25; subtitles and h3 18px/1.4; body 16px/1.6; technical values 26px/1.15; technical captions 14px/1.4; badges 12-13px.
 - Radius: outer blocks 14px; inner cards and frames 10-12px; badges, labels and chips 8px - one shape for all of them. Never turn a specification into a pill.
+- Non-selectable controls: every FAQ summary and everything that looks like a button - badges, labels, chips, tags and any pill- or button-like box - carries user-select:none;-webkit-user-select:none, so a tap or double-click never highlights its text. Paragraphs, headings, FAQ answers and specification values in tables stay selectable.
 - Desktop: gap between major blocks 22px (margin-top on every block after the first); block padding 36-42px; split gap 28-36px; card gap 14-18px. Padding includes borders through box-sizing:border-box.
 - Canonical palette: dark #101010 / #1A2128; light #FFFFFF / #F5F7FA; borders #35393F on dark, #D0D7DE on light; text #101010 and #555555 on light, #FFFFFF and #D8DDE2 on dark. Accent #19BCC9 on dark and #157985 on light: badges, eyebrows, big technical values and thin borders only - never paragraphs, never a fill.
 - VALUE TILES: a tile value is a number with its unit or a short identifier of at most 14 characters (430 мм, 2×2.5″, USB-C 3.2, E-ATX). Never a sentence, a range of form factors, a country of origin, the product category ("Корпус") or a package that is only the product itself - such facts go into copy or are dropped. Each value is shown as a tile ONCE per page: blocks 05 and 08 never repeat a value already shown in block 02, and the Hero carries no value rows (the studio removes repeats).
@@ -1370,7 +1372,7 @@ FAQ IMPLEMENTATION (the studio FAQ contract, adapted to this style)
 <div style="background:#FFFFFF;border:1px solid #E3E6EA;border-radius:14px;padding:30px 36px 14px;box-sizing:border-box;">
   <h2 style="margin:0 0 10px;font-size:24px;line-height:1.25;font-weight:900;color:#101010;">FAQ</h2>
   <details style="margin:0;padding:0;border-bottom:1px solid #E7EAEE;">
-    <summary style="display:flex;align-items:center;padding:18px 0;cursor:pointer;list-style:none;font-size:18px;line-height:1.4;font-weight:800;color:#101010;overflow-wrap:anywhere;">CONFIRMED QUESTION</summary>
+    <summary style="display:flex;align-items:center;padding:18px 0;cursor:pointer;user-select:none;-webkit-user-select:none;list-style:none;font-size:18px;line-height:1.4;font-weight:800;color:#101010;overflow-wrap:anywhere;">CONFIRMED QUESTION</summary>
     <p style="margin:0;padding:0 0 18px 36px;font-size:16px;line-height:1.6;color:#555555;text-align:left;">CONFIRMED ANSWER</p>
   </details>
 </div>

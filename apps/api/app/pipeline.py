@@ -3595,8 +3595,10 @@ def _finalize_faq(soup, dark_edition: bool = False) -> None:
         # раніше при зрізаному class на сторінці стояли обидва значки.
         # Той самий рядок - «відбиток» для селекторів без класу в _FAQ_CSS.
         sstyle = re.sub(r'list-style[a-z-]*\s*:[^;]+;?', '', sstyle, flags=re.I)
+        # Питання - це кнопка: подвійний клік чи тап не повинні виділяти текст.
         for prop, value in (('display', 'flex'), ('align-items', 'center'),
-                            ('cursor', 'pointer'), ('list-style', 'none')):
+                            ('cursor', 'pointer'), ('user-select', 'none'),
+                            ('-webkit-user-select', 'none'), ('list-style', 'none')):
             sstyle = _set_css(sstyle, prop, value)
         summary['style'] = sstyle.strip().strip(';')
         # Нумерація прибрана: на artline.ua її немає. Сторінки, згенеровані

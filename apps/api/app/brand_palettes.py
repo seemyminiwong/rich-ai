@@ -124,6 +124,7 @@ BRAND_ACCENTS = [
     ('PowerColor', '#FF0000'),
     ('Pylontech', '#E4002B'),  # брендбук/логотип, не brandfetch
     ('QNAP', '#FFC107'),
+    ('QUBE', '#2BC8F1'),  # головний акцент сайту qube.ua (логотип там білий на темному)
     ('Rapoo', '#6C16FA'),
     ('Razer', '#44D62C'),
     ('realme', '#FFC915'),

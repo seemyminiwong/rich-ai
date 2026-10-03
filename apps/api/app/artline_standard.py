@@ -406,7 +406,13 @@ def apply_artline_standard(markup: str, product_name: str = '') -> str:
         #    і на сторінці сусідили 14, 8 і 20.
         style = tag.get('style') or ''
         if style:
-            new = normalize_radii(style, id(tag) in surface_ids, badge=id(tag) not in surface_ids and is_badge(tag))
+            badge = id(tag) not in surface_ids and is_badge(tag)
+            new = normalize_radii(style, id(tag) in surface_ids, badge=badge)
+            # Бейдж, лейбл чи чип виглядає як кнопка - його текст не виділяється
+            # подвійним кліком чи тапом (рішення власника 2026-10-03).
+            if badge:
+                for prop in ('user-select', '-webkit-user-select'):
+                    new = _set_decl(new, prop, 'none')
             if new != style:
                 tag['style'] = style = new
                 changed = True

@@ -3095,7 +3095,7 @@ def test_master_style_is_seeded_and_recognised_by_the_faq_machinery():
     main = (root / 'apps/api/app/main.py').read_text(encoding='utf-8')
     web = (root / 'apps/web/app.js').read_text(encoding='utf-8')
 
-    assert MASTER_STYLE_NAME == 'ARTLINE Master' and BASE_STYLE_VERSION == '12.75'
+    assert MASTER_STYLE_NAME == 'ARTLINE Master' and BASE_STYLE_VERSION == '12.76'
     assert 'ARTLINE BLOCK 08' not in MASTER_STYLE_PROMPT, 'схема коментарів Showcase тут чужа'
     assert style_has_faq(MASTER_STYLE_PROMPT) and is_master_style(MASTER_STYLE_PROMPT)
     assert video_profile(MASTER_STYLE_PROMPT) == 'master' and surface_radius_cap(MASTER_STYLE_PROMPT) == 14
