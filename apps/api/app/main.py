@@ -2587,9 +2587,11 @@ def project_restyle(project_id: str, db: Session = Depends(get_db), user=Depends
     """Безкоштовно застосувати стандарт оформлення ARTLINE до поточних версій.
 
     Те саме механічне вирівнювання, що й після генерації (радіуси, шкала, ваги,
-    акцент, тире), плюс схема кольорів і масштаб скруглень проєкту. Текст,
-    сітка й зображення не змінюються; змінена сторінка стає новою версією."""
+    акцент, тире), плюс схема кольорів і масштаб скруглень проєкту, а ще прибирає
+    повтори фото й порожні фото-рамки. Текст не змінюється; реальні зображення
+    лишаються, крім повторів того самого фото. Змінена сторінка стає новою версією."""
     from app.artline_standard import apply_artline_standard
+    from app.photo_slots import drop_empty_photo_slots
     from app.pipeline import apply_palette, style_palette
     from app.tasks import _project_palette
     p = db.get(Project, project_id)
@@ -2601,7 +2603,7 @@ def project_restyle(project_id: str, db: Session = Depends(get_db), user=Depends
     palette = _project_palette(p) or (style_palette(style) if style else None)
     updated = []
     for artifact in _latest_artifacts(p):
-        fixed = apply_palette(apply_artline_standard(artifact.html, p.name or ''), palette)
+        fixed = apply_palette(apply_artline_standard(drop_empty_photo_slots(artifact.html), p.name or ''), palette)
         if fixed != artifact.html:
             saved = _save_artifact_version(db, artifact, fixed, user, action='artifact.restyle')
             updated.append(f'{artifact.language}/{artifact.variant} v{saved["version"]}')

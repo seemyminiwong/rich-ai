@@ -15,6 +15,7 @@ import httpx
 from bs4 import BeautifulSoup, Comment, NavigableString
 from openai import OpenAI
 from PIL import Image, ImageOps
+from app.photo_slots import drop_empty_photo_slots, photo_budget_line
 from app.config import settings
 from app.media import media_url
 from app.artline_standard import apply_artline_standard
@@ -3794,6 +3795,7 @@ def _gallery_line(style, gallery) -> str:
 POST_GENERATION_GUARANTEES = [
     'Кожен <img> звіряється з білим списком реальних зображень; вигадані URL замінюються або видаляються.',
     'Втрачені Hero/Feature URL відновлюються механічно.',
+    'Кадрів забракло: повтори фото й порожні фото-рамки прибираються, сітка стискається до колонок, що лишились.',
     'Реальні фото товару ніколи не обрізаються (object-fit:contain) і отримують рамку зі скругленням.',
     'Згенеровані сцени вписуються cover; фото-картки мають спільні пропорції (десктоп 3:2, мобайл 4:3).',
     'Єдиний радіус усім фото; вкладені радіуси концентричні (зовнішній − падінг).',
@@ -3862,6 +3864,7 @@ STYLE PROMPT:
 {SOURCE_BOUNDARY_RULES}
 Mandatory factual rule: use only facts present in PRODUCT FACTS (Product JSON). Never invent warranty, partnership, certification, compatibility, performance, contents or support claims.
 Images: hero={hero}; feature={feature}.{_gallery_line(style, gallery)}
+{photo_budget_line(hero, feature, gallery if 'GALLERY_IMAGES' in (style.prompt or '') else [])}
 {seo_brief_block(brief)}
 {company_facts_block(company, language)}
 PRODUCT FACTS
@@ -4323,6 +4326,8 @@ HTML:
             raise RuntimeError('AI returned an incomplete page (only the Hero section)')
         output = _restore_image_urls(output, hero, feature, variant, img_hero='THE FIRST CHILD of the wrapper' in (style.prompt or ''))
         output = _enforce_image_whitelist(output, [hero, feature] + list(gallery or []), spares=list(gallery or []))
+        # Кадрів забракло: без повторів, порожніх рамок і напівпорожніх сіток.
+        output = drop_empty_photo_slots(output)
         output = _round_image_corners(output)
         if is_master_style(style.prompt or ''):
             output = master_hero_layout(output, hero, variant)
