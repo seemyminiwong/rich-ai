@@ -105,7 +105,7 @@ checks = {
     'base prompt tightens contrast': 'Use #69737D only for small eyebrow labels' in prompts,
     'base prompt limits paragraphs': 'Length is a guide, not a rule' in prompts and '250-450 words' in prompts and '400-700' in prompts and '350-600 words' not in prompts,
     'base prompt no invented counts': 'never fabricate to reach a required count' in prompts,
-    'base style version bumped': 'BASE_STYLE_VERSION = "12.76"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
+    'base style version bumped': 'BASE_STYLE_VERSION = "12.77"' in prompts and prompts.count('BASE_STYLE_VERSION = ') == 1,
     'images may not carry added text': prompts.count('ZERO added text') == 3 and 'never by rendering words' in prompts,
     'feature request bans rendered captions': 'NEVER by rendering words' in tasks,
     'provider balances are root-only and honest': "@app.get('/api/providers/balance')" in main and 'Depends(require_root)' in main.split("providers_balance")[1][:200] and 'total_credits' in main,
@@ -167,7 +167,8 @@ checks = {
     # --- v12 foundation ---
     'fact research toggled from the UI': "'fact_research_enabled': 'fact_research_enabled'" in (root / 'apps/api/app/runtime.py').read_text(encoding='utf-8') and 'function enableFactResearch' in (root / 'apps/web/app.js').read_text(encoding='utf-8'),
     'photo shortage leaves no empty blocks': 'drop_empty_photo_slots(output)' in (root / 'apps/api/app/pipeline.py').read_text(encoding='utf-8') and 'PHOTO BUDGET' in (root / 'apps/api/app/photo_slots.py').read_text(encoding='utf-8'),
-    'single version source': '__version__ = "12.16"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
+    'master v2 anatomy': 'ADAPTED MASTER PROMPT · v2.0' in prompts and 'TWIN PANELS' in prompts and 'HERO TILE ROW' in prompts,
+    'single version source': '__version__ = "12.17"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
     'no version in the product UI': all(s not in (root / 'apps/web/index.html').read_text(encoding='utf-8') for s in ('Studio v', 'v12')) and 'state.version' not in web and 'BASE_STYLE_VERSION' not in main,
     'cache busting kept': '?b=' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
     'openai retries': 'def _with_retry' in pipeline and '_with_retry(lambda: api.responses.create' in pipeline and '_with_retry(lambda: image_client().images.edit' in pipeline,
