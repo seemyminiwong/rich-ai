@@ -67,7 +67,10 @@ def test_one_colour_per_meaning_no_second_blue_accent():
 def test_motion_explains_state_and_respects_reduced_motion():
     css = _css()
     rm = css.split('@media (prefers-reduced-motion: reduce){', 1)[1]
-    assert 'animation-duration:.01ms!important' in rm and 'transition-duration:.01ms!important' in rm
+    assert 'animation-duration:.01ms!important' in rm
+    # Аудит impeccable 2026-10-15: без руху, але короткий зворотний звʼязок кольором і прозорістю лишається
+    assert 'transition-property:color,background-color,border-color,outline-color,opacity,box-shadow!important' in rm
+    assert 'transition-duration:.12s!important' in rm and 'transform' not in rm.split('}', 1)[0]
     assert 'animation-iteration-count:1!important' in rm
     # нескінченні анімації - лише для активного стану (генерація, завантаження)
     infinite = re.findall(r'([^{}]+)\{[^{}]*animation:[^;{}]*infinite', css)
@@ -270,3 +273,29 @@ def test_login_backdrop_ripple_ignores_presses_on_the_card():
     handler = handler[:handler.index('{passive:true}')]
     assert "e.target.closest('form')" in handler and handler.index("closest('form'))return") < handler.index('ripples.push')
     assert '<main class="auth"><canvas class="pixel-bg"' in web and '<form onsubmit="login(event)"' in web
+
+
+def test_impeccable_audit_fixes_stay_in_place():
+    """Дизайн-аудит impeccable 2026-10-15 (docs/audits/rich-studio-impeccable-audit.md)."""
+    css = (ROOT / 'apps/web/styles.css').read_text(encoding='utf-8')
+    web = (ROOT / 'apps/web/app.js').read_text(encoding='utf-8')
+    promo = (ROOT / 'promo/asus-ai.html').read_text(encoding='utf-8')
+    # P0: білий текст лише на бейджі «КРИТИЧНО», а не на всьому пункті зауваження
+    assert '.sev.sev-critical{background:var(--color-danger);color:var(--color-text-inverse)}' in css
+    assert not re.search(r'(?m)^\.sev-critical\{', css)
+    # P1: перемикач розділів проєкту вміщується на телефоні; цілі дотику 44 px
+    mobile = css[css.index('/* --- Дизайн-аудит impeccable'):]
+    assert '.nav-groups .segmented button{min-width:0' in mobile and 'min-height:44px' in mobile
+    # P2: плейсхолдери читабельні, ієрархія заголовків без пропуску h1 -> h3
+    assert 'input::placeholder,textarea::placeholder{color:var(--color-text-secondary)}' in css
+    assert '<small>Категорія</small><h3>' not in web and 'class="summary-value"' in web
+    assert '<h2 id="criticTitle">' in web and '<div><h3>Версія</h3>' not in web
+    assert '.project-bar h1{font-size:var(--fs-title)' in css and '--fs-title:22px' in css
+    # P2: статуси всередині панелей - без власної рамки; групи зауважень - секції, не картки
+    assert '.panel .notice,.panel .gate-state' in css and '.finding-group{border:0;border-top:1px solid' in css
+    # P3: reduced motion лишає короткий зворотний звʼязок кольором і прозорістю
+    assert 'transition-property:color,background-color,border-color,outline-color,opacity,box-shadow!important' in css
+    # Промо: наведення читабельне в темній темі, без тексту < 12px, без довгого тире
+    assert 'color:var(--lp-on-accent-ink); }' in promo and promo.count('--lp-on-accent-ink:#0d1519;') == 2
+    assert not re.search(r'font-size:\s*\.(?:[0-6]\d*|7[0-4]?)rem', promo)
+    assert '—' not in promo
