@@ -257,12 +257,50 @@ services:
       postgres:
         condition: service_healthy
 
+  # Звіти про зміни й команди бота в Telegram (docs/changelog-reports.md).
+  # Вимкнено, доки не запущено з `--profile changelog`: студія від нього не залежить.
+  # Бот той самий, що в Badhairkiller: щоденний, місячний і квартальний звіт із git log.
+  changelog:
+    profiles: ["changelog"]
+    image: node:22
+    restart: unless-stopped
+    init: true
+    working_dir: /repo
+    env_file:
+      # Токен бота лежить окремо від .env і не потрапляє в контейнери студії.
+      - path: .env.changelog
+        required: false
+    environment:
+      # Стан переживає перезапуск і git pull в окремому томі.
+      CHANGELOG_STATE: /state/.changelog-state
+      # Репозиторій належить іншому користувачу, ніж контейнер, тож git потребує цього.
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: /repo
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./:/repo:ro
+      - changelog_state:/state
+    command:
+      - sh
+      - -c
+      - |
+        while true; do
+          node scripts/changelog.mjs || true
+          node scripts/changelog.mjs --month || true
+          node scripts/changelog.mjs --quarter || true
+          node scripts/changelog.mjs --answer || true
+          sleep 2
+        done
+
 volumes:
   postgres_data:
   redis_data:
   media_data:
   caddy_data:
   caddy_config:
+  changelog_state:
 
 networks:
   # Ізольована мережа аудиту: лише інтернет, жодного доступу до сервісів студії.

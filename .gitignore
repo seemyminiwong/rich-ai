@@ -1,4 +1,7 @@
 .env
+# Telegram-бот звітів про зміни: токен і стан локальних запусків
+.env.changelog
+.changelog-state
 __pycache__/
 *.py[cod]
 .venv/

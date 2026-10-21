@@ -233,6 +233,8 @@ PYTHONPATH=apps/api pytest -q tests
 
 Повний перелік змін за версіями — **[CHANGELOG.md](CHANGELOG.md)**. Посібник редактора — **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)**.
 
+Щоденний, місячний і квартальний звіт про зміни приходить у Telegram (бот, як у Badhairkiller, з командами `/zvit`, `/misyats`, `/kvartal`) — **[docs/changelog-reports.md](docs/changelog-reports.md)**. Звіт збирається із заголовків комітів, тож пишіть їх з префіксом: `feat(...)`, `fix(...)`, `change(...)`.
+
 ## Ліцензія
 
 Проєкт розповсюджується за ліцензією **PolyForm Noncommercial License 1.0.0** — див. [LICENSE](LICENSE).
