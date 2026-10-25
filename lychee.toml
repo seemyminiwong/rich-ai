@@ -15,7 +15,6 @@ exclude = [
   "^https?://(localhost|127\\.0\\.0\\.1|SERVER_IP)",
   "^https?://[^/]*example\\.(com|org|net)",
   "^https?://studio\\.example\\.com",
-  "^https?://rich-ai-seven\\.vercel\\.app",
   "^https?://img\\.shields\\.io",
   "^https?://github\\.com/settings",
   "^https?://console\\.cloud\\.google\\.com",
