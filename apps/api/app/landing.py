@@ -238,6 +238,11 @@ def deterministic_landing(campaign: dict, products: list[dict], categories: list
     з підтверджених фактів компанії; порожньо = блоку немає)."""
     lang = norm_lang(campaign.get('language') or 'ua')
     i18n = landing_i18n(lang)
+    # Вступ: що покриває кампанія - лише з її власних даних (кількість товарів, категорії, період).
+    cat_names = ', '.join(html_lib.escape(str(c.get('name') or '')) for c in (categories or []) if c.get('name'))
+    lead_bits = [f'{len(products)} {html_lib.escape(i18n["items"])}'] + ([cat_names] if cat_names else []) + ([_chunk(campaign, 'period')] if campaign.get('period') else [])
+    campaign_name = _chunk(campaign, 'campaign_title') or _chunk(campaign, 'name')
+    lead = (f'<p style="margin:14px 0 0;color:#D8DDE2;font-size:16px;line-height:1.5;max-width:640px">{campaign_name}: {" · ".join(lead_bits)}.</p>' if products else '')
     buy = i18n['buy']
     title = _chunk(campaign, 'campaign_title') or _chunk(campaign, 'name')
     categories = categories or []
@@ -263,7 +268,8 @@ def deterministic_landing(campaign: dict, products: list[dict], categories: list
             f'<div style="height:230px;background:#FFFFFF;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box">'
             f'<img src="{img}" alt="{name}" loading="lazy" style="max-width:100%;max-height:100%;object-fit:contain"></div>'
             f'<div style="padding:18px;display:flex;flex-direction:column;gap:10px;flex:1">'
-            f'<p style="margin:0;font-size:15px;line-height:1.45;color:#101010;font-weight:700;flex:1">{name}</p>'
+            f'<h3 style="margin:0;font-size:15px;line-height:1.45;color:#101010;font-weight:700;flex:1">'
+            f'<a href="{url}" rel="noopener" style="color:inherit;text-decoration:none">{name}</a></h3>'
             + (f'<div style="font-size:22px;font-weight:950;color:#101010"><span style="font-size:13px;font-weight:700;color:#69737D;display:block">{html_lib.escape(i18n["price"])}</span>{price}</div>' if price else '')
             + f'<a href="{url}" rel="noopener" style="display:block;text-align:center;background:#19BCC9;color:#101010;font-weight:900;text-decoration:none;'
               f'padding:12px 16px;border-radius:999px;font-size:14px">{buy}</a></div></div>'
@@ -288,6 +294,7 @@ def deterministic_landing(campaign: dict, products: list[dict], categories: list
 {f'<div style="display:inline-block;background:rgba(25,188,201,.12);border:1px solid #19BCC9;color:#C9F0F4;padding:9px 16px;border-radius:999px;font-weight:900;font-size:13px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:18px">{_chunk(campaign, "period")}</div>' if campaign.get('period') else ''}
 <h1 style="margin:0 0 12px;font-size:52px;line-height:1.02;font-weight:950;color:#FFFFFF">{title}</h1>
 {f'<p style="margin:0;color:#C9F0F4;font-weight:700;font-size:20px">{_chunk(campaign, "campaign_subtitle")}</p>' if campaign.get('campaign_subtitle') else f'<p style="margin:0;color:#C9F0F4;font-weight:700;font-size:20px">{html_lib.escape(i18n["fallback_lead"])}</p>'}
+{lead}
 </div>
 </div>
 <!-- LANDING BLOCK 01: HERO END -->
@@ -313,9 +320,9 @@ STRICT RULES
 DESIGN SYSTEM (ARTLINE)
 - Canvas #F5F7FA; dark surfaces #101010/#1A2128 border #35393F; light cards #FFFFFF border #D0D7DE; accent cyan #19BCC9 (dark) / #157985 (light). Radii: sections 28-32px, cards 18-22px, chips/buttons 999px. Heavy weights: h1/h2 950, prices 950.
 - Page structure, in order:
-  1. PROMO HERO - {HERO_RULE}
+  1. PROMO HERO - {HERO_RULE} After the subtitle add one lead paragraph of 1-2 sentences (25-50 words) that states what the campaign covers - categories, number of products and the period - using only CAMPAIGN, CATEGORIES and PRODUCTS JSON.
   2. CATEGORY GRID (only if CATEGORIES JSON is non-empty) - centered h2 section title, then a responsive grid of white category cards: image on top (height ~120px, object-fit:contain), category name below (900 weight, centered). THE WHOLE CARD is one <a> linking to the exact category url. Use ONLY categories from CATEGORIES JSON - exact names, exact image URLs, exact urls; if a category has no image, render the card with the name only.
-  3. PRODUCT GRID (only if PRODUCTS JSON is non-empty) - responsive grid of white cards: white image slot (fixed height, img object-fit:contain, never cropped), product name, price (old-style big 950; if the name suggests Refurbished/discount you still only show given price_text), cyan pill CTA «{BUY}» linking to the product url.
+  3. PRODUCT GRID (only if PRODUCTS JSON is non-empty) - responsive grid of white cards: white image slot (fixed height, img object-fit:contain, never cropped), product name as an h3 that links to the product url (descriptive anchor, not only the buy button), price (old-style big 950; if the name suggests Refurbished/discount you still only show given price_text), cyan pill CTA «{BUY}» linking to the product url.
   4. ADVANTAGES - ONLY if VERIFIED COMPANY FACTS is non-empty: one dark card per verified fact, quoted verbatim (never paraphrased, never extended with terms, speed, free delivery, warranty periods, 24/7 or stock). If VERIFIED COMPANY FACTS is empty, SKIP this section entirely - do not fill it with neutral promises or invent three cards for symmetry.
 - Mobile-friendly: grids use repeat(auto-fit,minmax(240px,1fr)) (categories minmax(180px,1fr)); hero title scales down via the media-query <style> block.
 - Wrap each section in comments: <!-- LANDING BLOCK 01: HERO START --> ... END, 02: CATEGORIES, 03: PRODUCTS, 04: ADVANTAGES (skip a number entirely if its section is absent).

@@ -331,10 +331,10 @@ def language_rule(language: str) -> str:
     return f"Write all visible copy only in the language identified by BCP-47/ISO code '{language}'. Do not mix languages."
 
 LOCAL_FALLBACK = {
-    "ru": {"description": "Современное решение для повседневных и профессиональных задач. Ключевые характеристики и преимущества представлены на основе данных товара.", "use": "Практические сценарии использования", "experience": "Удобство работы и интеграция"},
-    "ua": {"description": "Сучасне рішення для повсякденних і професійних завдань. Ключові характеристики та переваги подані на основі даних товару.", "use": "Практичні сценарії використання", "experience": "Зручність роботи та інтеграція"},
-    "pl": {"description": "Nowoczesne rozwiązanie do codziennych i profesjonalnych zadań. Najważniejsze cechy i korzyści przedstawiono na podstawie danych produktu.", "use": "Praktyczne zastosowania", "experience": "Wygoda pracy i integracja"},
-    "en": {"description": "A modern solution for everyday and professional tasks. Key characteristics and benefits are presented from verified product data.", "use": "Practical use scenarios", "experience": "Convenient use and integration"},
+    "ru": {"description": "{name}. Категория: {category}.", "use": "Практические сценарии использования", "experience": "Удобство работы и интеграция"},
+    "ua": {"description": "{name}. Категорія: {category}.", "use": "Практичні сценарії використання", "experience": "Зручність роботи та інтеграція"},
+    "pl": {"description": "{name}. Kategoria: {category}.", "use": "Praktyczne zastosowania", "experience": "Wygoda pracy i integracja"},
+    "en": {"description": "{name}. Category: {category}.", "use": "Practical use scenarios", "experience": "Convenient use and integration"},
 }
 
 def _visible_text(markup: str) -> str:
@@ -2604,6 +2604,34 @@ def _photo_aspect(src: str) -> float | None:
     return size[0] / size[1]
 
 
+def _set_intrinsic_sizes(markup: str) -> str:
+    """width/height з природного розміру кадру: браузер резервує місце до
+    завантаження, і ліниві фото не зсувають верстку (CLS). CSS width:100%;
+    height:auto лишається - атрибути дають лише пропорцію. Фонові кадри Hero
+    (position:absolute) і фото без відомого розміру не чіпаються."""
+    if not markup or '<img' not in markup:
+        return markup
+    soup = BeautifulSoup(markup, 'html.parser')
+    changed = False
+    for img in soup.find_all('img'):
+        if img.get('width') or img.get('height'):
+            continue
+        style = re.sub(r'\s+', '', (img.get('style') or '').lower())
+        if 'position:absolute' in style:
+            continue
+        canonical = (img.get('src') or '').split('?', 1)[0]
+        if not canonical:
+            continue
+        if canonical not in _surface_size_cache:
+            _probe_media_surface(canonical)
+        size = _surface_size_cache.get(canonical)
+        if not size or not size[0] or not size[1]:
+            continue
+        img['width'], img['height'] = str(int(size[0])), str(int(size[1]))
+        changed = True
+    return str(soup) if changed else markup
+
+
 def _is_scene_asset(src: str) -> bool:
     """Згенерована сцена (hero/feature) - її можна кадрувати; решта - реальні
     кадри товару (галерея, завантаження, product-reference), їх різати не можна."""
@@ -3856,7 +3884,7 @@ Variant: {variant}. Layout: {layout}. Use inline CSS only.
 Site font rule: the root section uses font-family:'Montserrat','Segoe UI',Arial,sans-serif - the artline.ua font - and no element uses another family; never import or load a font.
 SEO heading rule: never use <h1>. The product page already contains its primary H1. Use <h2> for the Hero product title and major section headings, and <h3> for card titles.
 Embedding rule: the rich content is displayed on a light ARTLINE product page. Keep the root canvas transparent or white and make the majority of content surfaces light. Dark styling may be used inside selected high-contrast sections such as Hero or the final section, but never as a full-page background.
-Mandatory visual guardrails: use #101010 for headings and #555555 or #69737D for paragraphs on light surfaces; use #FFFFFF or #F7F8FA for headings and #D0D7DE or #AFB8C1 for paragraphs on dark surfaces. Use the #19BCC9 accent only for compact badges, eyebrow labels, big specification values and subtle borders; as text on a light surface it becomes #157985. Never use turquoise, green, blue, purple or orange for paragraphs or multi-line headings. At least 70 percent of the content area must remain light or transparent. Use 14px radii for major blocks, 10-12px for inner cards and frames, and 8px or 999px for badges. Do not use decorative colored strips, alternating card colors, checkerboard layouts, excessive gradients or repeated heavy shadows.
+Mandatory visual guardrails: use #101010 for headings and #555555 or #69737D for paragraphs on light surfaces; use #FFFFFF or #F7F8FA for headings and #D0D7DE or #AFB8C1 for paragraphs on dark surfaces. Use the #19BCC9 accent only for compact badges, eyebrow labels, big specification values and subtle borders; as text on a light surface it becomes #157985. Never use turquoise, green, blue, purple or orange for paragraphs or multi-line headings. At least 70 percent of the content area must remain light or transparent. Use 14px radii for major blocks, 10-12px for inner cards and frames, and 8px for badges, labels and chips (one shape, never pills). Do not use decorative colored strips, alternating card colors, checkerboard layouts, excessive gradients or repeated heavy shadows.
 The style prompt below is the primary design specification. Follow it precisely unless it conflicts with factual accuracy or HTML validity.
 STYLE PROMPT:
 {_style_text_for(style.prompt, variant)}{_standard_for(style.prompt)}{master_theme_prompt(theme) if is_master_style(style.prompt) else ''}{_golden_example(style)}
@@ -3888,7 +3916,11 @@ def _deterministic_html(product, style, language, variant, hero, feature):
     elif language in ('pl', 'en') and any('а' <= ch <= 'я' or ch in 'іїєґ' for ch in raw_description.lower()):
         # Латинська сторінка не може нести кириличний опис зі сторінки-джерела.
         raw_description = fallback_copy['description']
-    description = html_lib.escape(raw_description or fallback_copy['description'])
+    # Аварійний опис - нейтральний факт (назва і категорія), а не шаблонні маркетингові фрази.
+    fallback_text = fallback_copy['description'].format(name=product.get('name') or 'Product', category=product.get('category') or '').replace(' Категорія: .', '').replace(' Категория: .', '').replace(' Kategoria: .', '').replace(' Category: .', '')
+    if raw_description == fallback_copy['description']:
+        raw_description = fallback_text
+    description = html_lib.escape(raw_description or fallback_text)
     facts = [str(x) for x in (product.get('features') or []) if x]
     for spec in product.get('specs') or []:
         if isinstance(spec, dict) and spec.get('name') and spec.get('value'):
@@ -4029,7 +4061,7 @@ def _enforce_image_whitelist(html: str, allowed: list[str], spares: list[str] | 
     return html
 
 
-def _restore_image_urls(html: str, hero: str, feature: str, variant: str, img_hero: bool = False) -> str:
+def _restore_image_urls(html: str, hero: str, feature: str, variant: str, img_hero: bool = False, product_name: str = '') -> str:
     """Guarantee the generated page actually points at this project's images.
 
     The model writes the URLs into the HTML by itself and occasionally drops or
@@ -4070,7 +4102,7 @@ def _restore_image_urls(html: str, hero: str, feature: str, variant: str, img_he
         # wrapper's first child - exactly where the style contract expects it.
         wrapper = re.search(r"<(?:div|section)[^>]*style=[\"'][^\"']*position:\s*relative[^\"']*[\"'][^>]*>", html, re.I)
         if wrapper:
-            tag = (f'<img src="{hero}" alt="" loading="eager" '
+            tag = (f'<img src="{hero}" alt="{html_lib.escape(product_name or "", quote=True)}" loading="eager" '
                    'style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;opacity:.64">')
             html = html[:wrapper.end()] + tag + html[wrapper.end():]
         else:
@@ -4324,7 +4356,8 @@ HTML:
                 output = retried_out
         if _section_count(output) < 3:
             raise RuntimeError('AI returned an incomplete page (only the Hero section)')
-        output = _restore_image_urls(output, hero, feature, variant, img_hero='THE FIRST CHILD of the wrapper' in (style.prompt or ''))
+        output = _restore_image_urls(output, hero, feature, variant, img_hero='THE FIRST CHILD of the wrapper' in (style.prompt or ''),
+                                     product_name=str((product or {}).get('name') or ''))
         output = _enforce_image_whitelist(output, [hero, feature] + list(gallery or []), spares=list(gallery or []))
         # Кадрів забракло: без повторів, порожніх рамок і напівпорожніх сіток.
         output = drop_empty_photo_slots(output)
@@ -4339,6 +4372,7 @@ HTML:
         output = _never_crop_product_photos(output)
         output = _fit_framed_images(output)
         output = _frame_contained_photos(output)
+        output = _set_intrinsic_sizes(output)
         output = _clamp_surface_radii(output, surface_radius_cap(style.prompt))
         output = _harmonize_radii(output)
         prompt_text = style.prompt or ''
@@ -4450,6 +4484,7 @@ TARGET LANGUAGE CODE: {language}. {language_rule(language)}
 Return one JSON object only. Preserve every input key and return exactly one translated string for it.
 Keep product names, brands, model IDs, technology names and numbers unchanged. Convert units, unit abbreviations and period words into the target language and script (examples: В→V, Вт→W, мс→ms, кВт·год→kWh, мес→the target-language month abbreviation); a Latin-script language must keep no Cyrillic characters except verbatim brand or model names.
 Do not add facts, HTML, markdown, explanations or extra keys.
+Localize, do not mirror the source syntax: write each segment the way a native ecommerce editor of the target language would, with the same meaning, facts and roughly the same length. Use the target language's own word order and active verbs; avoid calques and bureaucratic constructions of the source language. Keep one term per concept across all segments and the page's address form. Do not add marketing adjectives, superlatives, exclamation marks, "not just X but Y" constructions or trailing participle clauses that are absent from the source.
 SEGMENTS:
 {json.dumps(pending, ensure_ascii=False)}"""
     if pending:
@@ -4495,7 +4530,8 @@ def llm_fix_texts(html: str, issues: list[str], product: dict, model: str, langu
         'PRODUCT JSON (єдине джерело правди) і пронумеровані текстові сегменти сторінки.\n'
         'Виправ ЛИШЕ сегменти, яких стосуються зауваження: конкретизуй порожні маркетингові фрази, '
         'прибери мовні огріхи, виправ числа/факти строго за PRODUCT JSON. Нових фактів не вигадуй. '
-        'Довжину тримай близькою до оригіналу.\n'
+        'Довжину тримай близькою до оригіналу. Переписуй від факту, а не заміною синонімів; не додавай конструкцій «не просто…, а…», '
+        'хвостів «, що забезпечує…», вигуків і слів-підсилювачів.\n'
         'Поверни ЛИШЕ JSON виду {"<id>": "<новий текст>"} тільки для ЗМІНЕНИХ сегментів; якщо міняти нічого - {}.\n\n'
         'ЗАУВАЖЕННЯ:\n- ' + '\n- '.join([str(x) for x in issues][:12])
         + f'\n\nPRODUCT JSON:\n{json.dumps(product, ensure_ascii=False)[:4000]}'

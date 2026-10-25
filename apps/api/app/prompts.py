@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.77"
+BASE_STYLE_VERSION = "12.78"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -28,12 +28,15 @@ ARTLINE_STANDARD = r'''ARTLINE STANDARD (shared by every ARTLINE style; it overr
 - Canonical palette: dark #101010 / #1A2128; light #FFFFFF / #F5F7FA; borders #35393F on dark, #D0D7DE on light; text #101010 and #555555 on light, #FFFFFF and #D8DDE2 on dark. Accent #19BCC9 on dark and #157985 on light: badges, eyebrows, big values and thin borders only - never paragraphs, never a fill.
 - Casing: every h2 except the Hero title is uppercase, while brand, model and protocol spelling stays intact; h3 and subtitles are sentence case.
 - Punctuation: en dash (–) and hyphen (-) only. Never the em dash character and never &mdash;.
-- Images: every img has a concise alt in the target language; loading="lazy" on every img outside the Hero.
+- Images: every img has a concise alt in the target language that names the product (brand and category, or model) and what this frame shows - the view, the part or the use context (for example "Інвертор DEYE SUN-12K, панель підключень знизу"); never a bare model code or a keyword list; loading="lazy" on every img outside the Hero.
+- Hero definition: the first sentence of the Hero paragraph is a self-contained definition - the product category with the brand, its primary purpose and the strongest confirmed outcome for the buyer. Quoted alone, it answers "what is this and what is it for". The model code stays in the h2 and is not repeated in this sentence.
 - FAQ, when the style has one: product-specific questions answered by Product JSON, all items closed, plain question text in summary.
 - Non-selectable controls: every FAQ summary and everything that looks like a button - badges, labels, chips, tags and any pill- or button-like box - carries user-select:none;-webkit-user-select:none, so a tap or double-click never highlights its text. Paragraphs, headings, FAQ answers and specification values in tables stay selectable.
 - Mobile: one column, no horizontal overflow, the same copy and images as desktop, outer radius 14px, block padding about 20px 16px.'''
 HUMAN_COPY_CONTRACT = r'''HUMAN COPY CONTRACT
-- Write like an experienced product editor speaking to a technically interested buyer.
+- Write like an experienced ARTLINE product editor speaking to the reader described by the style prompt (a technically literate buyer for Engineering, a buyer who decides by eye for Showcase and Bento, a bulk client for Promo; a technically interested buyer otherwise).
+- ARTLINE voice: calm, exact, useful - numbers with their conditions, plain verbs and the buyer's decision first. Not a dry spec dump, not hype, no jokes, no claims about the shop.
+- One address form per page: Ukrainian and Russian use the plural "ви/вы" in lowercase or impersonal sentences, never "ти/ты"; Polish and English use impersonal sentences or one consistent form.
 - Lead with the answer, not with scene-setting or a slogan.
 - Keep one useful idea per sentence.
 - Vary sentence length naturally, but keep most sentences concise.
@@ -45,15 +48,32 @@ HUMAN_COPY_CONTRACT = r'''HUMAN COPY CONTRACT
 - Never write for an algorithm or mention SEO, keywords, ranking, AI search or optimization.
 - Avoid generic phrases equivalent to: innovative solution, new level, limitless possibilities, ideal choice, maximum comfort, combines style and performance, opens new horizons, designed for those who value quality.
 - Avoid empty introductions, rhetorical questions and conclusions that repeat the heading.
+- Open every paragraph and every FAQ answer with its subject named - the product category, the feature or the parameter - never with a bare pronoun ("it", "this", "він", "це", "он", "to"), so the first sentence stays true when quoted alone.
+- Prefer active verbs with a concrete subject: the product, its part or the buyer does something ("Інвертор перемикається на батарею за 10 мс"), not an impersonal passive ("здійснюється перемикання", "забезпечується захист") and not an abstract subject ("технологія дозволяє…").
+- Cut empty intensifiers and filler transitions: дуже, справді, дійсно, надзвичайно, фактично, варто зазначити, слід відзначити, крім того, відіграє ключову роль, and their equivalents in the target language.
+- Hedge an inference once ("підходить для…"); never stack hedges ("може потенційно допомогти"). A confirmed fact needs no hedge.
+- Unless the style prompt says the reader is technically literate, the first time a technical term or abbreviation carries a benefit (MPPT, LiFePO4, Direct Drive, HDR10), add one plain clause on what it means for the buyer's task. Add no numbers, mechanisms or components that Product JSON does not confirm, and explain each term once.
+- Never stage a contrast reveal ("not just X, but Y", "це не просто X, а Y", "не лише X, а й Y", "это не X, а Y", "to nie tylko X, ale Y"), whatever dash or comma joins it. State Y directly with its confirmed reason.
+- Never define the product by a list of absences ("без X, без Y, без Z"). Say what the product does; mention one confirmed absence once, only when it matters to the buyer.
+- End a sentence where its claim ends. Do not append a participle or "що/который/which" clause that restates the benefit (", забезпечуючи…", ", що дозволяє…", ", обеспечивая…", ", zapewniając…", ", ensuring…"). A clause that adds a new confirmed fact may stay.
+- No colon or dash reveals and no self-answered questions in running copy ("Результат: …", "Головне – …", "Чому це важливо? Тому що…").
+- No aphorisms or quotable closing lines that would fit any product. End every block on its last concrete fact.
 - Do not address the buyer with artificial urgency.
 - Do not use "we", "our service", delivery, warranty or support claims unless they are supplied in VERIFIED COMPANY FACTS.
-- If the available facts are insufficient, write less. Never use filler to reach a target word count.'''
+- If the available facts are insufficient, write less. Never use filler to reach a target word count.
+COPY SELF-CHECK (run before returning the page)
+- Swap test: put a competitor's product of the same category in place of this one. If a sentence stays true, rewrite it from a confirmed fact or delete it.
+- Any sentence over 25 words: split it or cut the clause after the main claim.
+- Every h3, accent subtitle and value caption: prefix it mentally with "Now the buyer can…". If the result is vague or not backed by a confirmed value, rewrite it.
+- The last sentence of every block: if it is a slogan, a mood line or a summary of the block, cut it.
+- Running text has at most one sentence fragment and one list of three per block (value tiles, chips and tags do not count).'''
 
 # Межі між трьома джерелами в промпті: факти товару, пошуковий контекст і
 # підтверджені факти компанії не змішуються в хибні причинно-наслідкові звʼязки.
 SOURCE_BOUNDARY_RULES = r'''SOURCE BOUNDARIES
 - PRODUCT FACTS is the only source of product characteristics. The SEO BRIEF cannot add, change or confirm any characteristic: a search query is not a fact.
 - VERIFIED COMPANY FACTS are statements about the seller, not characteristics of the product. Never merge them with product facts into cause-and-effect claims (for example "because it ships to Poland it is reliable").
+- The description in PRODUCT FACTS is evidence, not copy: take facts from it, never reuse its sentences or their word order. The shop page already shows that text, and repeating it adds nothing for the buyer or for search.
 - Length guide: a simple product needs roughly 250-450 words, a technically complex one 400-700; with few confirmed facts write less.'''
 
 ENGINEERING_STYLE_NAME = "ARTLINE Engineering"
@@ -73,7 +93,7 @@ SOURCE OF TRUTH
 - If a fact is absent or ambiguous, omit it.
 - Convert confirmed specifications into practical buyer value, but never present an inference as a confirmed fact.
 - Keep official brand names, model IDs, technology names, numbers and units unchanged.
-- If confirmed facts are too few to fill a fixed element count, reframe genuine facts into distinct practical angles instead of inventing new specifications; never fabricate to reach a required count.
+- If confirmed facts are too few for the preferred element count, use fewer elements (cards: 6 or 3; scenarios, applications and considerations: 4 or 2, so desktop rows stay full). Never split one fact into two cards or restate it in other words to reach a count, and never fabricate.
 
 NEVER DESCRIBE THE PAGE OR THE IMAGES
 - Write only about the product and what the buyer does with it. The page is the message, never the subject.
@@ -199,7 +219,7 @@ Do not add a trust strip, system banner, project metadata, generation status, te
 - Mobile Hero layout: use display:flex; flex-direction:column; justify-content:flex-end so the copy island sits in the lower text-safe area rather than relying only on a large fixed top padding.
 
 2. KEY BENEFITS — WHY THIS PRODUCT MATTERS
-- Use exactly six equal light content islands. Every benefit must have its own visible card; never render benefits as bare text columns.
+- Use six equal light content islands (three when fewer distinct confirmed benefits exist). Every benefit must have its own visible card; never render benefits as bare text columns.
 - Desktop: three columns. Mobile: one column.
 - Each card: background:#FFFFFF; border:1px solid #D0D7DE; border-radius:12px; padding:24px; box-shadow:0 10px 26px rgba(16,16,16,.06); box-sizing:border-box.
 - Each card contains one concrete confirmed value/specification, one benefit-led h3 and one short explanatory paragraph.
@@ -221,26 +241,28 @@ Do not add a trust strip, system banner, project metadata, generation status, te
 - If the main feature cannot be depicted without inventing internals or functionality, use an accurate product-focused close-up instead — silently, without explaining that choice on the page.
 
 4. USE SCENARIOS — WHO IT IS FOR
-- Use one secondary soft outer island with one descriptive h2, one concise introduction and exactly four white scenario islands.
+- Use one secondary soft outer island with one descriptive h2, one concise introduction and four white scenario islands (two when fewer real scenarios are confirmed).
 - Desktop: two columns. Mobile: one column.
 - Each scenario island: background:#FFFFFF; border:1px solid #D0D7DE; border-radius:12px; padding:22px. Bare text columns are forbidden.
 - Each scenario names a real context, the relevant task and the confirmed reason the product fits it.
 - Do not repeat specifications verbatim and do not claim suitability unsupported by the product data.
 
 5. BUYER CONFIDENCE — WHAT TO CONSIDER
-- Create one coherent secondary soft outer island with a compact eyebrow, one h2, one short answer-first introduction and exactly four equal white supporting islands below.
+- Create one coherent secondary soft outer island with a compact eyebrow, one h2, one short answer-first introduction and four equal white supporting islands below (two when fewer are confirmed). Each island answers one real pre-purchase question this Product JSON can answer: its h3 is the question as a buyer would type it, ending with a question mark; its paragraph answers in the first sentence with the confirmed value or condition, then adds one supporting sentence. Never ask a question the data cannot answer.
 - Desktop supporting grid: two equal columns. Mobile: one column.
 - Every supporting item must use background:#FFFFFF; border:1px solid #D0D7DE; border-radius:12px; padding:22px. Do not output unframed text rows.
 - Do not use an oversized dark panel beside smaller cards and do not create an asymmetrical split layout.
 - Cover useful decision themes supported by data: configuration clarity, integration, ease of use, relevant compatibility, maintenance or ARTLINE service only when explicitly confirmed.
 - Never invent warranty periods, lowest prices, free delivery, operating systems, official partnerships, installation or 24/7 support.
 - If ARTLINE-specific service facts are unavailable, keep the section product-focused and neutral rather than fabricating trust claims.
+- When a confirmed parameter sets a boundary (maximum load, supported formats or materials, size, operating temperature, required accessory), state it once, plainly, as something the buyer should check before choosing. Never present it as a weakness, never infer a limit beyond the stated number, and never claim there is none.
 
 6. FINAL SUMMARY — DECISION RECAP
 - Use one restrained dark centered emphasis island, visually related to the Hero copy island but spanning the section width.
 - Include one compact badge, one h2, one short factual summary and exactly three small tags.
 - Restate the exact brand/model and the three most decision-relevant confirmed ideas without copying earlier sentences.
 - No buttons, links, prices, purchase instructions or unsupported superlatives.
+- The summary closes on a concrete confirmed fact, not on a quotable line that could end any product page.
 
 SYSTEM-TEXT EXCLUSIONS
 Never show internal or technical labels such as:
@@ -265,7 +287,7 @@ FINAL SELF-CHECK
 - benefit, feature, scenario and buyer-confidence copy uses the prescribed coordinated islands;
 - exact product brand/model is retained even when the Hero title is marketing-oriented;
 - Feature section and Feature asset focus on the strongest confirmed differentiator;
-- six benefit cards, four scenarios, four buyer-confidence items and three final tags;
+- six or three benefit cards, four or two scenarios and buyer-confidence questions, each carrying a different confirmed fact, and three final tags;
 - every visible sentence is in the requested language and no system label is visible;
 - headings and paragraphs use role-appropriate accessible colors;
 - factual, useful, non-repetitive SEO/GEO copy without keyword stuffing;
@@ -372,7 +394,7 @@ SOURCE OF TRUTH
 - Never invent specifications, compatibility, materials, ports, accessories, certifications, software, benchmarks, warranty, delivery, prices, service conditions, safety claims or package contents.
 - If a fact is absent or ambiguous, omit it.
 - Convert confirmed specifications into practical engineering meaning, but never present an inference as a confirmed fact. If you reason from a fact to a consequence, the consequence must be a direct, obvious implication of that fact — nothing further.
-- If confirmed facts are too few to fill a fixed element count, reframe genuine facts into distinct technical angles instead of inventing new specifications; never fabricate to reach a required count.
+- If confirmed facts are too few for the preferred element count, use fewer elements (cards: 6 or 3; scenarios, applications and considerations: 4 or 2, so desktop rows stay full). Never split one fact into two cards or restate it in other words to reach a count, and never fabricate.
 - Keep official brand names, model IDs, technology names, numbers and units unchanged.
 
 NEVER DESCRIBE THE PAGE OR THE IMAGES
@@ -487,7 +509,7 @@ Do not add a trust strip, banner, metadata, status, raw specification dump, fake
 
 2. KEY SPECIFICATIONS — THE PARAMETERS THAT DEFINE IT
 - Select the six most decision-relevant confirmed parameters. This is a curated selection, not the full specification table: never paste the whole spec sheet and never list trivial or duplicated rows.
-- Use exactly six equal light content islands (desktop three columns, mobile one). Never render parameters as bare text columns.
+- Use six equal light content islands (three when fewer distinct confirmed parameters exist; desktop three columns, mobile one). Never render parameters as bare text columns.
 - Each card: background:#FFFFFF; border:1px solid #D0D7DE; border-radius:12px; padding:24px; box-shadow:0 10px 26px rgba(16,16,16,.06); box-sizing:border-box.
 - Card structure, in this order: the exact confirmed value with its unit as the lead line; an h3 naming the parameter; one sentence stating what this value means for the reader's work.
 - The meaning sentence must be a direct implication of the value, not a marketing claim. "500 mm/s" -> what that changes in a print job, not "incredible speed".
@@ -507,14 +529,14 @@ Do not add a trust strip, banner, metadata, status, raw specification dump, fake
 - The Feature image must support this exact solution, not merely repeat the Hero composition. This is an art-direction rule for the image only — it must never appear as text.
 
 4. APPLICATIONS AND WORKLOADS — WHAT IT IS SUITABLE FOR
-- Use one secondary soft outer island with one descriptive h2, one concise technical introduction and exactly four white application islands. Desktop: two columns. Mobile: one column.
+- Use one secondary soft outer island with one descriptive h2, one concise technical introduction and four white application islands (two when fewer are confirmed). Desktop: two columns. Mobile: one column.
 - Each application island: background:#FFFFFF; border:1px solid #D0D7DE; border-radius:12px; padding:22px. Bare text columns are forbidden.
 - Each application names the workload, the technical requirement that workload imposes, and the confirmed parameter that satisfies it. Pattern: workload -> requirement -> confirmed parameter.
 - Stay inside what the data supports. Do not claim suitability for a workload the confirmed parameters cannot cover, and do not promise results the data cannot guarantee.
 - Do not repeat the values already used in section 2 verbatim; refer to them in the context of the workload.
 
 5. TECHNICAL CONSIDERATIONS — WHAT TO CHECK BEFORE CHOOSING
-- Create one coherent secondary soft outer island with a compact eyebrow, one h2, one short answer-first introduction and exactly four equal white supporting islands below.
+- Create one coherent secondary soft outer island with a compact eyebrow, one h2, one short answer-first introduction and four equal white supporting islands below (two when fewer are confirmed). Each island answers one real pre-purchase question this Product JSON can answer: its h3 is the question as a buyer would type it, ending with a question mark; its paragraph answers in the first sentence with the confirmed value or condition, then adds one supporting sentence. Never ask a question the data cannot answer.
 - Desktop supporting grid: two equal columns. Mobile: one column. Every supporting item must use background:#FFFFFF; border:1px solid #D0D7DE; border-radius:12px; padding:22px. Do not output unframed text rows.
 - Cover real selection criteria that the confirmed data supports: dimensional limits, supported materials or load range, interfaces and integration, calibration and maintenance requirements, operating conditions, configuration clarity.
 - State honest boundaries that follow directly from confirmed parameters — an engineer trusts a page that names limits. Never invent a limitation, and never claim there are none.
@@ -525,6 +547,7 @@ Do not add a trust strip, banner, metadata, status, raw specification dump, fake
 - Include one compact badge, one h2, one short factual summary and exactly three small tags. Each tag is a key confirmed parameter with its unit.
 - Restate the exact brand/model and the three most decision-relevant confirmed parameters without copying earlier sentences.
 - No buttons, links, prices, purchase instructions or unsupported superlatives.
+- The summary closes on a concrete confirmed fact, not on a quotable line that could end any product page.
 
 SYSTEM-TEXT EXCLUSIONS
 Never show internal or technical labels such as:
@@ -545,7 +568,7 @@ FINAL SELF-CHECK
 - every sentence is specific to this exact product and could not be pasted onto a different product unchanged;
 - exactly six sections in the required order; no h1 and no extra major section;
 - Hero asset is the full CSS background of the first section and no Hero <img> exists; one compact translucent copy island; exact brand/model retained;
-- six parameter cards each led by a confirmed value with unit; four applications; four considerations; three final tags;
+- six or three parameter cards each led by a confirmed value with unit; four or two applications and considerations, each a different confirmed fact; three final tags;
 - every visible sentence is in the requested language and no system label is visible;
 - every visible <img> has descriptive alt; role-appropriate accessible colors; inline CSS only; all tags closed; production-ready HTML only.
 
@@ -698,6 +721,9 @@ FACTS AND TONE
 - NUMBER DISTRIBUTION: the page has 14 numeric slots (3 Hero chips, 4 Spec Strip cards, 4 Dark Feature tiles, 3 Recap chips). A value may appear as a big number at most TWICE on the whole page: once early (Hero or Spec Strip) and once in the Final Recap. The four Dark Feature tiles carry values the Spec Strip did not show. When Product JSON has too few distinct values, drop tiles - never pad with a repeat.
 - The exact brand and model appear in the Hero h2, in the Dark Feature Split label (the one mid-page mention) and in the Final Recap label - three times, never more.
 - SEO: natural category wording in h2/h3; no keyword stuffing.
+- Every h2 after the Hero states the buyer outcome of its block in plain words with a confirmed value where one exists ("Друкує до 12 годин без нагляду"), never a topic label ("Характеристики", "Особливості"). The Hero paragraph names the single strongest buyer benefit in its first sentence.
+- When a confirmed parameter sets a boundary (maximum load, supported formats or materials, size, operating temperature, required accessory), the Trust Split or the FAQ states it once, plainly, as something to check before choosing; never as a weakness, never beyond the stated number.
+- The Final Recap closes on a concrete confirmed fact, never on a slogan, aphorism or mood line that could end any product page.
 
 FINAL SELF-CHECK
 - the Hero wrapper carries the hero URL as background (center/cover) AND its first child is the same URL as <img> (position:absolute;inset:0) with NO opacity; the overlay fades to transparent over the product so the photo is visible; text above the overlay;
@@ -1092,7 +1118,7 @@ BENTO DESIGN SYSTEM
 - Column spans only (grid-column:span 2). NEVER grid-row spans and never fixed tile heights except photo tiles - dense flow must be able to fill every hole.
 
 TILE SET (12-14 tiles total; each tile carries EXACTLY ONE confirmed fact)
-1. MODEL TILE - grid-column:span 2. The product identity: brand + model code as h2 40-46px/950 letter-spacing:-.02em, one 14px line in #AFB8C1 with the category. If GALLERY_IMAGES offers a clean product render, place it under the text as <img style="display:block;width:100%;height:220px;object-fit:contain"> inside an inner white card (background:#FFFFFF;border-radius:8px;padding:12px) - a white-background render never lies bare on a dark tile.
+1. MODEL TILE - grid-column:span 2. The product identity: brand + model code as h2 40-46px/950 letter-spacing:-.02em, one 14px line in #AFB8C1 with the category, then one sentence of 12-25 words in #D8DDE2 that defines the product: category, primary purpose and its strongest confirmed value (the only tile text longer than a label). If GALLERY_IMAGES offers a clean product render, place it under the text as <img style="display:block;width:100%;height:220px;object-fit:contain"> inside an inner white card (background:#FFFFFF;border-radius:8px;padding:12px) - a white-background render never lies bare on a dark tile.
 2. VALUE TILES (4-6, span 1) - the strongest confirmed numbers: value first 34-40px/950 in #19BCC9, then h3 15px #F5F7FA, then one short 13px line in #AFB8C1. Number with unit always.
 3. PHOTO TILES (2-3) - real GALLERY_IMAGES frames, each in its own tile with padding:0. The <img> fills the tile: display:block;width:100%;height:240px;object-fit:cover (an environment shot) or object-fit:contain inside white padding for a studio render. One photo tile may span 2 columns. Every gallery URL used at most once.
 4. FEATURE TILES (2-3, span 1 or 2) - h3 18px/800 + one 13px line: a confirmed capability that is not a bare number (connectivity set, mounting, protection class, package contents).
@@ -1108,6 +1134,7 @@ TILE SET (12-14 tiles total; each tile carries EXACTLY ONE confirmed fact)
 - Questions are real pre-purchase questions THIS Product JSON can answer. Never invent an answer; no prices, delivery or payment.
 
 FACTS AND TONE
+- When a confirmed parameter sets a boundary (maximum load, supported formats, size, operating temperature, required accessory), one FAQ answer states it plainly as something to check before choosing; never beyond the stated number.
 - Every tile value traces to Product JSON verbatim, units always. No marketing superlatives without a number behind them.
 - The exact brand and model appear only in the MODEL TILE and the FAQ answers where natural.
 - SEO: natural category wording in the model tile line and feature tiles; no keyword stuffing.
@@ -1303,6 +1330,8 @@ FACTS AND COPY
 - Brand/model appear naturally in the Hero and in the closing accent; never repeat them in every heading. Hero badge: brand · category. Hero h2: the exact brand and model, not an overloaded commercial title and without the part number in parentheses (write "HYTE X50 Taro Milk", not "HYTE X50 Taro Milk (CS-HYTE-X50G-TM)"); compact descriptors go to the subtitle.
 - Hero subtitle: one accent line of the 2-4 strongest identifiers joined with " · " (for example "2700 Вт · 2073.6 Вт·год · LiFePO4 · UPS до 15 мс"), or a short descriptor of the product class when few values are confirmed.
 - EYEBROW: every content block (blocks 03-08) opens with an eyebrow label of 2-4 uppercase words that names its topic, or the technology when Product JSON names it (for example "TURBOBOOST CHARGING", "ЕРГОНОМІКА", "ПІДКЛЮЧЕННЯ"). Never a slogan.
+- HERO DEFINITION: the first sentence of the Hero paragraph is a self-contained definition - the product category with the brand, its primary purpose and the strongest confirmed outcome for the buyer. Quoted alone, it answers "what is this and what is it for"; the model code stays in the h2.
+- An h2 may be a short topic label only because its accent subtitle carries the claim: the accent subtitle names what the buyer gets or can now do, with a confirmed value, and never repeats the h2 in other words.
 - ACCENT SUBTITLE: under every h2 one subtitle line in the accent color that states the concrete benefit or value of the block in plain words ("Гібридний інвертор 10 кВт із трьома MPPT", "Зарядка до 80% приблизно за 1 годину").
 - DEPTH: a feature block carries two paragraphs, together 50-90 words. The first says what the feature is and gives its confirmed number with its conditions; the second says what it changes for the buyer in a situation Product JSON supports (home backup, a trip, an office desk). No filler and no adjective without a fact behind it.
 
@@ -1351,13 +1380,13 @@ COMPONENTS (copy these exactly; the content team approved this look)
 
 UNIVERSAL DESKTOP GRID - DEFAULT 9 BLOCKS, MAXIMUM 10 INCLUDING FAQ
 01 HERO: dark full-bleed hero photo with a readable overlay. Copy: badge, h2, the accent key-value subtitle, one paragraph of at most two sentences and a HERO TILE ROW with the three strongest confirmed values (fewer than three confirmed values: omit the row). Slot H01 = the supplied hero URL.
-02 KEY PARAMETERS: #F5F7FA canvas; a centered HEADING GROUP (h2 such as "КЛЮЧОВІ ПАРАМЕТРИ" and an accent subtitle naming the product class in one line); one VALUE TILE ROW with 4-6 tiles in a single row (repeat(N,minmax(0,1fr))) carrying the next most important confirmed values - never the three Hero values again. Use 2 or 3 tiles when fewer useful values exist, never invent one. No photo.
+02 KEY PARAMETERS: #F5F7FA canvas; a centered HEADING GROUP (an h2 that names the product class, for example "КЛЮЧОВІ ПАРАМЕТРИ ГІБРИДНОГО ІНВЕРТОРА", and an accent subtitle naming the product class in one line); one VALUE TILE ROW with 4-6 tiles in a single row (repeat(N,minmax(0,1fr))) carrying the next most important confirmed values - never the three Hero values again. Use 2 or 3 tiles when fewer useful values exist, never invent one. No photo.
 03 PRIMARY FEATURE: dark canvas; photo left / copy right; grid-template-columns:minmax(0,.94fr) minmax(0,1.06fr). Copy = the full block anatomy: EYEBROW, HEADING GROUP, two paragraphs, a VALUE TILE ROW of 2-3 tiles. Slot F01 = the supplied feature URL. Explain the most important distinguishing feature.
 04 SECOND FEATURE: #FFFFFF canvas with border #E3E6EA; copy left / photo right; minmax(0,1.06fr) minmax(0,.94fr); the same anatomy. Slot F02 = a GALLERY_IMAGES frame. A second, independent buyer benefit. Without an unused frame the copy takes the full width and keeps its tile row.
 05 TECHNICAL PAIR: #F5F7FA canvas; a short HEADING GROUP is optional; TWIN PANELS for two related technical topics confirmed by Product JSON (inputs and battery, connectivity and power, layout and switches, protection and operating limits). When only one strong topic exists and an unused GALLERY_IMAGES frame shows it (slot F03), build a photo left / copy right split with the full anatomy instead. Without enough confirmed material for either, omit the block.
 06 CAPABILITY TRIO: #FFFFFF canvas with border #E3E6EA; a centered HEADING GROUP, then repeat(3,minmax(0,1fr)), gap 18px, align-items:stretch; three equal-height cards (background:#F5F7FA;border:1px solid #D0D7DE;border-radius:12px;display:flex;flex-direction:column;height:100%;overflow:hidden). Each card: photo slot on top, then a body with padding:18px 18px 20px holding an h3 18px and one paragraph of two sentences. An environment photo fills the top of the card (img display:block;width:100%;height:220px;object-fit:cover;object-position:center); a studio render sits in a WHITE neutral frame of height:250px including its 18px padding with the img contained (width:100%;height:100%;object-fit:contain;object-position:center). Slots T01/T02/T03 = unique GALLERY_IMAGES frames. Without frames, text-only cards open with a 26px/900 accent value or a key term instead of the photo. Two cards when only two topics exist. Never repeat a photo or invent a topic.
-07 VISUAL ACCENT: dark block in the last quarter before the FAQ: a centered EYEBROW and HEADING GROUP (its h2 is 24px, never a second 30px Hero) and one centered paragraph carrying a new usage or design message and the brand/model mention. Slot H02 is allowed only for a GALLERY_IMAGES frame that is a genuine environment photograph filling the whole picture: then it sits below the copy as a wide image (display:block;width:100%;height:auto;border-radius:12px;margin-top:26px). Otherwise (the usual case) build the block on a brand gradient: background-color:#101010;background-image:linear-gradient(135deg,#101010 0%,#1A2128 100%) - the solid color first, so the white copy stays readable in an editor that drops gradients - without any img or background URL. Never reuse H01.
-08 OPERATING FACTS: #F5F7FA canvas; a centered EYEBROW and HEADING GROUP (for example "НАДІЙНА ОСНОВА", "ЕКСПЛУАТАЦІЯ"), then one VALUE TILE ROW of 4-5 remaining confirmed values: protection class, operating temperature, weight, dimensions, interfaces, supplied items or warranty where Product JSON states them. Never the country of manufacture, never a value already shown. No generic ARTLINE services panel.
+07 VISUAL ACCENT: dark block in the last quarter before the FAQ: a centered EYEBROW and HEADING GROUP (its h2 is 24px, never a second 30px Hero) and one centered paragraph that states one more confirmed usage or design fact from Product JSON together with the brand/model mention - never a slogan, aphorism, mood line or summary of the page. Slot H02 is allowed only for a GALLERY_IMAGES frame that is a genuine environment photograph filling the whole picture: then it sits below the copy as a wide image (display:block;width:100%;height:auto;border-radius:12px;margin-top:26px). Otherwise (the usual case) build the block on a brand gradient: background-color:#101010;background-image:linear-gradient(135deg,#101010 0%,#1A2128 100%) - the solid color first, so the white copy stays readable in an editor that drops gradients - without any img or background URL. Never reuse H01.
+08 OPERATING FACTS: #F5F7FA canvas; a centered EYEBROW and HEADING GROUP whose h2 names what the values cover for this product (for example "ЗАХИСТ І УМОВИ РОБОТИ ІНВЕРТОРА"), never a bare label such as "ЕКСПЛУАТАЦІЯ", then one VALUE TILE ROW of 4-5 remaining confirmed values: protection class, operating temperature, weight, dimensions, interfaces, supplied items or warranty where Product JSON states them. Never the country of manufacture, never a value already shown. No generic ARTLINE services panel.
 09 FAQ: see FAQ IMPLEMENTATION. 4-6 useful questions normally, 2-3 for simple products.
 Optional block 10: one independent feature only with sufficient new information and a unique relevant frame, with the full anatomy. Insert before the visual accent and renumber; FAQ always stays last. Never add a photo-only section.
 
@@ -1381,7 +1410,7 @@ HERO IMPLEMENTATION
 
 FAQ IMPLEMENTATION (the studio FAQ contract, adapted to this style)
 <div style="background:#FFFFFF;border:1px solid #E3E6EA;border-radius:14px;padding:30px 36px 14px;box-sizing:border-box;">
-  <h2 style="margin:0 0 10px;font-size:24px;line-height:1.25;font-weight:900;color:#101010;">FAQ</h2>
+  <h2 style="margin:0 0 10px;font-size:24px;line-height:1.25;font-weight:900;color:#101010;">NATURAL TARGET-LANGUAGE HEADING FOR QUESTIONS ABOUT THIS PRODUCT CATEGORY</h2>
   <details style="margin:0;padding:0;border-bottom:1px solid #E7EAEE;">
     <summary style="display:flex;align-items:center;padding:18px 0;cursor:pointer;user-select:none;-webkit-user-select:none;list-style:none;font-size:18px;line-height:1.4;font-weight:800;color:#101010;overflow-wrap:anywhere;">CONFIRMED QUESTION</summary>
     <p style="margin:0;padding:0 0 18px 36px;font-size:16px;line-height:1.6;color:#555555;text-align:left;">CONFIRMED ANSWER</p>
@@ -1392,7 +1421,7 @@ FAQ IMPLEMENTATION (the studio FAQ contract, adapted to this style)
 
 ASSETS
 - One unique image per visible photo slot within one version. The Hero background + its img is the only intentional repeat. Treat visually identical frames under different filenames as duplicates. When frames run out, drop photo slots or switch to twin panels or text layouts - never repeat an image to fill a slot.
-- Every img has a concise alt in the target language; loading="lazy" on every img except the Hero img.
+- Every img has a concise alt in the target language that names the product (brand and category, or model) and what this frame shows - the view, the part or the use context; never a bare model code or a keyword list. loading="lazy" on every img except the Hero img.
 - Reject frames that show another variant or a large infographic slide; short readable specification labels are acceptable.
 
 COMPACT PLAN FOR SIMPLE PRODUCTS / LIMITED MATERIAL

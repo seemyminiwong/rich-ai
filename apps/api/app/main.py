@@ -3984,7 +3984,8 @@ class LandingSeoIn(BaseModel):
 
 def _landing_seo_args(landing, published: bool) -> dict:
     campaign = {'name': landing.name, 'campaign_title': landing.campaign_title, 'campaign_subtitle': landing.campaign_subtitle,
-                'period': landing.period, 'language': landing.language, 'hero_url': landing.hero_url}
+                'period': landing.period, 'language': landing.language, 'hero_url': landing.hero_url,
+                'updated_at': landing.updated_at.date().isoformat() if getattr(landing, 'updated_at', None) else ''}
     profile = _safe_map(getattr(landing, 'publishing_profile_json', '')) or default_profile_snapshot()
     return dict(campaign=campaign, products=json.loads(landing.products_json or '[]'), profile=profile, language=landing.language,
                 canonical=(getattr(landing, 'publish_url', '') or '') if published else '',
