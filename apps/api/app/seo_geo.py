@@ -409,6 +409,69 @@ GENERIC_PHRASES = {
            'state-of-the-art', 'seamless', 'elevate your', 'unleash'],
 }
 
+# Порожні вставки й «вода» з правил copy-editing (marketingskills): ловляться як шаблонні фрази.
+GENERIC_PHRASES['uk'] += ['варто зазначити', 'слід зазначити', 'відіграє ключову роль', 'відіграє важливу роль', 'широкий спектр', 'широкі можливості', 'незамінний помічник', 'надійний помічник', 'стильний дизайн', 'на високому рівні']
+GENERIC_PHRASES['ru'] += ['стоит отметить', 'следует отметить', 'играет ключевую роль', 'играет важную роль', 'широкий спектр', 'незаменимый помощник', 'надежный помощник', 'стильный дизайн']
+GENERIC_PHRASES['pl'] += ['warto zaznaczyć', 'warto podkreślić', 'odgrywa kluczową rolę', 'szeroki zakres', 'niezastąpion']
+GENERIC_PHRASES['en'] += ['it is worth noting', 'plays a crucial role', 'plays a key role', 'serves as', 'boasts', 'robust']
+
+# Структурні AI-шаблони (marketingskills copy-editing): «не просто X, а Y», перелік відсутностей,
+# хвіст-дієприслівник, що переказує користь, «Результат: …». Проміжки обмежені, щоб не ловити
+# звичайні речення з «не лише … а й …» на пів сторінки.
+AI_PATTERNS = {
+    'contrast_reveal': {
+        'uk': r'\bне (?:лише|тільки|просто) [^.!?]{1,60}?[,–-]\s*(?:а|але)\b',
+        'ru': r'\bне (?:только|просто) [^.!?]{1,60}?[,–-]\s*(?:а|но)\b|\bэто не [^.!?]{1,40}?, а\b',
+        'pl': r'\bnie tylko [^.!?]{1,60}?,\s*(?:ale|lecz)\b',
+        'en': r'\bnot (?:just|only|merely) [^.!?]{1,60}?,?\s*but\b',
+    },
+    'absence_list': {
+        'uk': r'\bбез [^.,!?]{1,30}, без [^.,!?]{1,30}',
+        'ru': r'\bбез [^.,!?]{1,30}, без [^.,!?]{1,30}',
+        'pl': r'\bbez [^.,!?]{1,30}, bez [^.,!?]{1,30}',
+        'en': r'\bno [^.,!?]{1,30}, no [^.,!?]{1,30}',
+    },
+    'trailing_clause': {
+        'uk': r',\s*(?:забезпечуючи|дозволяючи|гарантуючи|роблячи|надаючи)\b',
+        'ru': r',\s*(?:обеспечивая|позволяя|гарантируя|делая|предоставляя)\b',
+        'pl': r',\s*(?:zapewniając|umożliwiając|gwarantując|czyniąc)\b',
+        'en': r',\s*(?:ensuring|allowing|enabling|guaranteeing|making it)\b',
+    },
+    'reveal_colon': {
+        'uk': r'(?:^|[.!?]\s+)(?:результат|головне|секрет|суть)\s*[:–-]',
+        'ru': r'(?:^|[.!?]\s+)(?:результат|главное|секрет|суть)\s*[:–-]',
+        'pl': r'(?:^|[.!?]\s+)(?:efekt|najważniejsze|sekret)\s*[:–-]',
+        'en': r'(?:^|[.!?]\s+)(?:the result|the bottom line|the secret)\s*[:–-]',
+    },
+}
+AI_PATTERN_LABELS = {
+    'contrast_reveal': 'Конструкція «не просто X, а Y»',
+    'absence_list': 'Опис через перелік відсутностей («без X, без Y»)',
+    'trailing_clause': 'Хвіст-дієприслівник, що переказує користь («, забезпечуючи…»)',
+    'reveal_colon': 'Розкриття через двокрапку («Результат: …»)',
+}
+# Безособовий пасив (copy-editing: active voice). Сигнал info від трьох випадків на сторінку.
+PASSIVE = {
+    'uk': r'\b(?:здійснюється|забезпечується|досягається|реалізується|виконується)\b',
+    'ru': r'\b(?:осуществляется|обеспечивается|достигается|реализуется|выполняется)\b',
+    'pl': r'\b(?:jest realizowan\w*|jest zapewnian\w*|zostaje osiągnięt\w*)',
+    'en': r'\b(?:is achieved|is ensured|is provided|is carried out|is realized)\b',
+}
+# Займенник замість предмета на початку абзацу (ai-seo: фрагмент має бути зрозумілим без контексту).
+PRONOUN_OPENERS = {
+    'uk': {'він', 'вона', 'воно', 'вони', 'це', 'цей', 'ця', 'ці', 'його', 'її'},
+    'ru': {'он', 'она', 'оно', 'они', 'это', 'этот', 'эта', 'эти'},
+    'pl': {'on', 'ona', 'ono', 'to', 'ten', 'ta', 'te'},
+    'en': {'it', 'this', 'these', 'they', 'its'},
+}
+# Голі заголовки-мітки (seo-audit: описові заголовки).
+BARE_LABELS = {
+    'uk': {'ключові параметри', 'характеристики', 'особливості', 'переваги', 'експлуатація', 'опис', 'faq'},
+    'ru': {'ключевые параметры', 'характеристики', 'особенности', 'преимущества', 'эксплуатация', 'описание', 'faq'},
+    'pl': {'kluczowe parametry', 'charakterystyka', 'cechy', 'zalety', 'eksploatacja', 'opis', 'faq'},
+    'en': {'key parameters', 'specifications', 'features', 'benefits', 'operation', 'description', 'faq'},
+}
+
 # Канцеляризми та дослівні кальки (ознака машинного перекладу).
 CALQUES = {
     'uk': ['приймати участь', 'на протязі', 'у відповідності з', 'в даний час', 'являється', 'на рахунок',
@@ -606,11 +669,11 @@ def audit_human_copy(markup: str, language: str, variant: str = '', brief: dict 
                suggestion='Залишити точну назву в Hero та підсумку, в інших заголовках назвати користь або сценарій')
 
     # 4. Довгі речення (м'який поріг: не кожне довге речення - помилка)
-    long = [(s, i) for s, i in all_sentences if len(words(s)) > 32]
+    long = [(s, i) for s, i in all_sentences if len(words(s)) > 25]
     if long:
         s, i = max(long, key=lambda x: len(words(x[0])))
         mk('long_sentence', 'warning' if len(long) >= 3 else 'info',
-           f'Задовгих речень: {len(long)} (понад 32 слова)', block=i['block'], evidence=s, segment=i['key'],
+           f'Задовгих речень: {len(long)} (понад 25 слів)', block=i['block'], evidence=s, segment=i['key'],
            suggestion='Розбити на два речення: одна корисна думка в кожному')
 
     # 5. Абзаци довші за 4 речення
@@ -686,6 +749,32 @@ def audit_human_copy(markup: str, language: str, variant: str = '', brief: dict 
         if not w or (len(w) == 1 and len(w[0]) < 4) or h['text'].strip().endswith((':', ',', '-', '–')):
             mk('weak_heading', 'info', 'Заголовок без самостійного змісту', block=h['block'], evidence=h['text'],
                segment=h['key'], suggestion='Заголовок має називати користь або сценарій, а не бути обривком')
+
+    # 12a. Голі заголовки-мітки без змісту («ХАРАКТЕРИСТИКИ», «FAQ»)
+    labels = BARE_LABELS.get(lang, set())
+    for h in headings:
+        if h['tag'] == 'h2' and ' '.join(words(h['text'])).lower() in labels:
+            mk('weak_heading', 'info', 'Заголовок-мітка без змісту', block=h['block'], evidence=h['text'], segment=h['key'],
+               suggestion='Назвати, що саме покриває блок для цього товару: «Захист і умови роботи інвертора»')
+
+    # 12b. Структурні AI-шаблони
+    for kind, by_lang in AI_PATTERNS.items():
+        pattern = by_lang.get(lang)
+        if not pattern:
+            continue
+        hit = next(((s, i) for s, i in all_sentences if re.search(pattern, s, re.I)), None)
+        if hit:
+            mk('ai_pattern', 'warning', AI_PATTERN_LABELS[kind], block=hit[1]['block'], evidence=hit[0], segment=hit[1]['key'],
+               suggestion='Сказати прямо з підтвердженим фактом; закінчити речення там, де закінчується твердження')
+
+    # 12c. Безособовий пасив
+    passive = PASSIVE.get(lang)
+    if passive:
+        hits = [(s, i) for s, i in all_sentences if re.search(passive, s, re.I)]
+        if len(hits) >= 3:
+            mk('passive_voice', 'info', f'Безособовий пасив у {len(hits)} реченнях', block=hits[0][1]['block'],
+               evidence=hits[0][0], segment=hits[0][1]['key'],
+               suggestion='Активне дієслово з конкретним підметом: «Інвертор перемикається за 10 мс»')
 
     # 13. Текст про сторінку або зображення
     pattern = PAGE_NARRATION.get(lang)
@@ -951,6 +1040,58 @@ def audit_rich_fragment(markup: str, product: dict | None, language: str, varian
 # Аудит: GEO (generative engine) rich-фрагмента
 # ---------------------------------------------------------------------------
 
+def _shingles(text: str, size: int = 8) -> set:
+    tokens = [w.lower() for w in words(text)]
+    return {' '.join(tokens[i:i + size]) for i in range(0, max(0, len(tokens) - size + 1))}
+
+
+def audit_source_reuse(markup: str, product: dict | None, language: str, variant: str = '') -> list[dict]:
+    """Текст, переписаний з опису товару на сторінці магазину (seo-audit: дубльований контент).
+    Порівнюється лише мовою джерела: переклад не є копією."""
+    product = product or {}
+    source = ' '.join([str(product.get('description') or '')] + [str(x) for x in (product.get('features') or [])])
+    lang = norm_lang(language)
+    if len(words(source)) < 8:
+        return []
+    src_cyr = len(_CYR_RE.findall(source)) > len(_LAT_RE.findall(source))
+    doc = parse_fragment(markup)
+    page_cyr = len(_CYR_RE.findall(doc['visible_text'])) > len(_LAT_RE.findall(doc['visible_text']))
+    if src_cyr != page_cyr or (src_cyr and lang == 'uk' and _RU_ONLY_RE.search(source)) or (src_cyr and lang == 'ru' and _UK_ONLY_RE.search(source)):
+        return []
+    source_norm = ' '.join(w.lower() for w in words(source))
+    source_sh = _shingles(source)
+    page_sh = _shingles(doc['visible_text'])
+    copied = next((s for t in doc['texts'] for s in sentences(t['text'])
+                   if len(words(s)) >= 12 and ' '.join(w.lower() for w in words(s)) in source_norm), '')
+    share = len(page_sh & source_sh) / max(1, len(page_sh))
+    if not copied and share <= 0.15:
+        return []
+    item = next((t for t in doc['texts'] if copied and copied in t['text']), None)
+    return [finding('source_text_copied', 'warning',
+                    f'Текст повторює опис товару з картки ({round(share * 100)}% збігів по 8 слів)',
+                    language=lang, variant=variant, source='seo', block=item['block'] if item else None,
+                    evidence=copied or '', segment=item['key'] if item else '',
+                    suggestion='Брати з опису факти, а не речення: сказати своїми словами з новою користю для покупця')]
+
+
+def audit_alt_entities(markup: str, product: dict | None, language: str, variant: str = '') -> list[dict]:
+    """Alt називає товар (бренд, модель або категорію) - image і seo-audit: alt описує саме цей кадр товару."""
+    product = product or {}
+    brand = str(product.get('brand') or '').strip().lower()
+    model = model_token(product).lower()
+    stems = [w[:max(4, len(w) - 2)].lower() for w in words(str(product.get('category') or '')) if len(w) > 3]
+    if not (brand or model or stems):
+        return []
+    doc = parse_fragment(markup)
+    bare = [i for i in doc['images'] if (i.get('alt') or '').strip()
+            and not ((brand and brand in i['alt'].lower()) or (model and model in i['alt'].lower()) or any(st in i['alt'].lower() for st in stems))]
+    if not bare:
+        return []
+    return [finding('alt_without_entity', 'info', f'Alt без назви товару: {len(bare)}', language=norm_lang(language),
+                    variant=variant, source='seo', evidence=bare[0]['alt'],
+                    suggestion='Alt: бренд і категорія (або модель) плюс що показує кадр - ракурс, деталь, сценарій')]
+
+
 def audit_geo_copy(markup: str, product: dict | None, language: str, variant: str = '', brief: dict | None = None,
                    evidence: list | None = None, profile: dict | None = None) -> list[dict]:
     """Придатність для generative engines: сутність, answer-first, provenance значень,
@@ -983,6 +1124,24 @@ def audit_geo_copy(markup: str, product: dict | None, language: str, variant: st
             # Категорію в першому блоці вже несе лейбл («QUBE · МОНІТОР») - це не дефект.
             mk('entity_without_category', 'info', 'У реченні з брендом і моделлю не названо категорію', block=0,
                evidence=entity_sentence, suggestion='Додати категорію до речення-визначення')
+
+    # 1a. Перше речення Hero - самодостатнє визначення (бренд або модель, а краще ще й категорія)
+    hero_p = next((p for p in doc['paragraphs'] if p['block'] == 0 and p['tag'] == 'p'), None)
+    if hero_p and (brand or model or cat_stems):
+        first = (sentences(hero_p['text'])[:1] or [''])[0].lower()
+        if first and not ((brand and brand in first) or (model and model in first) or any(stem in first for stem in cat_stems)):
+            mk('definition_sentence_missing', 'warning', 'Перше речення Hero не визначає товар', block=0,
+               evidence=sentences(hero_p['text'])[0], segment=hero_p['key'],
+               suggestion='Категорія з брендом, призначення і головна підтверджена користь в одному реченні')
+
+    # 1b. Абзац або відповідь FAQ починається з займенника, а не з предмета
+    openers = PRONOUN_OPENERS.get(lang, set())
+    for p in doc['paragraphs']:
+        first_word = (words(p['text'])[:1] or [''])[0].lower()
+        if first_word in openers:
+            mk('pronoun_opening', 'info', 'Абзац починається з займенника', block=p['block'], evidence=p['text'][:120],
+               segment=p['key'], suggestion='Почати з назви предмета: категорії, функції або параметра')
+            break
 
     # 2. Answer-first: абзац не починається зі сцени чи риторичного питання
     pattern = SCENE_SETTING.get(lang)
@@ -1147,6 +1306,8 @@ def run_rich_audits(artifacts: list, product: dict | None, brief: dict | None = 
         lang = getattr(a, 'language', None) if not isinstance(a, dict) else a.get('language')
         variant = getattr(a, 'variant', None) if not isinstance(a, dict) else a.get('variant')
         grouped['seo'].extend(audit_rich_fragment(html, product, lang, variant, brief))
+        grouped['seo'].extend(audit_source_reuse(html, product, lang, variant))
+        grouped['seo'].extend(audit_alt_entities(html, product, lang, variant))
         grouped['geo'].extend(audit_geo_copy(html, product, lang, variant, brief, evidence, profile))
         grouped['human'].extend(audit_human_copy(html, lang, variant, brief, product))
         grouped['language'].extend(audit_language_quality(html, lang, variant, product, brief))
@@ -1549,25 +1710,20 @@ def build_landing_jsonld(campaign: dict, products: list[dict], profile: dict | N
         page['@id'] = canonical + '#webpage'
     if description:
         page['description'] = description
+    if campaign.get('updated_at'):
+        page['dateModified'] = str(campaign['updated_at'])
     if organization.get('@id'):
         page['publisher'] = {'@id': organization['@id']}
     graph.append(page)
     items = []
-    for index, product in enumerate(products or [], start=1):
+    # Сторінка-список: ItemList лише з посиланнями (summary page). Повна розмітка Product/Offer
+    # належить сторінці самого товару - так радить Google для списків товарів.
+    for product in products or []:
         name = _clean_text(product.get('name') or '')
         url = str(product.get('url') or '').strip()
         if not name or not url:
             continue
-        node = {'@type': 'Product', 'name': name, 'url': url}
-        if product.get('image'):
-            node['image'] = str(product['image'])
-        price = str(product.get('price') or '').strip()
-        currency = str(product.get('currency') or ('UAH' if price else '')).strip()
-        if price and currency and url:
-            node['offers'] = {'@type': 'Offer', 'price': price, 'priceCurrency': currency, 'url': url}
-        for key in _FORBIDDEN_PRODUCT_KEYS:
-            node.pop(key, None)
-        items.append({'@type': 'ListItem', 'position': index, 'item': node})
+        items.append({'@type': 'ListItem', 'position': len(items) + 1, 'url': url, 'name': name})
     if items:
         graph.append({'@type': 'ItemList', 'itemListElement': items})
     if breadcrumbs:
@@ -1619,7 +1775,11 @@ def finalize_landing_seo(markup: str, *, campaign: dict, products: list[dict], p
     if head is None:
         head = soup.new_tag('head')
         html_tag.insert(0, head)
-    meta = build_landing_metadata(campaign, products, profile, language, canonical, alternates, published)
+    hero = str(campaign.get('hero_url') or '').strip()
+    if hero.startswith('/') and canonical:
+        hero = '{0.scheme}://{0.netloc}'.format(urlparse(canonical)) + hero
+    meta = build_landing_metadata(campaign, products, profile, language, canonical, alternates, published,
+                                  image=hero if hero.startswith('http') else '')
     html_tag['lang'] = meta['lang']
     # Прибрати все, чим керує сервер (включно з тим, що могла написати модель).
     for node in head.find_all('title'):
@@ -1768,8 +1928,20 @@ def audit_landing_document(markup: str, *, language: str, expected_canonical: st
                 continue
             types = node.get('@type')
             types = types if isinstance(types, list) else [types]
+            if 'BreadcrumbList' in types:
+                crumbs = [c for c in node.get('itemListElement') or [] if isinstance(c, dict)]
+                positions = [c.get('position') for c in crumbs]
+                if positions != list(range(1, len(crumbs) + 1)) or not all(str(c.get('item') or '').startswith('http') for c in crumbs):
+                    mk('breadcrumb_invalid', 'warning', 'BreadcrumbList: позиції не підряд з 1 або відносні адреси',
+                       suggestion='position 1..N без пропусків, item - абсолютна адреса')
             if 'ItemList' in types:
                 for item in node.get('itemListElement') or []:
+                    if isinstance(item, dict) and item.get('url') and products and item['url'] not in {p.get('url') for p in products}:
+                        mk('jsonld_unknown_url', 'critical', 'URL товару в JSON-LD не з проб', evidence=item['url'],
+                           suggestion='Лише URL реальних товарів кампанії')
+                    if isinstance(item, dict) and isinstance(item.get('item'), dict) and item['item'].get('@type') == 'Product':
+                        mk('jsonld_product_in_list', 'warning', 'Повний Product у списку товарів', evidence=item['item'].get('name', ''),
+                           suggestion='На сторінці-списку ItemList лише з url і name; Product - на сторінці товару')
                     product = item.get('item') if isinstance(item, dict) else None
                     if isinstance(product, dict):
                         bad = [k for k in _FORBIDDEN_PRODUCT_KEYS if k in product]
@@ -1791,6 +1963,22 @@ def audit_landing_document(markup: str, *, language: str, expected_canonical: st
                         break
             if 'Product' in types and node.get('name') and str(node['name']).lower() not in page_text:
                 mk('jsonld_product_invisible', 'critical', 'Product у schema не показаний на сторінці', evidence=str(node['name']), suggestion='Product лише для реально показаних товарів')
+    # Вступ і структура (seo-audit / cro): вступний абзац у першому блоці, заголовки без пропусків,
+    # назва товару - посилання на товар, а не лише кнопка «Купити».
+    body_root = soup.body or soup
+    first_block = body_root.find(['section', 'header', 'div'])
+    if products and first_block is not None and not any(len(words(p_tag.get_text(' ', strip=True))) >= 5 for p_tag in first_block.find_all('p')):
+        mk('landing_no_lead', 'warning', 'Немає вступного абзацу: що охоплює кампанія',
+           suggestion='1-2 речення: категорії, кількість товарів, період - лише з даних кампанії')
+    levels = [int(h.name[1]) for h in body_root.find_all(['h1', 'h2', 'h3', 'h4'])]
+    if any(b - a > 1 for a, b in zip(levels, levels[1:])):
+        mk('landing_heading_skip', 'warning', 'Пропущено рівень заголовка', suggestion='h1 → h2 → h3 без пропусків')
+    product_urls = {p.get('url') for p in (products or []) if p.get('url')}
+    named = {a['href'] for a in soup.find_all('a', href=True)
+             if a['href'] in product_urls and len(words(a.get_text(' ', strip=True))) >= 2 and a.find_parent(['h2', 'h3', 'h4'])}
+    if product_urls and not named:
+        mk('generic_anchor_only', 'info', 'На товари веде лише кнопка без назви',
+           suggestion='Назва товару в h3 - посилання на сторінку товару')
     # Посилання
     allowed = {p.get('url') for p in (products or [])} | {p.get('image') for p in (products or [])} | \
               {c.get('url') for c in (categories or [])} | {c.get('image') for c in (categories or [])}

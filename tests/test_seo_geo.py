@@ -355,12 +355,12 @@ def test_jsonld_is_server_built_parses_and_never_invents_offer_or_forbidden_fiel
     types = [n['@type'] for n in data['@graph']]
     assert 'Organization' in types and 'CollectionPage' in types and 'ItemList' in types and 'WebSite' in types
     items = next(n for n in data['@graph'] if n['@type'] == 'ItemList')['itemListElement']
-    p1s, a1 = items[0]['item'], items[1]['item']
-    assert p1s['offers'] == {'@type': 'Offer', 'price': '29999', 'priceCurrency': 'UAH', 'url': PRODUCTS[0]['url']}
-    assert 'offers' not in a1  # без ціни - без Offer
-    for node in (p1s, a1):
-        for key in ('aggregateRating', 'review', 'availability', 'priceValidUntil', 'shippingDetails', 'sku', 'gtin', 'brand'):
-            assert key not in node
+    # Сторінка-список: лише посилання на товари (summary ItemList, аудит marketingskills 2026-10-25).
+    # Product/Offer з ціною належать сторінці самого товару, тож тут їх немає взагалі.
+    assert items[0] == {'@type': 'ListItem', 'position': 1, 'url': PRODUCTS[0]['url'], 'name': items[0]['name']}
+    assert all('item' not in i and 'offers' not in i for i in items)
+    for key in ('aggregateRating', 'review', 'availability', 'priceValidUntil', 'shippingDetails', 'sku', 'gtin', 'brand'):
+        assert key not in json.dumps(items)
     assert 'FAQPage' not in types  # FAQ не видно - schema немає
     # WebSite лише для основного сайту
     not_primary = dict(PROFILE, primary_site=False)
@@ -389,7 +389,7 @@ def test_unknown_url_never_reaches_a_link_or_jsonld():
     findings = audit_landing_document(html, language='ua', expected_canonical=CANON, published=True, products=PRODUCTS, profile=PROFILE)
     assert any(f['code'] == 'unknown_link' and f['severity'] == 'critical' and 'evil.example' in f['evidence'] for f in findings)
     jsonld = build_landing_jsonld(CAMPAIGN, PRODUCTS + [{'name': 'Фантом', 'url': ''}], PROFILE, 'ua', CANON)[0]['@graph']
-    names = [i['item']['name'] for n in jsonld if n['@type'] == 'ItemList' for i in n['itemListElement']]
+    names = [i['name'] for n in jsonld if n['@type'] == 'ItemList' for i in n['itemListElement']]
     assert 'Фантом' not in names
 
 
