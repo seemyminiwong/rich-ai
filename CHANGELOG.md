@@ -2,6 +2,12 @@
 
 Історія змін ARTLINE Rich Studio. Поточна версія — `apps/api/app/version.py`.
 
+## 2026-10-25 — палітри ASUS і всіх його напрямків (версія 12.21)
+
+- **Нові пресети палітр:** ASUS, ASUS TUF Gaming, ASUS ProArt, ASUS Vivobook, ASUS Zenbook, ASUS ExpertBook, ASUS Prime, ASUS ZenWiFi, ASUS NUC (ASUS ROG уже був). Кольори зняті з офіційних сайтів: корпоративний синій asus.com `#006CE1`, бурштиновий TUF Gaming `#FF9E1B`, золото ProArt `#CDAB82`, індиго Vivobook `#5966C2`, бронза ZenWiFi `#88633F`. Zenbook, ExpertBook, Prime і NUC мають монохромні логотипи й сторінки в корпоративному синьому - їхні пресети окремі, щоб відтінок можна було змінити, не чіпаючи решту ASUS. Пресети додаються сидом під час запуску; вже правлені не переписуються.
+- **Суббренд впізнається з назви товару:** «ASUS TUF-RTX4070…», «Ноутбук ROG Zephyrus» (бренд ASUS у JSON-LD), «Монітор ASUS 27" TUF Gaming…» - суббренд знаходиться, навіть коли стоїть не одразу за «ASUS» або без нього. «Prime» і «NUC» без «ASUS» не впізнаються (звичайне слово й старі Intel NUC).
+- Раніше товари ASUS без ROG у назві лишались без фірмової палітри: окремого пресета ASUS не було.
+
 ## 2026-10-25 — правила стилів за marketingskills (версія 12.20, промпти 12.78)
 
 Усі 13 стилів, спільні блоки, переклад і серверні перевірки звірено з правилами [marketingskills](https://github.com/coreyhaines31/marketingskills) (copywriting, copy-editing, marketing-psychology, product-marketing, cro, ai-seo, seo-audit, schema, image) - 129 правил. Звіт: `docs/audits/styles-vs-marketingskills.md`.

@@ -15,6 +15,19 @@ import re
 
 HOUSE_BRANDS = {'artline'}
 
+# Суббренди, які в назві товару пишуть без виробника або скорочено:
+# «Ноутбук ROG Strix G16», «Відеокарта ASUS TUF-RTX4070». Ключ - назва пресета.
+# «Prime» і «NUC» без «ASUS» не впізнаються: це звичайне слово й старі Intel NUC.
+SUBBRAND_ALIASES = {
+    'ASUS ROG': ('ROG', 'Republic of Gamers'),
+    'ASUS TUF Gaming': ('ASUS TUF', 'TUF Gaming', 'TUF'),
+    'ASUS ProArt': ('ProArt',),
+    'ASUS Zenbook': ('Zenbook',),
+    'ASUS Vivobook': ('Vivobook',),
+    'ASUS ExpertBook': ('ExpertBook',),
+    'ASUS ZenWiFi': ('ZenWiFi',),
+}
+
 
 def _norm(value: str) -> str:
     return re.sub(r'[^0-9a-zа-яіїєґ]+', '', str(value or '').lower())
@@ -37,14 +50,22 @@ def _word_re(name: str):
 
 
 def _match_in_text(text: str, known: list[str]) -> str | None:
+    """Найраніший і найдовший відомий бренд у тексті; псевдонім веде до свого пресета."""
     best = None
-    for name in known:
-        if len(_norm(name)) < 2:
-            continue
-        m = _word_re(name).search(text or '')
-        if m and (best is None or (m.start(), -len(name)) < (best[0], -len(best[1]))):
-            best = (m.start(), name)
-    return best[1] if best else None
+    for preset in known:
+        for name in (preset, *SUBBRAND_ALIASES.get(preset, ())):
+            if len(_norm(name)) < 2:
+                continue
+            m = _word_re(name).search(text or '')
+            if m and (best is None or (m.start(), -len(name)) < (best[0], -best[1])):
+                best = (m.start(), len(name), preset)
+    return best[2] if best else None
+
+
+def _refine_subbrand(preset: str, name: str, known: list[str]) -> str:
+    """Суббренд у назві точніший за бренд виробника: «ASUS» + «ROG Strix» -> «ASUS ROG»."""
+    subs = [k for k in known if _norm(k).startswith(_norm(preset)) and len(k) > len(preset)]
+    return _match_in_text(name, subs) or preset
 
 
 def detect_brand(known: list[str], jsonld=None, name: str = '', url: str = '', brand: str = '') -> dict:
@@ -56,13 +77,12 @@ def detect_brand(known: list[str], jsonld=None, name: str = '', url: str = '', b
     if raw:
         preset = by_norm.get(_norm(raw)) or _match_in_text(raw, known)
         if preset:
-            # Суббренд у назві точніший за бренд виробника: «ASUS» + «ROG Strix» -> «ASUS ROG».
-            sub = _match_in_text(name, [k for k in known if _norm(k).startswith(_norm(preset)) and len(k) > len(preset)])
-            result['preset'] = sub or preset
+            result['preset'] = _refine_subbrand(preset, name, known)
     if not result['preset']:
         preset = _match_in_text(name, known)
         if preset:
-            result.update(preset=preset, brand=result['brand'] or preset, source=result['source'] or 'name')
+            result.update(preset=_refine_subbrand(preset, name, known), brand=result['brand'] or preset,
+                          source=result['source'] or 'name')
     if not result['preset'] and url:
         slug = re.sub(r'https?://[^/]+', '', url)
         preset = _match_in_text(slug.replace('/', ' ').replace('-', ' ').replace('_', ' '), known)
