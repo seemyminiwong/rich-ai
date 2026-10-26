@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.78"
+BASE_STYLE_VERSION = "12.79"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -58,6 +58,15 @@ HUMAN_COPY_CONTRACT = r'''HUMAN COPY CONTRACT
 - End a sentence where its claim ends. Do not append a participle or "що/который/which" clause that restates the benefit (", забезпечуючи…", ", що дозволяє…", ", обеспечивая…", ", zapewniając…", ", ensuring…"). A clause that adds a new confirmed fact may stay.
 - No colon or dash reveals and no self-answered questions in running copy ("Результат: …", "Головне – …", "Чому це важливо? Тому що…").
 - No aphorisms or quotable closing lines that would fit any product. End every block on its last concrete fact.
+- No throat-clearing before the point ("Справа в тому, що", "Виявляється", "Ось чому це важливо", "Дело в том, что", "Okazuje się", "Here's the thing", "It turns out") and no emphasis crutches ("без перебільшення", "і це важливо"). Start with the claim.
+- No split contrasts across sentences ("Не тому, що X. Тому що Y.", "X не проблема. Проблема в Y.", "Справа не в X, а в Y") and no negative listing before the point ("Не X. Не Y. Це Z."). Say what the product is and does.
+- No lazy extremes ("завжди", "ніколи", "будь-які задачі", "кожному", "всегда", "любой", "zawsze", "always", "anyone") unless a confirmed fact makes the claim literal ("кожен порт USB-C підтримує 40 Гбіт/с").
+- No vague declaratives that announce importance without the specific thing ("Різниця відчутна", "Це має значення", "Наслідки значні"). Name the value or delete the sentence.
+- Give human verbs only to people and real actions to real parts: data, technology or a system does not "підказувати", "дбати", "розуміти". The product, its part or the buyer acts.
+- Start no paragraph with a connective filler ("Тож", "Отже", "Загалом", "Итак", "Więc", "So", "Overall").
+- No stacked fragments ("Тихо. Швидко. Точно."): write one complete sentence with the value. Value tiles, chips and labels are not running text.
+- Join the parts of a sentence with a comma or a full stop, never with a dash that stages a reveal ("500 мм/с – це…"). A dash inside a numeric range stays.
+- Do not write three sentences in a row of the same length.
 - Do not address the buyer with artificial urgency.
 - Do not use "we", "our service", delivery, warranty or support claims unless they are supplied in VERIFIED COMPANY FACTS.
 - If the available facts are insufficient, write less. Never use filler to reach a target word count.
@@ -66,7 +75,8 @@ COPY SELF-CHECK (run before returning the page)
 - Any sentence over 25 words: split it or cut the clause after the main claim.
 - Every h3, accent subtitle and value caption: prefix it mentally with "Now the buyer can…". If the result is vague or not backed by a confirmed value, rewrite it.
 - The last sentence of every block: if it is a slogan, a mood line or a summary of the block, cut it.
-- Running text has at most one sentence fragment and one list of three per block (value tiles, chips and tags do not count).'''
+- Running text has at most one sentence fragment and one list of three per block (value tiles, chips and tags do not count).
+- Read the page once as an editor hunting AI tells: throat-clearing, intensifiers ("дуже", "справді"), lazy extremes, split contrasts, negative listing, connective openers, dash reveals, stacked fragments and slogan endings. Rewrite every hit from a confirmed fact.'''
 
 # Межі між трьома джерелами в промпті: факти товару, пошуковий контекст і
 # підтверджені факти компанії не змішуються в хибні причинно-наслідкові звʼязки.

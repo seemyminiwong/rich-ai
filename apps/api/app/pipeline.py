@@ -4593,10 +4593,15 @@ def llm_critic_full(artifacts, product: dict, model: str, brief: dict | None = N
         '(3) знайди механічний переклад і кальки; (4) знайди штучний AI-текст і порожні фрази; (5) знайди keyword stuffing; '
         '(6) перевір answer-first структуру абзаців; (7) перевір ясність сутності (бренд, модель, категорія в одному ранньому реченні); '
         '(8) порівняй мовні версії за змістом - вони мають казати одне й те саме; '
-        '(9) НЕ пропонуй нових характеристик, яких немає в PRODUCT FACTS.\n'
+        '(9) НЕ пропонуй нових характеристик, яких немає в PRODUCT FACTS; '
+        '(10) оціни текст за шкалою stop-slop від 1 до 10: directness (твердження, а не анонси), rhythm (різна довжина речень), '
+        'trust (без пом\'якшень і розжовування), authenticity (звучить як людина), density (нічого зайвого). '
+        'Шаблони AI-тексту (розгін «Справа в тому», контраст «Не тому, що X. Тому що Y.», «Не X. Не Y. Це Z.», крайнощі '
+        '«завжди/будь-які», підсилювачі, фрагменти «Тихо. Швидко.», гасло в кінці блоку) винеси в issues з точною цитатою.\n'
         'Поверни ЛИШЕ валідний JSON без пояснень:\n'
         '{"score": <0-100>, "summary": "<один рядок українською>", '
         '"categories": {"facts": <0-100>, "human_copy": <0-100>, "seo": <0-100>, "geo": <0-100>, "language": <0-100>}, '
+        '"slop": {"directness": <1-10>, "rhythm": <1-10>, "trust": <1-10>, "authenticity": <1-10>, "density": <1-10>}, '
         '"issues": [{"code": "<snake_case>", "severity": "critical|warning|info", "language": "<uk|pl|en|ru>", '
         '"variant": "<desktop|mobile|>", "quote": "<точна цитата зі сторінки>", "reason": "<чому це проблема, українською>", '
         '"suggestion": "<як виправити без нових фактів>"}], '
@@ -4637,10 +4642,35 @@ def llm_critic_full(artifacts, product: dict, model: str, brief: dict | None = N
             text = str(item)
             issues.append(text)
             findings.append(finding('llm_issue', 'warning', text[:300], source='llm'))
+    slop = _slop_scores(data.get('slop'))
+    if slop and slop['total'] < SLOP_REVISE_BELOW:
+        text = f'Оцінка stop-slop {slop["total"]}/50 (нижче {SLOP_REVISE_BELOW}): текст звучить як AI'
+        findings.append(finding('slop_score_low', 'warning', text, source='llm',
+                                suggestion='Переписати слабкі виміри: ' + ', '.join(k for k in SLOP_DIMENSIONS if slop[k] <= 6)))
+        issues.append(text)
     suggestions = [str(x) for x in (data.get('suggestions') or [])][:8]
     summary = str(data.get('summary') or ('Зауважень немає' if not issues else issues[0]))[:300]
     return {'score': score, 'summary': summary, 'categories': categories, 'issues': issues[:12],
-            'suggestions': suggestions, 'findings': findings, 'input_tokens': input_tokens, 'output_tokens': output_tokens}
+            'suggestions': suggestions, 'findings': findings, 'slop': slop,
+            'input_tokens': input_tokens, 'output_tokens': output_tokens}
+
+
+# Шкала stop-slop (hardikpandya/stop-slop): п'ять вимірів по 1-10, нижче 35/50 - переписати.
+SLOP_DIMENSIONS = ('directness', 'rhythm', 'trust', 'authenticity', 'density')
+SLOP_REVISE_BELOW = 35
+
+
+def _slop_scores(raw) -> dict | None:
+    """Оцінки stop-slop від моделі; неповна або невалідна шкала - None, а не вигадані бали."""
+    if not isinstance(raw, dict):
+        return None
+    scores = {}
+    for key in SLOP_DIMENSIONS:
+        try:
+            scores[key] = max(1, min(10, int(round(float(raw.get(key))))))
+        except (TypeError, ValueError):
+            return None
+    return {**scores, 'total': sum(scores.values())}
 
 
 def llm_critic(artifacts, product: dict, model: str, brief: dict | None = None, company: dict | None = None):
