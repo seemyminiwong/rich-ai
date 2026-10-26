@@ -431,11 +431,12 @@ AI_PATTERNS = {
         'pl': r'\bbez [^.,!?]{1,30}, bez [^.,!?]{1,30}',
         'en': r'\bno [^.,!?]{1,30}, no [^.,!?]{1,30}',
     },
+    # Дієприслівник («, забезпечуючи») і підрядне «, що забезпечує» - той самий хвіст.
     'trailing_clause': {
-        'uk': r',\s*(?:забезпечуючи|дозволяючи|гарантуючи|роблячи|надаючи)\b',
-        'ru': r',\s*(?:обеспечивая|позволяя|гарантируя|делая|предоставляя)\b',
-        'pl': r',\s*(?:zapewniając|umożliwiając|gwarantując|czyniąc)\b',
-        'en': r',\s*(?:ensuring|allowing|enabling|guaranteeing|making it)\b',
+        'uk': r',\s*(?:забезпечуючи|дозволяючи|гарантуючи|роблячи|надаючи)\b|,\s*що (?:забезпечує|дозволяє|гарантує|робить|дає)\b',
+        'ru': r',\s*(?:обеспечивая|позволяя|гарантируя|делая|предоставляя)\b|,\s*что (?:обеспечивает|позволяет|гарантирует|делает|дает|даёт)\b',
+        'pl': r',\s*(?:zapewniając|umożliwiając|gwarantując|czyniąc)\b|,\s*co (?:zapewnia|pozwala|gwarantuje|daje)\b',
+        'en': r',\s*(?:ensuring|allowing|enabling|guaranteeing|making it)\b|,\s*which (?:ensures|allows|enables|provides|makes)\b',
     },
     'reveal_colon': {
         'uk': r'(?:^|[.!?]\s+)(?:результат|головне|секрет|суть)\s*[:–-]',
@@ -447,7 +448,7 @@ AI_PATTERNS = {
 AI_PATTERN_LABELS = {
     'contrast_reveal': 'Конструкція «не просто X, а Y»',
     'absence_list': 'Опис через перелік відсутностей («без X, без Y»)',
-    'trailing_clause': 'Хвіст-дієприслівник, що переказує користь («, забезпечуючи…»)',
+    'trailing_clause': 'Хвіст-дієприслівник або підрядне, що переказує користь («, забезпечуючи…», «, що забезпечує…»)',
     'reveal_colon': 'Розкриття через двокрапку («Результат: …»)',
 }
 # Безособовий пасив (copy-editing: active voice). Сигнал info від трьох випадків на сторінку.
@@ -815,6 +816,12 @@ def audit_human_copy(markup: str, language: str, variant: str = '', brief: dict 
 # Аудит: якість мови (чистота, змішання, кирилиця у латинських версіях)
 # ---------------------------------------------------------------------------
 
+# Кольори з таблиць магазину, які в uk/ru/pl тексті мають бути перекладені.
+# Назви на кшталт «Space Gray» дозволяє назва товару. «yes/no» тут немає: «no» - польське слово.
+UNTRANSLATED_WORDS = {'black', 'white', 'gray', 'grey', 'silver', 'blue', 'red', 'green', 'pink', 'gold', 'yellow',
+                      'purple', 'beige', 'brown', 'orange'}
+
+
 def audit_language_quality(markup: str, language: str, variant: str = '', product: dict | None = None,
                            brief: dict | None = None) -> list[dict]:
     lang = norm_lang(language)
@@ -856,6 +863,17 @@ def audit_language_quality(markup: str, language: str, variant: str = '', produc
                                     language=lang, variant=variant, block=latin[0][1]['block'], evidence=latin[0][1]['text'],
                                     segment=latin[0][1]['key'], suggestion='Перекласти загальні слова, лишити лише бренди, моделі, технології',
                                     source='language'))
+    if lang in ('uk', 'ru', 'pl'):
+        # Загальне англійське слово з таблиці магазину («Gray» у рядку «Цвет корпуса»):
+        # одне на сторінку не дотягує до latin_words_in_cyrillic_page, але читається як недогляд.
+        untranslated = [(w, i) for w, i in all_words if w.lower() in UNTRANSLATED_WORDS and w.lower() not in allowed]
+        if untranslated:
+            sample = ', '.join(dict.fromkeys(w for w, _ in untranslated[:4]))
+            findings.append(finding('untranslated_word', 'warning', f'Неперекладене англійське слово: {sample}',
+                                    language=lang, variant=variant, block=untranslated[0][1]['block'],
+                                    evidence=untranslated[0][1]['text'], segment=untranslated[0][1]['key'],
+                                    suggestion='Перекласти мовою сторінки; англійською лишаються лише назви з офіційного найменування',
+                                    source='language'))
     if lang == 'en':
         polish = [(w, i) for w, i in all_words if _PL_DIACRITIC_RE.search(w) and w.lower() not in allowed]
         if polish:
@@ -895,6 +913,7 @@ def audit_language_quality(markup: str, language: str, variant: str = '', produc
 # Аудит: SEO rich-фрагмента
 # ---------------------------------------------------------------------------
 
+REPEATED_VALUE_BLOCKS = 4
 _GENERIC_ALT = re.compile(r'^(image|photo|picture|img|фото|зображення|картинка|изображение|zdjęcie|obraz|obrazek|grafika)\s*\d*$', re.I)
 _FILENAME_ALT = re.compile(r'\.(jpe?g|png|webp|gif|svg)$|^(img|dsc|image)[_\-\d]+$', re.I)
 
@@ -999,6 +1018,21 @@ def audit_rich_fragment(markup: str, product: dict | None, language: str, varian
                    evidence=next(iter(sset & prev)), suggestion='Дати блоку власний факт або прибрати його')
                 break
 
+    # Те саме значення з одиницею в багатьох блоках (жива сторінка: «150×150×51 мм» і
+    # «1.6 кг» у параметрах, трійці, акценті й FAQ). Hero + параметр + FAQ - норма,
+    # тому сигнал від REPEATED_VALUE_BLOCKS блоків.
+    value_blocks: dict = {}
+    for t in doc['texts']:
+        for number, unit in _VALUE_RE.findall(t['text']):
+            label = f'{number} {unit}'
+            value_blocks.setdefault((_norm_number(number), unit.lower()), {'label': label, 'blocks': set(), 'item': t})['blocks'].add(t['block'])
+    repeated = sorted((v for v in value_blocks.values() if len(v['blocks']) >= REPEATED_VALUE_BLOCKS),
+                      key=lambda v: -len(v['blocks']))
+    for v in repeated[:3]:
+        mk('fact_repeated', 'warning', f'Значення «{v["label"]}» повторено в {len(v["blocks"])} блоках', block=v['item']['block'],
+           evidence=v['label'], segment=v['item']['key'],
+           suggestion='Назвати значення один раз там, де воно пояснює користь; решту блоків віддати новим фактам або прибрати')
+
     # Прихований текст
     for t in doc['texts']:
         if t['hidden'] and words(t['text']):
@@ -1020,7 +1054,10 @@ def audit_rich_fragment(markup: str, product: dict | None, language: str, varian
         elif alt.count(',') >= 3 and len(words(alt)) <= 12:
             mk('alt_keyword_list', 'warning', 'Alt схожий на перелік ключових слів', block=img['block'], evidence=alt, segment=img['key'],
                suggestion='Одне описове речення замість переліку')
-        if lang in ('pl', 'en') and _CYR_RE.search(alt):
+        # Жива сторінка: російський рич з українськими alt («вид збоку», «задні порти»).
+        foreign_alt = ((lang in ('pl', 'en') and _CYR_RE.search(alt)) or (lang == 'ru' and _UK_ONLY_RE.search(alt))
+                       or (lang == 'uk' and _RU_ONLY_RE.search(alt)))
+        if foreign_alt:
             mk('alt_language', 'warning', 'Alt іншою мовою', block=img['block'], evidence=alt, segment=img['key'],
                suggestion='Перекласти alt мовою сторінки')
         if alt.lower() in alts_seen:
@@ -1090,6 +1127,34 @@ def audit_alt_entities(markup: str, product: dict | None, language: str, variant
     return [finding('alt_without_entity', 'info', f'Alt без назви товару: {len(bare)}', language=norm_lang(language),
                     variant=variant, source='seo', evidence=bare[0]['alt'],
                     suggestion='Alt: бренд і категорія (або модель) плюс що показує кадр - ракурс, деталь, сценарій')]
+
+
+# Артикул виробника («90MS0371-M000V0»): латиниця й цифри через дефіс, без пробілів.
+_PART_NUMBER_RE = re.compile(r'^(?=[A-Z0-9-]*\d)(?=[A-Z0-9-]*[A-Z])[A-Z0-9]{2,}(?:-[A-Z0-9]{2,})+$')
+_TILE_VALUE_SIZE = re.compile(r'font-size:\s*(1[89]|2\d|30)px')
+_TILE_VALUE_WEIGHT = re.compile(r'font-weight:\s*(800|900)')
+
+
+def audit_value_tiles(markup: str, product: dict | None, language: str, variant: str = '') -> list[dict]:
+    """Плитки значень несуть те, що покупець порівнює, а не службові ідентифікатори."""
+    lang = norm_lang(language)
+    soup = BeautifulSoup(markup or '', 'html.parser')
+    root = soup.find('section') or soup
+    blocks = _blocks_of(root)
+    model = model_token(product).upper()
+    name = str((product or {}).get('name') or '').upper()
+    for tag in root.find_all(['div', 'span', 'strong', 'b'], style=True):
+        style = tag.get('style') or ''
+        if tag.find(True) or not _TILE_VALUE_SIZE.search(style) or not _TILE_VALUE_WEIGHT.search(style):
+            continue
+        value = _clean_text(tag.get_text(' '))
+        if len(value) < 10 or not _PART_NUMBER_RE.match(value) or value.upper() == model or value.upper() in name:
+            continue
+        block = next((i for i, b in enumerate(blocks) if b is tag or b in tag.parents), None)
+        return [finding('tile_part_number', 'info', 'Артикул у плитці значень', language=lang, variant=variant, block=block,
+                        evidence=value, source='human',
+                        suggestion='Плитка - для значення, яке покупець порівнює; артикул лишається в картці товару')]
+    return []
 
 
 def audit_geo_copy(markup: str, product: dict | None, language: str, variant: str = '', brief: dict | None = None,
@@ -1310,6 +1375,7 @@ def run_rich_audits(artifacts: list, product: dict | None, brief: dict | None = 
         grouped['seo'].extend(audit_alt_entities(html, product, lang, variant))
         grouped['geo'].extend(audit_geo_copy(html, product, lang, variant, brief, evidence, profile))
         grouped['human'].extend(audit_human_copy(html, lang, variant, brief, product))
+        grouped['human'].extend(audit_value_tiles(html, product, lang, variant))
         grouped['language'].extend(audit_language_quality(html, lang, variant, product, brief))
     grouped['seo'].extend(audit_variant_consistency(artifacts))
     reports = []

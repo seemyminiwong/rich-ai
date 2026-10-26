@@ -171,7 +171,7 @@ checks = {
     'impeccable audit fixes': '.sev.sev-critical{' in (root / 'apps/web/styles.css').read_text(encoding='utf-8') and '—' not in (root / 'promo/asus-ai.html').read_text(encoding='utf-8'),
     'changelog bot with quarterly reports': '--quarter ||' in (root / 'docker-compose.yml').read_text(encoding='utf-8') and 'export function shouldReportQuarter' in (root / 'scripts/changelog.mjs').read_text(encoding='utf-8'),
     'marketingskills style rules': 'COPY SELF-CHECK' in prompts and 'Hero definition' in prompts and 'def audit_source_reuse' in (root / 'apps/api/app/seo_geo.py').read_text(encoding='utf-8'),
-    'single version source': '__version__ = "12.21"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
+    'single version source': '__version__ = "12.22"' in (root / 'apps/api/app/version.py').read_text(encoding='utf-8') and 'from app.version import __version__' in main and 'APP_VERSION = __version__' in main,
     'no version in the product UI': all(s not in (root / 'apps/web/index.html').read_text(encoding='utf-8') for s in ('Studio v', 'v12')) and 'state.version' not in web and 'BASE_STYLE_VERSION' not in main,
     'cache busting kept': '?b=' in (root / 'apps/web/index.html').read_text(encoding='utf-8'),
     'openai retries': 'def _with_retry' in pipeline and '_with_retry(lambda: api.responses.create' in pipeline and '_with_retry(lambda: image_client().images.edit' in pipeline,
