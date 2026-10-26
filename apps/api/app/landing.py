@@ -362,8 +362,11 @@ def build_landing_prompt(campaign: dict, products: list[dict], template: str = '
     hero_url = str(campaign.get('hero_url') or '')
     safe_products = [{k: p.get(k, '') for k in ('name', 'price_text', 'image', 'url')} for p in products]
     safe_categories = [{k: c.get(k, '') for k in ('name', 'image', 'url')} for c in (categories or [])]
+    from app.prompts import HUMAN_COPY_CONTRACT
     base = template if template and all(ph in template for ph in LANDING_PLACEHOLDERS) else LANDING_PROMPT
     facts = verified_advantages(profile, lang)
+    # Контракт тексту - той самий, що в rich-стилях: аудит stop-slop (2026-10-26)
+    # показав, що лендинги жили лише з «без терміновості й суперлативів».
     return (base
             .replace('{HERO_RULE}', _HERO_RULE_IMAGE.replace('{HERO_URL}', hero_url) if hero_url else _HERO_RULE_GRADIENT)
             .replace('{LANGUAGE}', i18n['language_name'])
@@ -378,7 +381,7 @@ def build_landing_prompt(campaign: dict, products: list[dict], template: str = '
                 'period': campaign.get('period') or '',
             }, ensure_ascii=False))
             .replace('{CATEGORIES}', json.dumps(safe_categories, ensure_ascii=False))
-            .replace('{PRODUCTS}', json.dumps(safe_products, ensure_ascii=False)))
+            .replace('{PRODUCTS}', json.dumps(safe_products, ensure_ascii=False))) + '\n\n' + HUMAN_COPY_CONTRACT
 
 
 def generate_landing_html(campaign: dict, products: list[dict], model: str, template: str = '',

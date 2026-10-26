@@ -414,6 +414,11 @@ GENERIC_PHRASES['uk'] += ['варто зазначити', 'слід зазна�
 GENERIC_PHRASES['ru'] += ['стоит отметить', 'следует отметить', 'играет ключевую роль', 'играет важную роль', 'широкий спектр', 'незаменимый помощник', 'надежный помощник', 'стильный дизайн']
 GENERIC_PHRASES['pl'] += ['warto zaznaczyć', 'warto podkreślić', 'odgrywa kluczową rolę', 'szeroki zakres', 'niezastąpion']
 GENERIC_PHRASES['en'] += ['it is worth noting', 'plays a crucial role', 'plays a key role', 'serves as', 'boasts', 'robust']
+# Кліше-гасло зі stop-slop («Друк без компромісів»): жива сторінка GX10 - «без компромиссов в скорости».
+GENERIC_PHRASES['uk'] += ['без компромісів']
+GENERIC_PHRASES['ru'] += ['без компромиссов']
+GENERIC_PHRASES['pl'] += ['bez kompromisów']
+GENERIC_PHRASES['en'] += ['without compromise', 'no compromises']
 
 # Структурні AI-шаблони (marketingskills copy-editing): «не просто X, а Y», перелік відсутностей,
 # хвіст-дієприслівник, що переказує користь, «Результат: …». Проміжки обмежені, щоб не ловити
@@ -452,11 +457,15 @@ AI_PATTERN_LABELS = {
     'reveal_colon': 'Розкриття через двокрапку («Результат: …»)',
 }
 # Безособовий пасив (copy-editing: active voice). Сигнал info від трьох випадків на сторінку.
+# Українські безособові форми на -но/-то («розроблено», «покрито») - теж пасив без
+# діяча (stop-slop: passive voice); російські короткі дієприкметники («выполнен из»)
+# ідіоматичні в описі матеріалів, тому лише «был разработан»-форми.
 PASSIVE = {
-    'uk': r'\b(?:здійснюється|забезпечується|досягається|реалізується|виконується)\b',
-    'ru': r'\b(?:осуществляется|обеспечивается|достигается|реализуется|выполняется)\b',
-    'pl': r'\b(?:jest realizowan\w*|jest zapewnian\w*|zostaje osiągnięt\w*)',
-    'en': r'\b(?:is achieved|is ensured|is provided|is carried out|is realized)\b',
+    'uk': (r'\b(?:здійснюється|забезпечується|досягається|реалізується|виконується|розроблено|виготовлено|покрито'
+           r'|передбачено|оснащено|забезпечено|використано|оптимізовано|інтегровано|реалізовано|спроєктовано)\b'),
+    'ru': r'\b(?:осуществляется|обеспечивается|достигается|реализуется|выполняется|был\w* (?:разработан|создан|спроектирован)\w*)\b',
+    'pl': r'\b(?:jest realizowan\w*|jest zapewnian\w*|zostaje osiągnięt\w*|został\w* zaprojektowan\w*)',
+    'en': r'\b(?:is achieved|is ensured|is provided|is carried out|is realized|was designed|has been designed|was built)\b',
 }
 # Займенник замість предмета на початку абзацу (ai-seo: фрагмент має бути зрозумілим без контексту).
 PRONOUN_OPENERS = {
@@ -1376,6 +1385,8 @@ def run_rich_audits(artifacts: list, product: dict | None, brief: dict | None = 
         grouped['geo'].extend(audit_geo_copy(html, product, lang, variant, brief, evidence, profile))
         grouped['human'].extend(audit_human_copy(html, lang, variant, brief, product))
         grouped['human'].extend(audit_value_tiles(html, product, lang, variant))
+        from app.stop_slop import audit_stop_slop  # локально: stop_slop імпортує цей модуль
+        grouped['human'].extend(audit_stop_slop(html, lang, variant, product, brief))
         grouped['language'].extend(audit_language_quality(html, lang, variant, product, brief))
     grouped['seo'].extend(audit_variant_consistency(artifacts))
     reports = []
