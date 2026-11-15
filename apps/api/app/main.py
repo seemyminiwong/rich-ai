@@ -2592,7 +2592,7 @@ def project_restyle(project_id: str, db: Session = Depends(get_db), user=Depends
     лишаються, крім повторів того самого фото. Змінена сторінка стає новою версією."""
     from app.artline_standard import apply_artline_standard
     from app.photo_slots import drop_empty_photo_slots
-    from app.pipeline import apply_palette, style_palette
+    from app.pipeline import _fit_photo_cards, apply_palette, same_photo, style_palette
     from app.tasks import _project_palette
     p = db.get(Project, project_id)
     if not p: raise HTTPException(404, 'Проєкт не знайдено')
@@ -2603,7 +2603,10 @@ def project_restyle(project_id: str, db: Session = Depends(get_db), user=Depends
     palette = _project_palette(p) or (style_palette(style) if style else None)
     updated = []
     for artifact in _latest_artifacts(p):
-        fixed = apply_palette(apply_artline_standard(drop_empty_photo_slots(artifact.html), p.name or ''), palette)
+        # Повтори того самого кадру прибираються, а фото в рамках отримують власні
+        # пропорції замість 3:2 з обрізанням (скарга Growatt AURA 5000).
+        cleaned = _fit_photo_cards(drop_empty_photo_slots(artifact.html, same_photo=same_photo), artifact.variant or 'desktop')
+        fixed = apply_palette(apply_artline_standard(cleaned, p.name or ''), palette)
         if fixed != artifact.html:
             saved = _save_artifact_version(db, artifact, fixed, user, action='artifact.restyle')
             updated.append(f'{artifact.language}/{artifact.variant} v{saved["version"]}')

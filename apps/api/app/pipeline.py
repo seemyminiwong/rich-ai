@@ -2504,6 +2504,7 @@ def style_palette(style) -> dict:
 
 _surface_color_cache: dict = {}
 _surface_size_cache: dict = {}
+_surface_signature_cache: dict = {}
 
 
 def _photo_surface_color(src: str):
@@ -2559,6 +2560,9 @@ def _probe_media_surface(src: str) -> tuple[bool, str | None]:
             # Розмір кадру знімаємо ДО thumbnail: за ним підбирається висота
             # слота, щоб фото лягало без обрізання і без порожніх смуг.
             _surface_size_cache[canonical] = image.size
+            # Підпис для пошуку того самого кадру під іншою адресою (photo_dedup).
+            from app.photo_dedup import signature
+            _surface_signature_cache[canonical] = signature(image)
             image.thumbnail((64, 64))
             px = image.load()
             w, h = image.size
@@ -2568,10 +2572,53 @@ def _probe_media_surface(src: str) -> tuple[bool, str | None]:
             close = sum(1 for c in border if max(abs(c[i] - med[i]) for i in range(3)) <= 14)
             if close / len(border) >= 0.82:
                 color = '#%02X%02X%02X' % med
+            else:
+                color = _studio_side_margins(px, w, h)
     except Exception:
         found, color = False, None
     _surface_color_cache[canonical] = (found, color)
     return (found, color)
+
+
+def _studio_side_margins(px, w: int, h: int) -> str | None:
+    """Колір тла студійного кадру, де товар торкається верху чи низу.
+
+    Жива скарга (Growatt AURA 5000): корпус упирався у верхній край квадратного
+    пакшота, периметр виходив строкатим, і кадр вважався сценою - cover 3:2
+    відрізав третину висоти товару. Ліве й праве поле одного рівного кольору -
+    ознака студійного тла; сцена (інтер'єр, вулиця) такої симетрії не має.
+    """
+    def side(xs):
+        pixels = [px[x, y] for x in xs for y in range(h)]
+        med = tuple(sorted(c[i] for c in pixels)[len(pixels) // 2] for i in range(3))
+        share = sum(1 for c in pixels if max(abs(c[i] - med[i]) for i in range(3)) <= 14) / len(pixels)
+        return med, share
+
+    left, left_share = side((0, 1))
+    right, right_share = side((w - 2, w - 1))
+    if min(left_share, right_share) >= 0.9 and max(abs(left[i] - right[i]) for i in range(3)) <= 14:
+        return '#%02X%02X%02X' % tuple((left[i] + right[i]) // 2 for i in range(3))
+    return None
+
+
+def photo_signature(src: str):
+    """Підпис кадру для photo_dedup (None, якщо кадр недоступний)."""
+    canonical = (src or '').split('?', 1)[0]
+    if canonical not in _surface_signature_cache:
+        _probe_media_surface(canonical)
+    return _surface_signature_cache.get(canonical)
+
+
+def same_photo(a: str, b: str) -> bool:
+    """Той самий кадр: однакова адреса, інший розмір того ж кадру галереї або ті самі пікселі."""
+    from app.photo_dedup import is_duplicate
+    if (a or '').split('?', 1)[0] == (b or '').split('?', 1)[0]:
+        return True
+    # Розміри 600/1400/original того самого кадру галереї; для інших адрес
+    # ідентичність - лише ім'я файлу, а однакові імена бувають у різних кадрів.
+    if '/gallery/' in (a or '') and '/gallery/' in (b or '') and _gallery_identity(a) == _gallery_identity(b):
+        return True
+    return is_duplicate(photo_signature(a), photo_signature(b))
 
 
 def _is_environment_photo(src: str) -> bool:
@@ -2813,9 +2860,7 @@ def _fit_photo_cards(markup: str, variant: str = 'mobile') -> str:
     for card in soup.find_all(['div', 'figure']):
         style = card.get('style') or ''
         low = style.replace(' ', '').lower()
-        if 'border-radius' not in low or 'padding' not in low:
-            continue
-        if 'url(' in low:
+        if 'border-radius' not in low or 'url(' in low:
             continue
         images = card.find_all('img')
         if len(images) != 1:
@@ -2826,18 +2871,74 @@ def _fit_photo_cards(markup: str, variant: str = 'mobile') -> str:
         img_style = img.get('style') or ''
         if 'position:absolute' in img_style.replace(' ', '').lower():
             continue
-        card['style'] = re.sub(r'padding[a-z-]*\s*:[^;]+;?', '', style, flags=re.I).rstrip(';') + ';overflow:hidden'
+        # Рамка, яку цей прохід уже оформив (без падінгів, aspect-ratio на <img>),
+        # перераховується теж: так «Вирівняти оформлення» виправляє старі сторінки,
+        # а повторний прохід нічого не змінює.
+        fitted = img.parent is card and 'aspect-ratio' in img_style.replace(' ', '').lower()
+        if 'padding' not in low and not fitted:
+            continue
+        card_style = _set_css(re.sub(r'padding[a-z-]*\s*:[^;]+;?', '', style, flags=re.I), 'overflow', 'hidden')
         keep = [d for d in img_style.split(';') if d.strip() and not re.match(
-            r'\s*(width|height|max-width|max-height|border-radius|object-fit|object-position|display|margin)\s*:', d, re.I)]
-        scene = _is_environment_photo(img.get('src') or '')
-        keep.append('display:block')
-        keep.append('width:100%')
-        keep.append(f'aspect-ratio:{ratio}')
-        keep.append('object-fit:cover' if scene else 'object-fit:contain')
-        keep.append('object-position:center')
-        img['style'] = ';'.join(x.strip() for x in keep)
-        changed = True
+            r'\s*(width|height|max-width|max-height|aspect-ratio|border-radius|object-fit|object-position|display|margin)\s*:',
+            d, re.I)]
+        frame_ratio, fit = _card_photo_fit(card, img.get('src') or '', ratio)
+        keep += ['display:block', 'width:100%', f'aspect-ratio:{frame_ratio}', f'object-fit:{fit}', 'object-position:center']
+        new_img_style = ';'.join(x.strip() for x in keep)
+        if card_style != style:
+            card['style'] = card_style
+            changed = True
+        if new_img_style != img_style:
+            img['style'] = new_img_style
+            changed = True
     return str(soup) if changed else markup
+
+
+# Одиночне фото поруч із текстом бере власні пропорції кадру в цих межах: вужчий
+# за 4:5 портрет розтягує спліт, ширший за 2:1 банер стає смужкою.
+OWN_RATIO_RANGE = (0.8, 2.0)
+# Скільки реального кадру можна зрізати cover'ом; більше - кадр вписується цілком.
+MAX_COVER_CROP = 0.15
+
+
+def _ratio_value(ratio: str) -> float:
+    width, _, height = ratio.partition('/')
+    return float(width) / float(height or 1)
+
+
+def _has_photo_siblings(card) -> bool:
+    """Картка - одна з кількох фото-карток ряду (трійка), а не фото спліта."""
+    row, child = card.parent, card
+    for _ in range(3):
+        if row is None or not getattr(row, 'get', None):
+            return False
+        flat = (row.get('style') or '').replace(' ', '').lower()
+        if 'display:grid' in flat or 'display:flex' in flat:
+            return sum(1 for c in row.find_all(True, recursive=False) if c is not child and c.find('img')) > 0
+        row, child = row.parent, row
+    return False
+
+
+def _card_photo_fit(card, src: str, shared: str) -> tuple[str, str]:
+    """(aspect-ratio рамки, object-fit) для фото в картці.
+
+    Жива скарга (ARTLINE Master, Growatt AURA 5000): квадратні кадри 2000×2000 і
+    банер 1,88:1 стояли в рамках 3:2 з cover - у пакшота зрізало верх і ніжки, у
+    банера краї. Фото спліта тепер бере власні пропорції кадру (у межах
+    OWN_RATIO_RANGE), і cover майже нічого не ріже. Ряд карток (трійка) тримає
+    спільну пропорцію, але реальний кадр товару не ріжеться більш ніж на
+    MAX_COVER_CROP - інакше він вписується цілком. Згенеровану сцену (hero,
+    feature) можна кадрувати завжди: це фон.
+    """
+    aspect = _photo_aspect(src)
+    scene = _is_environment_photo(src)
+    ratio_css, ratio = shared, _ratio_value(shared)
+    if aspect and not _has_photo_siblings(card):
+        ratio = min(OWN_RATIO_RANGE[1], max(OWN_RATIO_RANGE[0], aspect))
+        ratio_css = f'{round(ratio, 3):g}'
+    if not scene:
+        return ratio_css, 'contain'
+    crop = 1 - min(aspect, ratio) / max(aspect, ratio) if aspect else 0.0
+    return ratio_css, 'cover' if _is_scene_asset(src) or crop <= MAX_COVER_CROP else 'contain'
 
 
 _SHOWCASE_BLOCK_NAMES = (
@@ -4360,7 +4461,7 @@ HTML:
                                      product_name=str((product or {}).get('name') or ''))
         output = _enforce_image_whitelist(output, [hero, feature] + list(gallery or []), spares=list(gallery or []))
         # Кадрів забракло: без повторів, порожніх рамок і напівпорожніх сіток.
-        output = drop_empty_photo_slots(output)
+        output = drop_empty_photo_slots(output, same_photo=same_photo)
         output = _round_image_corners(output)
         if is_master_style(style.prompt or ''):
             output = master_hero_layout(output, hero, variant)
