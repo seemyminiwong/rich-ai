@@ -15,6 +15,7 @@ from app.media import media_url
 from app.artline_standard import apply_artline_standard
 from app.master_theme import apply_master_theme, normalize_theme, theme_image_hint
 from app.brand_detect import detect_brand
+from app.photo_dedup import unique_frames
 from app.prompts import BASE_STYLE_VERSION, LICENSE_COMMENT
 from app.pipeline import _PODIUM_360_MARKER, _PODIUM_SCROLL_MARKER, _PODIUM_SPIN_MARKER, _apply_podium_spin, _apply_podium_spin360, _apply_podium_scroll, DARK_STYLE_NAMES, _clamp_surface_radii, _finalize_showcase_layout, ensure_feature_mounted, finalize_faq_html, inject_video_block, prompt_without_faq, strip_faq, style_has_faq, latinize_units, decode_entities, _fit_mobile_hero, _fit_photo_cards, _frame_contained_photos, _harmonize_radii, _never_crop_product_photos
 from app.pipeline import (
@@ -24,6 +25,7 @@ from app.pipeline import (
     extract_product,
     fetch_html,
     gallery_urls,
+    photo_signature,
     validated_gallery_urls,
     generate_html,
     generate_image,
@@ -58,6 +60,9 @@ from app.pipeline import (
 
 
 logger = logging.getLogger('richstudio.tasks')
+# Кадрів галереї для моделі й кандидатів автопідбору (із запасом на повтори).
+GALLERY_LIMIT = 6
+GALLERY_CANDIDATES = 9
 
 
 def now():
@@ -641,7 +646,19 @@ def process_project(self, project_id, reuse_images=False):
             # не куруватись.
             uploaded_frames = [u for u in chosen_gallery if u.startswith('/media/')]
             curated_cdn = [u for u in chosen_gallery if not u.startswith('/media/')]
-            page_gallery = (curated_cdn or validated_gallery_urls(images)) + uploaded_frames
+            # Той самий кадр під різними адресами (банер з опису й кадр галереї,
+            # копії кадрів у суміжних товарах) стояв на сторінці двічі - скарга
+            # Growatt AURA 5000. Модель отримує лише різні кадри; автопідбір бере
+            # кандидатів із запасом, щоб після чистки лишилось GALLERY_LIMIT.
+            candidates = curated_cdn or validated_gallery_urls(images, limit=GALLERY_CANDIDATES)
+            cdn_frames = unique_frames(candidates, photo_signature)
+            repeated_frames = len(candidates) - len(cdn_frames)
+            if not curated_cdn:
+                cdn_frames = cdn_frames[:GALLERY_LIMIT]
+            page_gallery = unique_frames(cdn_frames + uploaded_frames, photo_signature)
+            repeated_frames += len(cdn_frames) + len(uploaded_frames) - len(page_gallery)
+            if repeated_frames > 0:
+                log(db, project, 'scrape', f'Прибрано повтори того самого кадру в галереї: {repeated_frames}', 6, 'warning')
             if chosen_gallery:
                 log(db, project, 'scrape', f'Використовується галерея, обрана вручну ({len(chosen_gallery)} кадрів)', 6)
             db.commit()

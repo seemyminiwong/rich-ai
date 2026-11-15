@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 
@@ -197,15 +198,19 @@ def _is_icon(img: Tag) -> bool:
     return isinstance(parent, Tag) and any(isinstance(n, NavigableString) and n.strip() for n in parent.children)
 
 
-def _drop_repeated_photos(soup) -> list[Tag]:
-    """Кожне фото - один раз; повтор вирізається разом із picture/figure."""
-    seen, parents = set(), []
+def _drop_repeated_photos(soup, same_photo: Callable[[str, str], bool] | None = None) -> list[Tag]:
+    """Кожне фото - один раз; повтор вирізається разом із picture/figure.
+
+    same_photo(a, b) ловить той самий кадр під іншою адресою (банер з опису й
+    кадр галереї); без нього повтором вважається лише однаковий src."""
+    seen: list[str] = []
+    parents = []
     for img in soup.find_all('img'):
         if not _alive(img) or _is_icon(img):
             continue
         src = img.get('src').strip()
-        if src not in seen:
-            seen.add(src)
+        if src not in seen and not (same_photo and any(same_photo(src, other) for other in seen)):
+            seen.append(src)
             continue
         target = img
         if target.parent.name == 'picture':
@@ -277,12 +282,12 @@ def _emptied_wrappers(touched: list) -> list[Tag]:
             and t.parent.name != '[document]' and not _has_content(t)]
 
 
-def drop_empty_photo_slots(markup: str) -> str:
+def drop_empty_photo_slots(markup: str, same_photo: Callable[[str, str], bool] | None = None) -> str:
     """Прибрати повтори фото й порожні фото-рамки; осиротілі колонки стиснути."""
     if not markup or '<' not in markup:
         return markup
     soup = BeautifulSoup(markup, 'html.parser')
-    touched = _drop_repeated_photos(soup)
+    touched = _drop_repeated_photos(soup, same_photo)
     repeated = len(touched)
     removed = 0
     for _ in range(_MAX_PASSES):
