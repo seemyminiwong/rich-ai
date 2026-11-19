@@ -419,6 +419,12 @@ GENERIC_PHRASES['uk'] += ['без компромісів']
 GENERIC_PHRASES['ru'] += ['без компромиссов']
 GENERIC_PHRASES['pl'] += ['bez kompromisów']
 GENERIC_PHRASES['en'] += ['without compromise', 'no compromises']
+# AI-кліше з аудиту claude-seo (content_quality): власні формулювання для кожної мови.
+GENERIC_PHRASES['uk'] += ['розкриває потенціал', 'розкрити весь потенціал', 'наріжний камінь', 'у самому серці']
+GENERIC_PHRASES['ru'] += ['раскрывает потенциал', 'раскрыть весь потенциал', 'краеугольный камень', 'в самом сердце']
+GENERIC_PHRASES['pl'] += ['uwolnij potencjał', 'pełen potencjał', 'kamień węgielny', 'w samym sercu']
+GENERIC_PHRASES['en'] += ['delve into', 'unlock the full potential', 'harness the power', 'a testament to', 'tapestry',
+                          'cornerstone', 'at the heart of', 'revolutionize', 'ever-evolving', 'first and foremost', 'needless to say']
 
 # Структурні AI-шаблони (marketingskills copy-editing): «не просто X, а Y», перелік відсутностей,
 # хвіст-дієприслівник, що переказує користь, «Результат: …». Проміжки обмежені, щоб не ловити
@@ -552,6 +558,11 @@ _UNIT_RE = (r'(?:мм|см|м|кг|г|Вт|W|кВт|kW|В|V|А|A|мА·?г|mAh|�
             r'мм/с|mm/s|бар|bar|PSI|psi|Ач|Ah|кВт·год|kWh|Вт·год|Wh|мкм|µm|mm|cm|kg|g|Гц)')
 _VALUE_RE = re.compile(r'(?<![\w.,])(\d{1,3}(?:[  ]\d{3})+|\d+(?:[.,]\d+)?)\s?(' + _UNIT_RE + r')(?![\w])', re.U)
 _NUMBER_RE = re.compile(r'(?<![\w.,-])(\d+(?:[.,]\d+)?)(?![\w.,-])')
+# Відсоток або кратність («40%», «у 3 рази», «3x faster»). «4× USB-C» і «150×150» - кількість
+# і розмір, а не кратність, тому «×» рахується лише поруч зі словом порівняння.
+CLAIM_RE = re.compile(r'(?<![\w.,])(\d+(?:[.,]\d+)?)\s?%|\b(?:у|в|w)\s(\d+(?:[.,]\d+)?)\s(?:раз\w*|razy)\b'
+                      r'|(?<![\w.,])(\d+(?:[.,]\d+)?)\s?(?:x|×|times)\s(?:faster|more|better|longer|bigger|szybsz\w*|швидш\w*|быстре\w*)',
+                      re.I)
 
 
 def _norm_number(value: str) -> str:
@@ -825,6 +836,19 @@ def audit_human_copy(markup: str, language: str, variant: str = '', brief: dict 
 # Аудит: якість мови (чистота, змішання, кирилиця у латинських версіях)
 # ---------------------------------------------------------------------------
 
+# Звертання на «ти» і на «ви» на одній сторінці: (неформальне, формальне).
+ADDRESS_FORMS = {
+    'uk': (r'\b(?:ти|тебе|тобі|тобою|твій|твоя|твоє|твої|твого|твоїм)\b', r'\b(?:ви|вас|вам|вами|ваш|ваша|ваше|ваші|вашого|вашим)\b'),
+    'ru': (r'\b(?:ты|тебя|тебе|тобой|твой|твоя|твоё|твое|твои)\b', r'\b(?:вы|вас|вам|вами|ваш|ваша|ваше|ваши)\b'),
+    'pl': (r'\b(?:ty|ciebie|tobie|twój|twoja|twoje|twoim)\b', r'\b(?:pan|pani|państwo|państwa|państwu)\b'),
+}
+# Десятковий роздільник у значенні з одиницею: крапка в uk/ru/pl, кома в en (не групи тисяч «1,000»).
+DECIMAL_DOT_RE = re.compile(r'(?<![\w.,])\d+\.\d+\s?' + _UNIT_RE + r'(?![\w])')
+DECIMAL_COMMA_RE = re.compile(r'(?<![\w.,])\d+,\d{1,2}\s?' + _UNIT_RE + r'(?![\w])')
+# Імперські одиниці; дюйми - норма для діагоналей, тому їх тут немає.
+IMPERIAL_RE = re.compile(r'(?<![\w.,])(\d+(?:[.,]\d+)?)\s?(?:lbs?|oz|ft|°F|mph|gal)\b')
+
+
 # Кольори з таблиць магазину, які в uk/ru/pl тексті мають бути перекладені.
 # Назви на кшталт «Space Gray» дозволяє назва товару. «yes/no» тут немає: «no» - польське слово.
 UNTRANSLATED_WORDS = {'black', 'white', 'gray', 'grey', 'silver', 'blue', 'red', 'green', 'pink', 'gold', 'yellow',
@@ -883,6 +907,27 @@ def audit_language_quality(markup: str, language: str, variant: str = '', produc
                                     evidence=untranslated[0][1]['text'], segment=untranslated[0][1]['key'],
                                     suggestion='Перекласти мовою сторінки; англійською лишаються лише назви з офіційного найменування',
                                     source='language'))
+    # Правила мовних версій з claude-seo (cultural-profiles, locale-formats, content-parity).
+    forms = ADDRESS_FORMS.get(lang)
+    text_all = doc['visible_text']
+    if forms and re.search(forms[0], text_all, re.I) and re.search(forms[1], text_all, re.I):
+        item = next((i for i in doc['texts'] if re.search(forms[0], i['text'], re.I)), doc['texts'][0])
+        findings.append(finding('address_form_mixed', 'warning', 'На сторінці і «ти», і «ви»', language=lang, variant=variant,
+                                block=item['block'], evidence=item['text'], segment=item['key'],
+                                suggestion='Одна форма звертання на сторінку: «ви» або безособово', source='language'))
+    wrong_decimal = DECIMAL_DOT_RE if lang in ('uk', 'ru', 'pl') else DECIMAL_COMMA_RE if lang == 'en' else None
+    item = next((i for i in doc['texts'] if wrong_decimal and wrong_decimal.search(i['text'])), None)
+    if item:
+        findings.append(finding('decimal_separator', 'warning', 'Десятковий роздільник не цієї мови', language=lang, variant=variant,
+                                block=item['block'], evidence=wrong_decimal.search(item['text']).group(0), segment=item['key'],
+                                suggestion='Кома в uk/ru/pl («2,5 кг»), крапка в en («2.5 kg»)', source='language'))
+    confirmed = fact_numbers(product)
+    imperial = next(((m.group(0), i) for i in doc['texts'] for m in IMPERIAL_RE.finditer(i['text'])
+                     if _norm_number(m.group(1)) not in confirmed), None)
+    if imperial:
+        findings.append(finding('imperial_units', 'warning', 'Одиниця не для цього ринку (фунти, фути, °F)', language=lang, variant=variant,
+                                block=imperial[1]['block'], evidence=imperial[0], segment=imperial[1]['key'],
+                                suggestion='Метричні одиниці з даних товару', source='language'))
     if lang == 'en':
         polish = [(w, i) for w, i in all_words if _PL_DIACRITIC_RE.search(w) and w.lower() not in allowed]
         if polish:
@@ -923,6 +968,9 @@ def audit_language_quality(markup: str, language: str, variant: str = '', produc
 # ---------------------------------------------------------------------------
 
 REPEATED_VALUE_BLOCKS = 4
+# Довжина alt (claude-seo seo-images): коротший - лише назва, довший - уже опис, а не alt.
+ALT_MIN_CHARS = 10
+ALT_MAX_CHARS = 125
 _GENERIC_ALT = re.compile(r'^(image|photo|picture|img|фото|зображення|картинка|изображение|zdjęcie|obraz|obrazek|grafika)\s*\d*$', re.I)
 _FILENAME_ALT = re.compile(r'\.(jpe?g|png|webp|gif|svg)$|^(img|dsc|image)[_\-\d]+$', re.I)
 
@@ -1042,6 +1090,12 @@ def audit_rich_fragment(markup: str, product: dict | None, language: str, varian
            evidence=v['label'], segment=v['item']['key'],
            suggestion='Назвати значення один раз там, де воно пояснює користь; решту блоків віддати новим фактам або прибрати')
 
+    # Заглушки (claude-seo page_checks): lorem ipsum, [вставте назву], незаповнений слот {BUY}
+    stub_item = next((t for t in doc['texts'] if placeholder_in(t['text'])), None)
+    if stub_item:
+        mk('placeholder_text', 'critical', 'Текст-заглушка на сторінці', block=stub_item['block'], evidence=placeholder_in(stub_item['text']),
+           segment=stub_item['key'], suggestion='Замінити справжнім текстом або прибрати')
+
     # Прихований текст
     for t in doc['texts']:
         if t['hidden'] and words(t['text']):
@@ -1063,6 +1117,9 @@ def audit_rich_fragment(markup: str, product: dict | None, language: str, varian
         elif alt.count(',') >= 3 and len(words(alt)) <= 12:
             mk('alt_keyword_list', 'warning', 'Alt схожий на перелік ключових слів', block=img['block'], evidence=alt, segment=img['key'],
                suggestion='Одне описове речення замість переліку')
+        if not ALT_MIN_CHARS <= len(alt) <= ALT_MAX_CHARS:
+            mk('alt_length', 'info', f'Alt {len(alt)} символів (зручно {ALT_MIN_CHARS}-{ALT_MAX_CHARS})', block=img['block'],
+               evidence=alt, segment=img['key'], suggestion='Товар і що показує кадр, одним коротким реченням')
         # Жива сторінка: російський рич з українськими alt («вид збоку», «задні порти»).
         foreign_alt = ((lang in ('pl', 'en') and _CYR_RE.search(alt)) or (lang == 'ru' and _UK_ONLY_RE.search(alt))
                        or (lang == 'uk' and _RU_ONLY_RE.search(alt)))
@@ -1244,6 +1301,15 @@ def audit_geo_copy(markup: str, product: dict | None, language: str, variant: st
     if not any(_VALUE_RE.search(t['text']) for t in doc['texts']) and (product.get('specs') or []):
         mk('no_concrete_values', 'warning', 'У тексті немає конкретних значень, хоча характеристики є', block=0,
            suggestion='Назвати 2-4 підтверджені значення з одиницями')
+    # 3a. Відсотки й «у N разів» - твердження, а не одиниці (claude-seo content_verify):
+    #     «на 40% тихіше», «у 3 рази швидше» без джерела в даних товару.
+    claims = [(m.group(0), t) for t in doc['texts'] for m in CLAIM_RE.finditer(t['text'])
+              if _norm_number(next(g for g in m.groups() if g)) not in known]
+    if claims:
+        value, t = claims[0]
+        mk('claim_without_provenance', 'critical', f'Відсоток чи кратність без джерела в даних товару: {len(claims)}', block=t['block'],
+           evidence=f'{value} · {t["text"]}', segment=t['key'],
+           suggestion='Відсоток і «у N разів» - лише з Product JSON; інакше прибрати')
 
     # 4. Непідтверджені комерційні твердження
     facts = [f.lower() for f in company_facts(profile, lang)]
@@ -1366,6 +1432,58 @@ def audit_variant_consistency(artifacts: list) -> list[dict]:
     return findings
 
 
+UNTRANSLATED_MIN_WORDS = 4
+
+
+def _parity_number(value: str) -> str:
+    """Число для порівняння мовних версій: «1 600», «1,600» і «1.600» - одне значення."""
+    number = _norm_number(value)
+    return number.replace('.', '') if re.fullmatch(r'\d{1,3}\.\d{3}', number) else number
+
+
+def _artifact_field(artifact, name: str):
+    return artifact.get(name) if isinstance(artifact, dict) else getattr(artifact, name, None)
+
+
+def audit_translation_parity(artifacts: list, master_language: str = 'uk') -> list[dict]:
+    """Переклад несе ті самі значення, що й основна мова, і перекладений повністю.
+
+    claude-seo (seo-hreflang content-parity, machine-translation-qa): мовні версії
+    розходяться значеннями або лишають шматки оригіналу. translate_html тримає
+    DOM незмінним, тож текстові вузли мовних версій збігаються за порядком.
+    Одиниці в перекладі латинізуються (Вт -> W), тому значення порівнюються числами."""
+    findings: list[dict] = []
+    master = norm_lang(master_language)
+    pages: dict = {}
+    for a in artifacts:
+        pages.setdefault(_artifact_field(a, 'variant'), {})[norm_lang(_artifact_field(a, 'language') or '')] = _artifact_field(a, 'html') or ''
+    for variant, by_lang in pages.items():
+        if master not in by_lang:
+            continue
+        master_doc = parse_fragment(by_lang[master])
+        master_values = {_parity_number(m.group(1)) for t in master_doc['texts'] for m in _VALUE_RE.finditer(t['text'])}
+        for lang, html in by_lang.items():
+            if lang == master:
+                continue
+            doc = parse_fragment(html)
+            values = {_parity_number(m.group(1)) for t in doc['texts'] for m in _VALUE_RE.finditer(t['text'])}
+            if values != master_values:
+                diff = sorted(values ^ master_values)
+                findings.append(finding('translation_values_mismatch', 'warning',
+                                        f'Переклад {lang.upper()} називає інші значення, ніж {master.upper()}: {", ".join(diff[:6])}',
+                                        language=lang, variant=variant or '', evidence=', '.join(diff[:6]), source='language',
+                                        suggestion='Перекласти заново: значення з одиницями переносяться без змін'))
+            if len(doc['texts']) != len(master_doc['texts']):
+                continue
+            same = next((t for t, m in zip(doc['texts'], master_doc['texts'])
+                         if t['text'] == m['text'] and len([w for w in words(t['text']) if len(w) > 3 and not w.isupper()]) >= UNTRANSLATED_MIN_WORDS), None)
+            if same:
+                findings.append(finding('untranslated_segment', 'warning', f'Фрагмент лишився мовою {master.upper()}', language=lang,
+                                        variant=variant or '', block=same['block'], evidence=same['text'], segment=same['key'],
+                                        source='language', suggestion='Перекласти фрагмент'))
+    return findings
+
+
 # ---------------------------------------------------------------------------
 # Зведений прогін для проєкту
 # ---------------------------------------------------------------------------
@@ -1389,6 +1507,7 @@ def run_rich_audits(artifacts: list, product: dict | None, brief: dict | None = 
         grouped['human'].extend(audit_stop_slop(html, lang, variant, product, brief))
         grouped['language'].extend(audit_language_quality(html, lang, variant, product, brief))
     grouped['seo'].extend(audit_variant_consistency(artifacts))
+    grouped['language'].extend(audit_translation_parity(artifacts, (brief or {}).get('language') or 'uk'))
     reports = []
     for kind, rows in grouped.items():
         # Однакова знахідка в desktop і mobile однієї мови - одна позиція.
@@ -1712,6 +1831,10 @@ def _trim(text: str, limit: int) -> str:
     return cut.rstrip(' ,;:-–') + '…'
 
 
+TITLE_MAX_CHARS = 65
+DESCRIPTION_NAMES = 3
+
+
 def build_landing_metadata(campaign: dict, products: list[dict], profile: dict | None, language: str,
                            canonical: str = '', alternates: dict | None = None, published: bool = False,
                            image: str = '') -> dict:
@@ -1721,11 +1844,19 @@ def build_landing_metadata(campaign: dict, products: list[dict], profile: dict |
     org = str(profile.get('organization_name') or 'ARTLINE')
     title_core = _clean_text(campaign.get('campaign_title') or campaign.get('name') or '')
     subtitle = _clean_text(campaign.get('campaign_subtitle') or '')
-    title = _trim(f'{title_core} · {org}' if title_core else org, 65)
+    # Назва кампанії вже з брендом («ARTLINE Days») не отримує другий «· ARTLINE».
+    branded = title_core and org.lower() in title_core.lower()
+    title = _trim(title_core if branded else (f'{title_core} · {org}' if title_core else org), TITLE_MAX_CHARS)
     i18n = landing_i18n(lang)
-    parts = [subtitle or title_core]
-    if products:
-        parts.append(f'{len(products)} {i18n["items"]}')
+    # Опис не повторює заголовок (claude-seo seo-page): без підзаголовка він
+    # починається з кількості й назв товарів, а не з назви кампанії.
+    names = [_clean_text(p.get('name')) for p in products if _clean_text(p.get('name'))]
+    if subtitle:
+        parts = [subtitle] + ([f'{len(products)} {i18n["items"]}'] if products else [])
+    elif names:
+        parts = [f'{len(products)} {i18n["items"]}: ' + ', '.join(names[:DESCRIPTION_NAMES]) + ('…' if len(names) > DESCRIPTION_NAMES else '')]
+    else:
+        parts = [title_core]
     delivery = ((profile.get('statements') or {}).get('delivery') or {}).get(lang)
     if delivery:
         parts.append(delivery)
@@ -1750,6 +1881,27 @@ def build_landing_metadata(campaign: dict, products: list[dict], profile: dict |
 
 _FORBIDDEN_PRODUCT_KEYS = ('aggregateRating', 'review', 'availability', 'priceValidUntil', 'shippingDetails',
                            'hasMerchantReturnPolicy', 'returnPolicy', 'sku', 'gtin', 'gtin13', 'gtin8', 'gtin12', 'gtin14', 'mpn', 'brand')
+
+
+def _public_image_url(url: str) -> bool:
+    """Абсолютна http(s)-адреса, яку відкриють соцмережі: не data: і не шлях студії /media/."""
+    parsed = urlparse(str(url or '').strip())
+    return parsed.scheme in ('http', 'https') and bool(parsed.netloc) and not parsed.path.startswith('/media/')
+
+
+# Заглушки в тексті чи schema (claude-seo validate-schema / page_checks): lorem ipsum,
+# [вставте назву], незаповнений слот промпту {BUY}. Слот - лише великими літерами.
+PLACEHOLDER_TEXT_RE = re.compile(r'\blorem ipsum\b|\[(?:insert|your|todo|назва|вставте|вставить|product name)[^\]]{0,40}\]', re.I)
+PLACEHOLDER_SLOT_RE = re.compile(r'\{[A-Z][A-Z_]{2,}\}|\bREPLACE_[A-Z_]+|\bTODO\b')
+# Типи schema, які Google прибрав з розширених результатів (claude-seo deprecated-types-2024-2026).
+DEPRECATED_SCHEMA_TYPES = {'HowTo', 'SpecialAnnouncement', 'CourseInfo', 'EstimatedSalary', 'LearningVideo',
+                           'ClaimReview', 'VehicleListing'}
+
+
+def placeholder_in(text: str) -> str:
+    """Перший знайдений фрагмент-заглушка або ''."""
+    match = PLACEHOLDER_TEXT_RE.search(text or '') or PLACEHOLDER_SLOT_RE.search(text or '')
+    return match.group(0) if match else ''
 
 
 def _same_site(url: str, profile: dict | None) -> bool:
@@ -1852,11 +2004,12 @@ def finalize_landing_seo(markup: str, *, campaign: dict, products: list[dict], p
     if head is None:
         head = soup.new_tag('head')
         html_tag.insert(0, head)
+    # Згенерований Hero лежить у студії (/media/...), а в експорт іде вбудованим
+    # data:-кадром: адреса https://<магазин>/media/... на сайті не існує. Тоді
+    # og:image - перше фото товару з CDN магазину (build_landing_metadata).
     hero = str(campaign.get('hero_url') or '').strip()
-    if hero.startswith('/') and canonical:
-        hero = '{0.scheme}://{0.netloc}'.format(urlparse(canonical)) + hero
     meta = build_landing_metadata(campaign, products, profile, language, canonical, alternates, published,
-                                  image=hero if hero.startswith('http') else '')
+                                  image=hero if _public_image_url(hero) else '')
     html_tag['lang'] = meta['lang']
     # Прибрати все, чим керує сервер (включно з тим, що могла написати модель).
     for node in head.find_all('title'):
@@ -1947,8 +2100,9 @@ def audit_landing_document(markup: str, *, language: str, expected_canonical: st
     title_text = _clean_text(title.get_text()) if title else ''
     if not title_text:
         mk('title_missing', 'critical', 'Немає <title>', suggestion='Заголовок сторінки формує сервер (finalize_landing_seo)')
-    elif len(title_text) > 70:
-        mk('title_long', 'warning', f'Title задовгий: {len(title_text)} символів', evidence=title_text, suggestion='До 65 символів')
+    elif len(title_text) > TITLE_MAX_CHARS:
+        mk('title_long', 'warning', f'Title може обрізатись у видачі: {len(title_text)} символів', evidence=title_text,
+           suggestion=f'До {TITLE_MAX_CHARS} символів')
     desc = head.find('meta', attrs={'name': 'description'})
     desc_text = _clean_text(desc.get('content')) if desc else ''
     if not desc_text:
@@ -1987,6 +2141,31 @@ def audit_landing_document(markup: str, *, language: str, expected_canonical: st
         mk('og_image_missing', 'info', 'Немає og:image', suggestion='Перше фото товару або hero')
     if head.find('meta', attrs={'name': 'twitter:card'}) is None:
         mk('twitter_card_missing', 'warning', 'Немає twitter:card', suggestion='summary_large_image')
+    # Перевірки з claude-seo (seo-page, page_checks, validate-schema), аудит 2026-11-19.
+    og_image = head.find('meta', attrs={'property': 'og:image'})
+    if og_image is not None and not _public_image_url(og_image.get('content')):
+        mk('og_image_unreachable', 'warning', 'og:image не відкриється в соцмережах', evidence=str(og_image.get('content') or '')[:120],
+           suggestion='Абсолютна адреса фото на CDN магазину, не data: і не /media/ студії')
+    title_core = title_text.split(' · ')[0].strip().lower()
+    if len(title_core) >= 8 and desc_text.lower().startswith(title_core):
+        mk('description_restates_title', 'warning', 'Meta description починається з повтору заголовка', evidence=desc_text,
+           suggestion='Почати з того, що є на сторінці: товари, категорії, період')
+    for tag_name, attrs, label in (('title', {}, 'title'), ('meta', {'name': 'description'}, 'meta description'),
+                                   ('meta', {'name': 'robots'}, 'meta robots'), ('link', {'rel': 'canonical'}, 'canonical')):
+        count = len(soup.find_all(tag_name, attrs=attrs))
+        if count > 1:
+            mk('duplicate_head_tag', 'warning', f'{label}: {count} на сторінці', suggestion='Рівно один; ці теги ставить сервер')
+    visible = _clean_text(soup.body.get_text(' ')) if soup.body else ''
+    stub = placeholder_in(visible)
+    if stub:
+        mk('placeholder_text', 'critical', 'Текст-заглушка на сторінці', evidence=stub, suggestion='Замінити справжнім текстом або прибрати блок')
+    if canonical_href.startswith('https://'):
+        insecure_img = next((i.get('src') for i in soup.find_all('img') if str(i.get('src') or '').startswith('http://')), None)
+        if insecure_img:
+            mk('mixed_content', 'warning', 'Зображення по http:// на https-сторінці', evidence=insecure_img, suggestion='Адреса з https://')
+        insecure_link = next((a['href'] for a in soup.find_all('a', href=True) if a['href'].startswith('http://')), None)
+        if insecure_link:
+            mk('http_link', 'info', 'Посилання по http://', evidence=insecure_link, suggestion='Адреса з https://')
     # JSON-LD
     scripts = soup.find_all('script', attrs={'type': 'application/ld+json'})
     if not scripts:
@@ -2000,11 +2179,27 @@ def audit_landing_document(markup: str, *, language: str, expected_canonical: st
         nodes = data.get('@graph') if isinstance(data, dict) and isinstance(data.get('@graph'), list) else [data]
         page_faq = visible_faq(soup)
         page_text = _clean_text(soup.get_text(' ')).lower()
+        if isinstance(data, dict) and 'schema.org' not in str(data.get('@context') or ''):
+            mk('jsonld_context', 'warning', 'JSON-LD без @context https://schema.org', suggestion='"@context": "https://schema.org"')
+        stub = placeholder_in(json.dumps(data, ensure_ascii=False))
+        if stub:
+            mk('placeholder_text', 'critical', 'Заглушка в JSON-LD', evidence=stub, suggestion='Лише справжні значення')
         for node in nodes:
             if not isinstance(node, dict):
                 continue
             types = node.get('@type')
             types = types if isinstance(types, list) else [types]
+            if not node.get('@type'):
+                mk('jsonld_no_type', 'warning', 'Вузол JSON-LD без @type', evidence=str(node)[:80], suggestion='Кожен вузол має @type')
+            deprecated = DEPRECATED_SCHEMA_TYPES.intersection(t for t in types if isinstance(t, str))
+            if deprecated:
+                mk('jsonld_deprecated_type', 'warning', f'Застарілий тип schema: {", ".join(sorted(deprecated))}',
+                   suggestion='Google більше не показує розширених результатів для цього типу')
+            logo = node.get('logo')
+            for key, value in (('url', node.get('url')), ('image', node.get('image')),
+                               ('logo', logo.get('url') if isinstance(logo, dict) else logo)):
+                if isinstance(value, str) and value and not value.startswith(('http://', 'https://')):
+                    mk('jsonld_relative_url', 'warning', f'JSON-LD: {key} - відносна адреса', evidence=value, suggestion='Абсолютна адреса з доменом')
             if 'BreadcrumbList' in types:
                 crumbs = [c for c in node.get('itemListElement') or [] if isinstance(c, dict)]
                 positions = [c.get('position') for c in crumbs]

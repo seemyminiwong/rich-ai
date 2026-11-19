@@ -5,7 +5,7 @@ category-specific art direction. The built-in ARTLINE Base style is updated
 from these constants during application startup.
 """
 
-BASE_STYLE_VERSION = "12.79"
+BASE_STYLE_VERSION = "12.80"
 
 # Хвіст кожного готового HTML: інструмент і ліцензія. HTML-коментар - покупець
 # його не бачить, але він їде в кожен артефакт, ZIP і вставку в редактор.
@@ -1338,7 +1338,7 @@ FACTS AND COPY
 - Write a benefit only when the feature supports it. No invented superiority, certification, warranty, service, use cases or performance promises. No promises about SEO ranking or rich results.
 - No sentences about the page, images, blocks or instructions. The copy must read correctly with every image removed. No keyword stuffing, prices, purchase links or buttons.
 - Brand/model appear naturally in the Hero and in the closing accent; never repeat them in every heading. Hero badge: brand · category. Hero h2: the exact brand and model, not an overloaded commercial title and without the part number in parentheses (write "HYTE X50 Taro Milk", not "HYTE X50 Taro Milk (CS-HYTE-X50G-TM)"); compact descriptors go to the subtitle.
-- Hero subtitle: one accent line of the 2-4 strongest identifiers joined with " · " (for example "2700 Вт · 2073.6 Вт·год · LiFePO4 · UPS до 15 мс"), or a short descriptor of the product class when few values are confirmed.
+- Hero subtitle: one accent line of the 2-4 strongest identifiers joined with " · " (for example "2700 Вт · 2073,6 Вт·год · LiFePO4 · UPS до 15 мс"), or a short descriptor of the product class when few values are confirmed.
 - EYEBROW: every content block (blocks 03-08) opens with an eyebrow label of 2-4 uppercase words that names its topic, or the technology when Product JSON names it (for example "TURBOBOOST CHARGING", "ЕРГОНОМІКА", "ПІДКЛЮЧЕННЯ"). Never a slogan.
 - HERO DEFINITION: the first sentence of the Hero paragraph is a self-contained definition - the product category with the brand, its primary purpose and the strongest confirmed outcome for the buyer. Quoted alone, it answers "what is this and what is it for"; the model code stays in the h2.
 - An h2 may be a short topic label only because its accent subtitle carries the claim: the accent subtitle names what the buyer gets or can now do, with a confirmed value, and never repeats the h2 in other words.

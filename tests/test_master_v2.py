@@ -90,7 +90,8 @@ def test_post_processing_keeps_the_new_components():
     sizes = lambda px: [d for d in out.find_all('div') if re.search(rf'font-size:\s*{px}px', d.get('style') or '')]
     assert len(sizes(18)) == 3, 'три плитки Hero лишаються 18px'
     assert len(sizes(26)) == 9, "п'ять ключових параметрів і чотири плитки панелей - без втрат"
-    assert {h.get_text() for h in out.find_all('h3')} >= {'2700 Вт · 2073.6 Вт·год · LiFePO4', 'Портативна станція LiFePO4'}
+    # Українська сторінка - з десятковою комою (localize_decimals, аудит claude-seo 2026-11-19).
+    assert {h.get_text() for h in out.find_all('h3')} >= {'2700 Вт · 2073,6 Вт·год · LiFePO4', 'Портативна станція LiFePO4'}
     assert all('font-size:18px' in h['style'] for h in out.find_all('h3')), 'стандарт тримає h3 на 18px'
     panels = out.find('div', style=re.compile(r'grid-template-columns:repeat\(2,minmax\(0,1fr\)\);gap:18px'))
     assert panels is not None and len(panels.find_all('div', recursive=False)) == 2, 'дві панелі поруч'
