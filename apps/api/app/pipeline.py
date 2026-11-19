@@ -232,9 +232,19 @@ _ALLOWED_ATTRS = {'style', 'src', 'alt', 'title', 'width', 'height', 'loading', 
 _URL_SAFE_SCHEMES = ('http://', 'https://', '/media/', '/')
 
 
+# Невидимі символи (claude-seo content_humanize): нульової ширини, керування
+# напрямком тексту, м'який перенос, теги Unicode. Ламають пошук, копіювання й
+# звірку фактів. Нерозривні пробіли (U+00A0, U+202F) лишаються: число й одиниця.
+_INVISIBLE_RE = re.compile('[­​-‏‪-‮⁠-⁤⁦-⁩﻿\U000e0000-\U000e007f]')
+
+
+def strip_invisible(text: str) -> str:
+    return _INVISIBLE_RE.sub('', text or '')
+
+
 def sanitize_html(markup: str) -> str:
     """Return the HTML with only safe presentational tags and attributes."""
-    soup = BeautifulSoup(markup or '', 'html.parser')
+    soup = BeautifulSoup(strip_invisible(markup), 'html.parser')
     # iframe дозволено РІВНО для одного: youtube-nocookie поверх постера в
     # блоці відео. Будь-який інший src - у смітник; srcdoc не в allowlist.
     for frame in soup.find_all('iframe'):
@@ -425,6 +435,36 @@ def _latinize_fragment(text: str, period_words: dict) -> str:
         text = pattern.sub(lambda m: period_words[m.group(1)], text)
     text = _UNIT_PATTERN.sub(lambda m: _UNIT_LATIN[m.group(1)], text)
     return _SECONDS_PATTERN.sub(r'\1s', text)
+
+
+def localize_decimals(markup: str, language: str) -> str:
+    """Десятковий роздільник значення з одиницею за мовою: кома в uk/ru/pl, крапка в en.
+
+    claude-seo (locale-formats): «2.5 кг» на українській сторінці й «2,5 kg» на
+    англійській - ознаки машинного тексту. Переклад переносив числа без змін,
+    тож кома з українського оригіналу доходила до англійської версії. Чіпається
+    лише видимий текст і лише число з одиницею: CSS («1.5px»), версії («USB 3.2»)
+    і групи тисяч («1,000 mAh») лишаються як є."""
+    from app.seo_geo import _UNIT_RE
+    lang = (language or '').split('-', 1)[0].lower().replace('ua', 'uk')
+    if lang in ('uk', 'ru', 'pl'):
+        pattern, separator = re.compile(r'(?<![\w.,])(\d+)\.(\d+)(\s?' + _UNIT_RE + r')(?![\w])'), ','
+    elif lang == 'en':
+        pattern, separator = re.compile(r'(?<![\w.,])(\d+),(\d{1,2})(\s?' + _UNIT_RE + r')(?![\w])'), '.'
+    else:
+        return markup
+    if not markup or not pattern.search(markup):
+        return markup
+    soup = BeautifulSoup(markup, 'html.parser')
+    changed = False
+    for node in soup.find_all(string=True):
+        if isinstance(node, Comment) or node.parent.name in ('style', 'script'):
+            continue
+        fixed = pattern.sub(lambda m: f'{m.group(1)}{separator}{m.group(2)}{m.group(3)}', str(node))
+        if fixed != str(node):
+            node.replace_with(NavigableString(fixed))
+            changed = True
+    return str(soup) if changed else markup
 
 
 def latinize_units(markup: str, language: str) -> str:
@@ -4401,7 +4441,7 @@ HTML:
                 product_name=video_product or (product or {}).get('name', ''),
                 profile=video_profile(prompt_text), variant=variant,
             )
-        output = latinize_units(output, language)
+        output = localize_decimals(latinize_units(output, language), language)
         output = enforce_site_font(output)
         # Тема майстра (світла/темна) - до стандарту: той рахує акцент від
         # підсумкової поверхні.
@@ -4416,7 +4456,8 @@ HTML:
         return output, input_tokens, output_tokens, ''
     except Exception as exc:
         logger.exception('generate_html fell back to deterministic template for %s/%s', language, variant)
-        fallback = apply_artline_standard(apply_master_theme(latinize_units(fallback, language), theme), (product or {}).get('name', ''))
+        fallback = apply_artline_standard(apply_master_theme(localize_decimals(latinize_units(fallback, language), language), theme),
+                                          (product or {}).get('name', ''))
         return apply_palette(fallback, palette or style_palette(style)), 0, 0, public_fallback_reason(exc)
 
 
@@ -4482,7 +4523,7 @@ def translate_html(source_html: str, language: str, model: str, memory: dict | N
     prompt = f"""Translate the supplied ecommerce copy segments into the target language.
 TARGET LANGUAGE CODE: {language}. {language_rule(language)}
 Return one JSON object only. Preserve every input key and return exactly one translated string for it.
-Keep product names, brands, model IDs, technology names and numbers unchanged. Convert units, unit abbreviations and period words into the target language and script (examples: В→V, Вт→W, мс→ms, кВт·год→kWh, мес→the target-language month abbreviation); a Latin-script language must keep no Cyrillic characters except verbatim brand or model names.
+Keep product names, brands, model IDs, technology names and numbers unchanged, except the decimal separator: a comma in Ukrainian, Russian and Polish, a point in English. Convert units, unit abbreviations and period words into the target language and script (examples: В→V, Вт→W, мс→ms, кВт·год→kWh, мес→the target-language month abbreviation); a Latin-script language must keep no Cyrillic characters except verbatim brand or model names.
 Do not add facts, HTML, markdown, explanations or extra keys.
 Localize, do not mirror the source syntax: write each segment the way a native ecommerce editor of the target language would, with the same meaning, facts and roughly the same length. Use the target language's own word order and active verbs; avoid calques and bureaucratic constructions of the source language. Keep one term per concept across all segments and the page's address form. Do not add marketing adjectives, superlatives, exclamation marks, "not just X but Y" constructions or trailing participle clauses that are absent from the source.
 SEGMENTS:
@@ -4502,7 +4543,7 @@ SEGMENTS:
             continue
         result = result.replace(f'__ARTLINE_TEXT_{key}__', html_lib.escape(value, quote=False))
     result = _html_only(result)
-    result = latinize_units(result, language)
+    result = localize_decimals(latinize_units(result, language), language)
     if not _language_matches(result, language):
         raise RuntimeError(f'Translated content did not pass language validation for {language}')
     if response is None:

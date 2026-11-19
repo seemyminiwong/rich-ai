@@ -82,10 +82,10 @@ SLOP_PATTERNS = {
 
 # Абзац починається зі сполучника-розгону («Тож…», «So…»).
 CONNECTIVE_OPENERS = {
-    'uk': r'^(?:тож|отже|отож|загалом|словом)\b',
-    'ru': r'^(?:итак|так что|таким образом|в общем|словом)\b',
-    'pl': r'^(?:więc|zatem|podsumowując|krótko mówiąc)\b',
-    'en': r'^(?:so|overall|in short|look|basically)\b',
+    'uk': r'^(?:тож|отже|отож|загалом|словом|крім того|більше того)\b',
+    'ru': r'^(?:итак|так что|таким образом|в общем|словом|кроме того|более того)\b',
+    'pl': r'^(?:więc|zatem|podsumowując|krótko mówiąc|ponadto|co więcej)\b',
+    'en': r'^(?:so|overall|in short|look|basically|moreover|furthermore|additionally|ultimately|in conclusion)\b',
 }
 # Тире між словами, що з'єднує частини речення (діапазони «10–20» не чіпаються).
 _DASH_CLAUSE = re.compile(r'(?<=[^\d\s])\s[–—]\s(?=[^\d\s])')
